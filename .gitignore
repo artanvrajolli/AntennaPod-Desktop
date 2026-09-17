@@ -1,0 +1,10 @@
+.gradle/
+build/
+release/
+*.zip
+out/
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db

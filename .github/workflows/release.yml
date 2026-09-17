@@ -1,0 +1,51 @@
+name: Build Windows release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build and test
+        run: ./gradlew :core:test :app:installDist --console=plain
+
+      - name: Package exe with jpackage
+        shell: pwsh
+        run: |
+          $jpackage = Join-Path $env:JAVA_HOME 'bin\jpackage.exe'
+          & $jpackage --type app-image --name "AntennaPod-Desktop" --app-version "0.1.0" `
+            --vendor "AntennaPod" --dest release --input app/build/install/app/lib `
+            --main-jar app-0.1.0.jar --main-class de.danoeh.antennapod.desktop.Launcher `
+            --java-options "--enable-native-access=javafx.media"
+
+      - name: Zip portable app
+        shell: pwsh
+        run: Compress-Archive -Path release/AntennaPod-Desktop -DestinationPath AntennaPod-Desktop-Windows.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AntennaPod-Desktop-Windows
+          path: AntennaPod-Desktop-Windows.zip
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: AntennaPod-Desktop-Windows.zip
+          generate_release_notes: true

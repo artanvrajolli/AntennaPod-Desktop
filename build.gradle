@@ -1,0 +1,4 @@
+allprojects {
+    group = 'de.danoeh.antennapod.desktop'
+    version = '0.1.0'
+}

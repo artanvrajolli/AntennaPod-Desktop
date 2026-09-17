@@ -1,0 +1,220 @@
+package de.danoeh.antennapod.desktop;
+
+import java.io.File;
+import java.util.prefs.Preferences;
+
+public final class DesktopPreferences {
+    private static final Preferences PREFS = Preferences.userNodeForPackage(DesktopPreferences.class);
+
+    private DesktopPreferences() {
+    }
+
+    public static File getDataDir() {
+        String override = System.getProperty("antennapod.desktop.dataDir");
+        if (override != null && !override.isEmpty()) {
+            return new File(override);
+        }
+        String os = System.getProperty("os.name", "").toLowerCase();
+        File base;
+        if (os.contains("win")) {
+            String appData = System.getenv("APPDATA");
+            base = new File(appData != null ? appData : System.getProperty("user.home"), "AntennaPod");
+        } else {
+            base = new File(System.getProperty("user.home"), ".antennapod");
+        }
+        return base;
+    }
+
+    public static File getMediaDir() {
+        return new File(getDataDir(), "media");
+    }
+
+    public static File getCacheDir() {
+        return new File(getDataDir(), "cache");
+    }
+
+    public static File getDatabaseFile() {
+        return new File(getDataDir(), "antennapod.db");
+    }
+
+    public static float getPlaybackSpeed() {
+        return PREFS.getFloat("playbackSpeed", 1.0f);
+    }
+
+    public static void setPlaybackSpeed(float speed) {
+        PREFS.putFloat("playbackSpeed", speed);
+    }
+
+    public static long getLastPlayedMediaId() {
+        return PREFS.getLong("lastPlayedMediaId", -1);
+    }
+
+    public static void setLastPlayedMediaId(long id) {
+        PREFS.putLong("lastPlayedMediaId", id);
+    }
+
+    public static String getSyncProvider() {
+        return PREFS.get("syncProvider", "none");
+    }
+
+    public static void setSyncProvider(String provider) {
+        PREFS.put("syncProvider", provider);
+    }
+
+    public static String getSyncHost() {
+        return PREFS.get("syncHost", "gpodder.net");
+    }
+
+    public static void setSyncHost(String host) {
+        PREFS.put("syncHost", host);
+    }
+
+    public static String getSyncUsername() {
+        return PREFS.get("syncUsername", "");
+    }
+
+    public static void setSyncUsername(String username) {
+        PREFS.put("syncUsername", username);
+    }
+
+    public static String getSyncPassword() {
+        return PREFS.get("syncPassword", "");
+    }
+
+    public static void setSyncPassword(String password) {
+        PREFS.put("syncPassword", password);
+    }
+
+    public static String getSyncDeviceId() {
+        String id = PREFS.get("syncDeviceId", null);
+        if (id == null) {
+            id = "desktop-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+            PREFS.put("syncDeviceId", id);
+        }
+        return id;
+    }
+
+    public static String getSyncDeviceCaption() {
+        return PREFS.get("syncDeviceCaption", "AntennaPod Desktop");
+    }
+
+    public static void setSyncDeviceCaption(String caption) {
+        PREFS.put("syncDeviceCaption", caption);
+    }
+
+    public static boolean isSyncEnabled() {
+        return !"none".equals(getSyncProvider()) && !getSyncUsername().isEmpty();
+    }
+
+    public static boolean getAutoDownloadDefault() {
+        return PREFS.getBoolean("autoDownloadDefault", false);
+    }
+
+    public static void setAutoDownloadDefault(boolean enabled) {
+        PREFS.putBoolean("autoDownloadDefault", enabled);
+    }
+
+    public static boolean getAutoDeleteDefault() {
+        return PREFS.getBoolean("autoDeleteDefault", false);
+    }
+
+    public static void setAutoDeleteDefault(boolean enabled) {
+        PREFS.putBoolean("autoDeleteDefault", enabled);
+    }
+
+    public static String getSleepTimerMode() {
+        return PREFS.get("sleepTimerMode", "off");
+    }
+
+    public static void setSleepTimerMode(String mode) {
+        PREFS.put("sleepTimerMode", mode);
+    }
+
+    public static long getSleepTimerDeadline() {
+        return PREFS.getLong("sleepTimerDeadline", 0);
+    }
+
+    public static void setSleepTimerDeadline(long deadlineMs) {
+        PREFS.putLong("sleepTimerDeadline", deadlineMs);
+    }
+
+    public static double getDefaultVolume() {
+        return PREFS.getDouble("defaultVolume", 1.0);
+    }
+
+    public static void setDefaultVolume(double volume) {
+        PREFS.putDouble("defaultVolume", volume);
+    }
+
+    public static int getSkipIntroSec() {
+        return PREFS.getInt("skipIntroSec", 0);
+    }
+
+    public static void setSkipIntroSec(int seconds) {
+        PREFS.putInt("skipIntroSec", Math.max(seconds, 0));
+    }
+
+    public static int getSkipEndingSec() {
+        return PREFS.getInt("skipEndingSec", 0);
+    }
+
+    public static void setSkipEndingSec(int seconds) {
+        PREFS.putInt("skipEndingSec", Math.max(seconds, 0));
+    }
+
+    public static int getVolumeBoostDb() {
+        return PREFS.getInt("volumeBoostDb", 0);
+    }
+
+    public static void setVolumeBoostDb(int db) {
+        PREFS.putInt("volumeBoostDb", Math.max(0, Math.min(db, 12)));
+    }
+
+    public static boolean getAutoRefreshStartup() {
+        return PREFS.getBoolean("autoRefreshStartup", false);
+    }
+
+    public static void setAutoRefreshStartup(boolean enabled) {
+        PREFS.putBoolean("autoRefreshStartup", enabled);
+    }
+
+    public static int getAutoRefreshMinutes() {
+        return PREFS.getInt("autoRefreshMinutes", 0);
+    }
+
+    public static void setAutoRefreshMinutes(int minutes) {
+        PREFS.putInt("autoRefreshMinutes", Math.max(minutes, 0));
+    }
+
+    public static String getProxyHost() {
+        return PREFS.get("proxyHost", "");
+    }
+
+    public static void setProxyHost(String host) {
+        PREFS.put("proxyHost", host);
+    }
+
+    public static int getProxyPort() {
+        return PREFS.getInt("proxyPort", 8080);
+    }
+
+    public static void setProxyPort(int port) {
+        PREFS.putInt("proxyPort", port);
+    }
+
+    public static String getProxyUser() {
+        return PREFS.get("proxyUser", "");
+    }
+
+    public static void setProxyUser(String user) {
+        PREFS.put("proxyUser", user);
+    }
+
+    public static String getProxyPassword() {
+        return PREFS.get("proxyPassword", "");
+    }
+
+    public static void setProxyPassword(String password) {
+        PREFS.put("proxyPassword", password);
+    }
+}

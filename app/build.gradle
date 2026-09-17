@@ -1,0 +1,31 @@
+plugins {
+    id 'application'
+    id 'org.openjfx.javafxplugin' version '0.1.0'
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(17))
+    }
+}
+
+javafx {
+    version = '21.0.4'
+    modules = ['javafx.controls', 'javafx.media', 'javafx.web']
+}
+
+application {
+    mainClass.set('de.danoeh.antennapod.desktop.Launcher')
+}
+
+dependencies {
+    implementation project(':core')
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.named('run') {
+    jvmArgs = ['--enable-native-access=javafx.media']
+}
