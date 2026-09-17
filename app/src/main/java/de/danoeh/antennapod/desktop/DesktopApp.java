@@ -22,6 +22,7 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -44,6 +45,7 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
@@ -61,8 +63,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private final ObservableList<Feed> feeds = FXCollections.observableArrayList();
     private final ObservableList<FeedItem> episodes = FXCollections.observableArrayList();
+    private final FilteredList<Feed> visibleFeeds = new FilteredList<>(feeds, feed -> true);
+    private final FilteredList<FeedItem> visibleEpisodes = new FilteredList<>(episodes, item -> true);
     private ListView<Feed> feedList;
     private ListView<FeedItem> episodeList;
+    private TextField feedFilterField;
+    private TextField episodeFilterField;
     private Label feedTitleLabel;
     private Label statusLabel;
     private Label nowPlayingLabel;
@@ -156,6 +162,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
         stage.setTitle("AntennaPod Desktop");
         scene = new Scene(root, 1100, 700);
+        ThemeManager.init();
+        ThemeManager.style(scene);
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handleGlobalKey);
         stage.setScene(scene);
         mainStage = stage;
@@ -292,7 +300,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private VBox buildFeedPane() {
-        feedList = new ListView<>(feeds);
+        feedFilterField = new TextField();
+        feedFilterField.setPromptText("Search subscriptions");
+        feedFilterField.textProperty().addListener((obs, oldText, newText) -> applyFeedFilter());
+        feedList = new ListView<>(visibleFeeds);
         feedList.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
         feedList.setPrefWidth(280);
         feedList.setCellFactory(list -> new FeedCell());
@@ -324,10 +335,28 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         HBox buttons = new HBox(8, refreshButton, unsubscribeButton, settingsButton);
         buttons.setPadding(new Insets(8));
-        VBox pane = new VBox(4, new Label("Subscriptions"), feedList, buttons);
+        VBox pane = new VBox(4, new Label("Subscriptions"), feedFilterField, feedList, buttons);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(feedList, Priority.ALWAYS);
         return pane;
+    }
+
+    private void applyFeedFilter() {
+        String query = feedFilterField.getText().trim().toLowerCase(Locale.ROOT);
+        visibleFeeds.setPredicate(feed -> query.isEmpty() || feedSearchText(feed).contains(query));
+    }
+
+    private static String feedSearchText(Feed feed) {
+        String text = feed.getTitle();
+        if (text == null || text.isEmpty()) {
+            text = feed.getDownloadUrl();
+        }
+        return text == null ? "" : text.toLowerCase(Locale.ROOT);
+    }
+
+    private static <T> ListCell<T> fullWidthCell(ListCell<T> cell) {
+        cell.setPrefWidth(0);
+        return cell;
     }
 
     private class FeedCell extends ListCell<Feed> {
@@ -340,7 +369,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             art.setFitWidth(40);
             art.setFitHeight(40);
             titleLabel.setWrapText(true);
-            countLabel.setStyle("-fx-text-fill: gray;");
+            countLabel.getStyleClass().add("muted-label");
             VBox texts = new VBox(2, titleLabel, countLabel);
             HBox.setHgrow(texts, Priority.ALWAYS);
             row = new HBox(8, art, texts);
@@ -396,9 +425,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         Button playAllButton = new Button("Play all", Icons.play());
         playAllButton.setOnAction(event -> playAll());
-        HBox header = new HBox(8, feedTitleLabel, sortBox, playAllButton);
+        episodeFilterField = new TextField();
+        episodeFilterField.setPromptText("Search episodes");
+        episodeFilterField.setPrefWidth(180);
+        episodeFilterField.textProperty().addListener((obs, oldText, newText) -> applyEpisodeFilter());
+        HBox header = new HBox(8, feedTitleLabel, episodeFilterField, sortBox, playAllButton);
         HBox.setHgrow(feedTitleLabel, Priority.ALWAYS);
-        episodeList = new ListView<>(episodes);
+        episodeList = new ListView<>(visibleEpisodes);
         episodeList.setCellFactory(list -> new EpisodeCell());
         episodeList.setOnMouseClicked(event -> {
             if (event.getClickCount() == 2) {
@@ -428,14 +461,20 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void playAll() {
-        for (FeedItem item : new ArrayList<>(episodes)) {
+        for (FeedItem item : new ArrayList<>(visibleEpisodes)) {
             if (item.getMedia() != null) {
-                playback.play(item, new ArrayList<>(episodes));
+                playback.play(item, new ArrayList<>(visibleEpisodes));
                 setStatus("Playing from \"" + item.getTitle() + "\" to the end");
                 return;
             }
         }
         setStatus("Nothing playable in this list");
+    }
+
+    private void applyEpisodeFilter() {
+        String query = episodeFilterField.getText().trim().toLowerCase(Locale.ROOT);
+        visibleEpisodes.setPredicate(item -> query.isEmpty()
+                || (item.getTitle() != null && item.getTitle().toLowerCase(Locale.ROOT).contains(query)));
     }
 
     private void showSleepTimerMenu() {
@@ -588,7 +627,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         sleepButton.setOnAction(event -> showSleepTimerMenu());
 
         chapterLabel = new Label("");
-        chapterLabel.setStyle("-fx-text-fill: gray;");
+        chapterLabel.getStyleClass().add("muted-label");
         chapterLabel.setPrefWidth(160);
         chapterLabel.setMaxWidth(160);
 
@@ -1075,7 +1114,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     dialog.setTitle("Favorites");
                     ObservableList<FeedItem> items = FXCollections.observableArrayList(favorites);
                     ListView<FeedItem> list = new ListView<>(items);
-                    list.setCellFactory(view -> new ListCell<>() {
+                    list.setCellFactory(view -> fullWidthCell(new ListCell<>() {
                         @Override
                         protected void updateItem(FeedItem item, boolean empty) {
                             super.updateItem(item, empty);
@@ -1101,7 +1140,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                             setGraphic(row);
                             setText(null);
                         }
-                    });
+                    }));
                     list.setOnMouseClicked(event -> {
                         if (event.getClickCount() == 2) {
                             FeedItem selected = list.getSelectionModel().getSelectedItem();
@@ -1220,6 +1259,32 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         }
         return closest;
+    }
+
+    private static final String THEME_LABEL_AUTO = "Auto (follow system)";
+    private static final String THEME_LABEL_LIGHT = "Light";
+    private static final String THEME_LABEL_DARK = "Dark";
+    private static final String[] THEME_OPTIONS =
+            {THEME_LABEL_AUTO, THEME_LABEL_LIGHT, THEME_LABEL_DARK};
+
+    private static String themeModeLabel(String mode) {
+        if (ThemeManager.MODE_LIGHT.equals(mode)) {
+            return THEME_LABEL_LIGHT;
+        }
+        if (ThemeManager.MODE_DARK.equals(mode)) {
+            return THEME_LABEL_DARK;
+        }
+        return THEME_LABEL_AUTO;
+    }
+
+    private static String themeModeValue(String label) {
+        if (THEME_LABEL_LIGHT.equals(label)) {
+            return ThemeManager.MODE_LIGHT;
+        }
+        if (THEME_LABEL_DARK.equals(label)) {
+            return ThemeManager.MODE_DARK;
+        }
+        return ThemeManager.MODE_AUTO;
     }
 
     private static ComboBox<String> triStateBox(int value) {
@@ -1383,6 +1448,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         grid.setVgap(8);
         grid.setPadding(new Insets(12));
         int row = 0;
+        grid.add(sectionLabel("Appearance"), 0, row++, 2, 1);
+        grid.add(new Label("Theme:"), 0, row);
+        ComboBox<String> themeBox = new ComboBox<>();
+        themeBox.getItems().addAll(THEME_OPTIONS);
+        themeBox.setValue(themeModeLabel(DesktopPreferences.getThemeMode()));
+        themeBox.valueProperty().addListener((obs, oldValue, newValue) ->
+                ThemeManager.previewMode(themeModeValue(newValue)));
+        grid.add(themeBox, 1, row++);
         grid.add(sectionLabel("Playback"), 0, row++, 2, 1);
         grid.add(new Label("Default speed:"), 0, row);
         ComboBox<String> settingsSpeedBox = new ComboBox<>();
@@ -1472,8 +1545,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
                 DesktopPreferences.setProxyUser(proxyUser.getText().trim());
                 DesktopPreferences.setProxyPassword(proxyPass.getText());
+                DesktopPreferences.setThemeMode(themeModeValue(themeBox.getValue()));
                 applyProxy();
                 scheduleAutoRefresh();
+                ThemeManager.applySavedMode();
                 savedLabel.setText(
                         "Saved — speed/skip/silence/boost apply to newly started playback.");
                 setStatus("Settings saved");
@@ -1487,6 +1562,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         scroll.setFitToWidth(true);
         scroll.setPrefSize(520, 560);
         dialog.setScene(new Scene(new VBox(scroll), 540, 580));
+        dialog.setOnHidden(event -> ThemeManager.applySavedMode());
         dialog.show();
     }
 
@@ -1528,7 +1604,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         meta.setPadding(new Insets(8, 8, 0, 8));
         javafx.scene.web.WebView webView = new javafx.scene.web.WebView();
         javafx.scene.web.WebEngine engine = webView.getEngine();
-        String page = Shownotes.toPage(item.getTitle(), item.getDescription());
+        String page = Shownotes.toPage(item.getTitle(), item.getDescription(), ThemeManager.isDark());
         engine.loadContent(page);
         engine.locationProperty().addListener((obs, oldLocation, newLocation) -> {
             if (newLocation != null
@@ -1640,7 +1716,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 && current.getId() == item.getMedia().getId()) {
             playback.seek(positionMs);
         } else {
-            playback.playAt(item, new ArrayList<>(episodes), positionMs);
+            playback.playAt(item, new ArrayList<>(visibleEpisodes), positionMs);
         }
     }
 
@@ -1757,7 +1833,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         Label status = new Label("Loading devices…");
         status.setWrapText(true);
         ListView<de.danoeh.antennapod.net.sync.gpoddernet.model.GpodnetDevice> list = new ListView<>();
-        list.setCellFactory(view -> new ListCell<>() {
+        list.setCellFactory(view -> fullWidthCell(new ListCell<>() {
             @Override
             protected void updateItem(
                     de.danoeh.antennapod.net.sync.gpoddernet.model.GpodnetDevice device, boolean empty) {
@@ -1779,7 +1855,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 setGraphic(row);
                 setText(null);
             }
-        });
+        }));
         VBox pane = new VBox(8, status, list);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(list, Priority.ALWAYS);
@@ -1960,7 +2036,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         dialog.setTitle("Search results: " + query);
         ObservableList<PodcastSearchResult> items = FXCollections.observableArrayList(results);
         ListView<PodcastSearchResult> list = new ListView<>(items);
-        list.setCellFactory(view -> new ListCell<>() {
+        list.setCellFactory(view -> fullWidthCell(new ListCell<>() {
             @Override
             protected void updateItem(PodcastSearchResult result, boolean empty) {
                 super.updateItem(result, empty);
@@ -1984,7 +2060,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 setGraphic(row);
                 setText(null);
             }
-        });
+        }));
         VBox pane = new VBox(8, list);
         pane.setPadding(new Insets(8));
         dialog.setScene(new Scene(pane, 560, 420));
@@ -2033,7 +2109,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         dialog.setTitle("Queue");
         ObservableList<FeedItem> queueItems = FXCollections.observableArrayList(initialQueue);
         ListView<FeedItem> queueList = new ListView<>(queueItems);
-        queueList.setCellFactory(view -> new ListCell<>() {
+        queueList.setCellFactory(view -> fullWidthCell(new ListCell<>() {
             @Override
             protected void updateItem(FeedItem item, boolean empty) {
                 super.updateItem(item, empty);
@@ -2055,7 +2131,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 setGraphic(row);
                 setText(null);
             }
-        });
+        }));
         queueList.setOnMouseClicked(event -> {
             if (event.getClickCount() == 2) {
                 FeedItem selected = queueList.getSelectionModel().getSelectedItem();
@@ -2385,17 +2461,25 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         private final Tooltip playTooltip = new Tooltip("Play");
 
         EpisodeCell() {
+            setPrefWidth(0);
             titleLabel.setWrapText(false);
             titleLabel.setStyle("-fx-font-weight: bold;");
+            titleLabel.setMinWidth(0);
             titleLabel.setMaxWidth(Double.MAX_VALUE);
             titleLabel.setTooltip(titleTooltip);
             metaLabel.setWrapText(false);
-            metaLabel.setStyle("-fx-text-fill: gray;");
+            metaLabel.getStyleClass().add("muted-label");
+            metaLabel.setMinWidth(0);
             metaLabel.setMaxWidth(Double.MAX_VALUE);
             metaLabel.setTooltip(metaTooltip);
             playButton.setTooltip(playTooltip);
             syncBadge.setStyle("-fx-background-color: -fx-accent; -fx-text-fill: white; "
                     + "-fx-background-radius: 8; -fx-padding: 1 6 1 6; -fx-font-size: 10px;");
+            Region[] fixedControls = {syncBadge, playButton, downloadButton, queueButton,
+                    favoriteButton, infoButton, playedButton};
+            for (Region control : fixedControls) {
+                control.setMinWidth(Region.USE_PREF_SIZE);
+            }
             syncBadge.setTooltip(new Tooltip("Updated by the last sync"));
             syncBadge.setVisible(false);
             syncBadge.setManaged(false);
@@ -2411,7 +2495,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                             && item.getMedia().getId() == current.getId()) {
                         playback.togglePlayPause();
                     } else {
-                        playback.play(item, new ArrayList<>(episodes));
+                        playback.play(item, new ArrayList<>(visibleEpisodes));
                     }
                 }
             });
@@ -2532,11 +2616,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 art.setManaged(false);
             }
             if (item.isPlayed()) {
-                titleLabel.setStyle("-fx-font-weight: normal; -fx-text-fill: gray;");
+                titleLabel.setStyle("-fx-font-weight: normal;");
+                if (!titleLabel.getStyleClass().contains("muted-label")) {
+                    titleLabel.getStyleClass().add("muted-label");
+                }
             } else {
                 titleLabel.setStyle("-fx-font-weight: bold;");
+                titleLabel.getStyleClass().remove("muted-label");
             }
             VBox texts = new VBox(2, titleLabel, metaLabel);
+            texts.setMinWidth(0);
             HBox.setHgrow(texts, Priority.ALWAYS);
             favoriteButton.setGraphic(
                     Icons.star(item.isTagged(FeedItem.TAG_FAVORITE)));
@@ -2544,9 +2633,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     favoriteButton, infoButton, playedButton);
             row.setPadding(new Insets(4));
             if (isCurrent) {
-                row.setStyle("-fx-background-color: derive(-fx-accent, 85%); -fx-background-radius: 4;");
-            } else {
-                row.setStyle("");
+                row.getStyleClass().add("episode-row-current");
             }
             setGraphic(row);
             setText(null);

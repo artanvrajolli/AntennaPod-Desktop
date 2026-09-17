@@ -19,9 +19,18 @@ public class DesktopShownotesTest {
 
     @Test
     public void testPlainTextWrapped() {
-        String page = Shownotes.toPage("Title", "Just some text");
+        String page = Shownotes.toPage("Title", "Just some text", false);
         assertTrue(page.contains("Just some text"));
         assertTrue(page.contains("<h2>Title</h2>"));
+    }
+
+    @Test
+    public void testDarkPageUsesDarkColors() {
+        String lightPage = Shownotes.toPage("Title", "text", false);
+        String darkPage = Shownotes.toPage("Title", "text", true);
+        assertTrue(lightPage.contains("background:#ffffff"));
+        assertTrue(darkPage.contains("background:#1e1e1e"));
+        assertTrue(darkPage.contains("color:#ececec"));
     }
 
     @Test

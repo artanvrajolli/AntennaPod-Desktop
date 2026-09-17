@@ -138,6 +138,14 @@ public final class DesktopPreferences {
         PREFS.putBoolean("autoDeleteDefault", enabled);
     }
 
+    public static String getThemeMode() {
+        return PREFS.get("themeMode", "auto");
+    }
+
+    public static void setThemeMode(String mode) {
+        PREFS.put("themeMode", mode);
+    }
+
     public static String getSleepTimerMode() {
         return PREFS.get("sleepTimerMode", "off");
     }

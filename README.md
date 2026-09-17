@@ -24,6 +24,8 @@ Your data (subscriptions, downloads, playback positions) lives in
 - Sleep timer, per-feed playback speed, skip intro/ending, volume boost,
   favorites, chapters, transcripts (SRT/VTT/JSON), shownotes
 - Playback history, listening statistics, system-tray integration
+- Search/filter your subscriptions and episodes, light/dark/system theme
+  (follows the Windows app theme by default)
 - **Sync** with gPodder.net and Nextcloud (two-way subscriptions, positions,
   played state), including import from another device
 
@@ -48,9 +50,9 @@ Run: `app\build\install\app\bin\app.bat`
 Package the exe (needs a JDK with `jpackage`):
 
 ```bat
-jpackage --type app-image --name "AntennaPod-Desktop" --app-version "0.1.3" ^
+jpackage --type app-image --name "AntennaPod-Desktop" --app-version "0.1.4" ^
   --vendor "AntennaPod" --dest release --input app\build\install\app\lib ^
-  --main-jar app-0.1.3.jar --main-class de.danoeh.antennapod.desktop.Launcher ^
+  --main-jar app-0.1.4.jar --main-class de.danoeh.antennapod.desktop.Launcher ^
   --java-options "--enable-native-access=javafx.media"
 ```
 

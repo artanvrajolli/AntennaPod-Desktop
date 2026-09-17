@@ -1,0 +1,8 @@
+.muted-label {
+    -fx-text-fill: #666666;
+}
+
+.episode-row-current {
+    -fx-background-color: derive(-fx-accent, 85%);
+    -fx-background-radius: 4;
+}

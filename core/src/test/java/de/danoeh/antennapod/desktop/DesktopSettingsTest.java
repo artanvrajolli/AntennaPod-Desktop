@@ -3,6 +3,7 @@ package de.danoeh.antennapod.desktop;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.util.prefs.Preferences;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -22,6 +23,7 @@ public class DesktopSettingsTest {
     private int proxyPort;
     private String proxyUser;
     private String proxyPassword;
+    private String themeMode;
 
     @Before
     public void snapshotPreferences() {
@@ -39,6 +41,7 @@ public class DesktopSettingsTest {
         proxyPort = DesktopPreferences.getProxyPort();
         proxyUser = DesktopPreferences.getProxyUser();
         proxyPassword = DesktopPreferences.getProxyPassword();
+        themeMode = DesktopPreferences.getThemeMode();
     }
 
     @After
@@ -57,6 +60,7 @@ public class DesktopSettingsTest {
         DesktopPreferences.setProxyPort(proxyPort);
         DesktopPreferences.setProxyUser(proxyUser);
         DesktopPreferences.setProxyPassword(proxyPassword);
+        DesktopPreferences.setThemeMode(themeMode);
     }
 
     @Test
@@ -98,6 +102,16 @@ public class DesktopSettingsTest {
         DesktopPreferences.setAutoDeleteDefault(false);
         DesktopPreferences.setAutoRefreshStartup(false);
         DesktopPreferences.setAutoRefreshMinutes(0);
+    }
+
+    @Test
+    public void testThemeModeDefaultsToAutoAndRoundTrips() {
+        Preferences.userNodeForPackage(DesktopPreferences.class).remove("themeMode");
+        assertEquals("auto", DesktopPreferences.getThemeMode());
+        DesktopPreferences.setThemeMode("dark");
+        assertEquals("dark", DesktopPreferences.getThemeMode());
+        DesktopPreferences.setThemeMode("light");
+        assertEquals("light", DesktopPreferences.getThemeMode());
     }
 
     @Test
