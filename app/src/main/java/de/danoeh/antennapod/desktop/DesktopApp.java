@@ -1,5 +1,6 @@
 package de.danoeh.antennapod.desktop;
 
+import de.danoeh.antennapod.model.feed.Chapter;
 import de.danoeh.antennapod.model.feed.Feed;
 import de.danoeh.antennapod.model.feed.FeedItem;
 import de.danoeh.antennapod.model.feed.FeedMedia;
@@ -8,10 +9,13 @@ import de.danoeh.antennapod.net.discovery.PodcastSearchResult;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javafx.application.Application;
@@ -19,23 +23,31 @@ import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.Slider;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextInputControl;
 import javafx.scene.control.ToolBar;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
@@ -55,11 +67,31 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Label feedTitleLabel;
     private Label statusLabel;
     private Label nowPlayingLabel;
-    private Label timeLabel;
+    private Label elapsedLabel;
+    private Label totalLabel;
     private Button playPauseButton;
+    private Button skipBackButton;
+    private Button skipForwardButton;
+    private Button muteButton;
+    private Button chapterPrevButton;
+    private Button chapterNextButton;
     private Slider seekSlider;
-    private boolean sliderProgrammatic;
+    private Slider volumeSlider;
+    private ComboBox<String> speedBox;
+    private ProgressIndicator loadingSpinner;
+    private Scene scene;
+    private boolean sliderDragging;
+    private boolean showRemainingTime;
+    private double lastVolume;
     private final Map<Long, Integer> downloadProgress = new HashMap<>();
+    private final Map<Long, Long> feedLastPlayed = new HashMap<>();
+    private final Set<Long> syncedItemIds = new HashSet<>();
+    private final java.util.concurrent.atomic.AtomicBoolean syncRunning =
+            new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicBoolean autoSyncPending =
+            new java.util.concurrent.atomic.AtomicBoolean();
+    private java.util.concurrent.ScheduledExecutorService autoSyncScheduler;
+    private Button syncButton;
     private SyncManager syncManager;
     private SleepTimer sleepTimer;
     private Button sleepButton;
@@ -93,9 +125,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         playback = new PlaybackManager(database, this);
         SyncManager syncManager = new SyncManager(database, feedUpdater);
-        playback.setPlayActionRecorder(syncManager::recordPlayAction);
+        playback.setPlayActionRecorder(media -> {
+            syncManager.recordPlayAction(media);
+            scheduleAutoSync();
+        });
         playback.setAutoDeleteHandler(this::autoDeleteFinished);
         this.syncManager = syncManager;
+        scheduleAutoSync();
         sleepTimer = new SleepTimer(() -> {
             if (playback.isPlaying()) {
                 playback.togglePlayPause();
@@ -119,7 +155,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         root.setBottom(buildPlayerBar());
 
         stage.setTitle("AntennaPod Desktop");
-        stage.setScene(new Scene(root, 1100, 700));
+        scene = new Scene(root, 1100, 700);
+        scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handleGlobalKey);
+        stage.setScene(scene);
         mainStage = stage;
         stage.setOnCloseRequest(event -> {
             if (trayActive) {
@@ -237,6 +275,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         Button exportButton = new Button("Export", Icons.upload());
         exportButton.setOnAction(event -> exportOpml());
         Button syncButton = new Button("Sync", Icons.sync());
+        this.syncButton = syncButton;
+        updateSyncButtonTooltip();
         syncButton.setOnAction(event -> showSyncDialog());
         Button favoritesButton = new Button("Favorites", Icons.favorite());
         favoritesButton.setOnAction(event -> showFavorites());
@@ -437,48 +477,338 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private VBox buildPlayerBar() {
         Button prevButton = iconButton(Icons.previous(), "Previous episode");
         prevButton.setOnAction(event -> playback.playPrevious());
-        playPauseButton = iconButton(Icons.play(), "Play / pause");
-        playPauseButton.setOnAction(event -> playback.togglePlayPause());
+        skipBackButton = iconButton(Icons.replay10(), "");
+        skipBackButton.setOnAction(event ->
+                playback.skip(-DesktopPreferences.getSkipBackSec() * 1000));
+        playPauseButton = iconButton(Icons.play(26), "Play / pause");
+        playPauseButton.setOnAction(event -> handlePlayPauseAction());
+        skipForwardButton = iconButton(Icons.forward30(), "");
+        skipForwardButton.setOnAction(event ->
+                playback.skip(DesktopPreferences.getSkipForwardSec() * 1000));
         Button nextButton = iconButton(Icons.next(), "Next episode");
         nextButton.setOnAction(event -> playback.playNext());
         Button stopButton = iconButton(Icons.stop(), "Stop");
         stopButton.setOnAction(event -> playback.stop());
+        updateSkipTooltips();
+
+        loadingSpinner = new ProgressIndicator();
+        loadingSpinner.setPrefSize(22, 22);
+        loadingSpinner.setMaxSize(22, 22);
+        loadingSpinner.setVisible(false);
+        StackPane playPauseHolder = new StackPane(playPauseButton, loadingSpinner);
+
         nowPlayingLabel = new Label("Nothing playing");
         nowPlayingLabel.setMaxWidth(Double.MAX_VALUE);
-        HBox.setHgrow(nowPlayingLabel, Priority.ALWAYS);
-        timeLabel = new Label("--:-- / --:--");
-        seekSlider = new Slider(0, 1000, 0);
-        seekSlider.setPrefWidth(320);
-        seekSlider.valueProperty().addListener((obs, oldValue, newValue) -> {
-            if (!sliderProgrammatic && seekSlider.isValueChanging()) {
-                playback.seek(newValue.intValue());
+        nowPlayingLabel.setStyle("-fx-cursor: hand;");
+        nowPlayingLabel.setOnMouseClicked(event -> {
+            FeedMedia current = playback.getCurrentMedia();
+            if (current != null && current.getItem() != null) {
+                showEpisodeDetails(current.getItem());
             }
         });
-        ComboBox<String> speedBox = new ComboBox<>();
-        speedBox.getItems().addAll("0.75x", "1.0x", "1.25x", "1.5x", "1.75x", "2.0x");
+        HBox.setHgrow(nowPlayingLabel, Priority.ALWAYS);
+
+        elapsedLabel = buildTimeLabel(Pos.CENTER_RIGHT);
+        totalLabel = buildTimeLabel(Pos.CENTER_LEFT);
+        Tooltip timeTooltip = new Tooltip("Click to show remaining time");
+        elapsedLabel.setTooltip(timeTooltip);
+        totalLabel.setTooltip(timeTooltip);
+        javafx.event.EventHandler<MouseEvent> timeToggle = event -> {
+            showRemainingTime = !showRemainingTime;
+            updateTimeLabels(playback.getPosition(), playback.getDuration());
+        };
+        elapsedLabel.setOnMouseClicked(timeToggle);
+        totalLabel.setOnMouseClicked(timeToggle);
+
+        seekSlider = new Slider(0, 1000, 0);
+        seekSlider.setPrefWidth(320);
+        seekSlider.setDisable(true);
+        seekSlider.setOnMousePressed(event -> sliderDragging = true);
+        seekSlider.setOnMouseReleased(event -> {
+            if (sliderDragging) {
+                sliderDragging = false;
+                playback.seek((int) seekSlider.getValue());
+            }
+        });
+        seekSlider.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (sliderDragging) {
+                updateTimeLabels(newValue.intValue(), (int) seekSlider.getMax());
+            }
+        });
+
+        speedBox = new ComboBox<>();
+        speedBox.getItems().addAll(SPEED_OPTIONS);
         speedBox.setValue(closestSpeed(DesktopPreferences.getPlaybackSpeed()));
         speedBox.setOnAction(event -> {
             String value = speedBox.getValue().replace("x", "");
             playback.setRate(Float.parseFloat(value));
         });
-        Slider volumeSlider = new Slider(0, 1, DesktopPreferences.getDefaultVolume());
+
+        volumeSlider = new Slider(0, 1, DesktopPreferences.getDefaultVolume());
         volumeSlider.setPrefWidth(100);
+        lastVolume = DesktopPreferences.getDefaultVolume() > 0
+                ? DesktopPreferences.getDefaultVolume() : 1.0;
         volumeSlider.valueProperty().addListener((obs, oldValue, newValue) -> {
-            playback.setVolume(newValue.doubleValue());
-            DesktopPreferences.setDefaultVolume(newValue.doubleValue());
+            double volume = newValue.doubleValue();
+            playback.setVolume(volume);
+            DesktopPreferences.setDefaultVolume(volume);
+            if (volume > 0) {
+                lastVolume = volume;
+            }
+            if (muteButton != null) {
+                muteButton.setGraphic(volume <= 0 ? Icons.volumeOff() : Icons.volumeUp());
+            }
         });
+        muteButton = iconButton(volumeSlider.getValue() <= 0 ? Icons.volumeOff() : Icons.volumeUp(),
+                "Mute");
+        muteButton.setOnAction(event -> toggleMute());
+
         sleepButton = new Button("", Icons.clock());
         sleepButton.setTooltip(new Tooltip("Sleep timer"));
         sleepButton.setOnAction(event -> showSleepTimerMenu());
+
         chapterLabel = new Label("");
         chapterLabel.setStyle("-fx-text-fill: gray;");
         chapterLabel.setPrefWidth(160);
-        HBox playerRow = new HBox(8, prevButton, playPauseButton, nextButton, stopButton,
-                nowPlayingLabel, chapterLabel, seekSlider, timeLabel, speedBox, volumeSlider, sleepButton);
+        chapterLabel.setMaxWidth(160);
+
+        chapterPrevButton = iconButton(Icons.navigateBefore(), "Previous chapter");
+        chapterPrevButton.setOnAction(event -> skipChapter(false));
+        chapterNextButton = iconButton(Icons.navigateAfter(), "Next chapter");
+        chapterNextButton.setOnAction(event -> skipChapter(true));
+        setChapterButtonsVisible(false);
+
+        HBox scrubRow = new HBox(8, elapsedLabel, seekSlider, totalLabel, chapterLabel,
+                chapterPrevButton, chapterNextButton);
+        scrubRow.setAlignment(Pos.CENTER_LEFT);
+        scrubRow.setPadding(new Insets(8, 8, 0, 8));
+        HBox.setHgrow(seekSlider, Priority.ALWAYS);
+        scrubRow.setOnScroll(event -> {
+            if (Math.abs(event.getDeltaY()) >= 20 && playback.getCurrentMedia() != null) {
+                playback.skip(event.getDeltaY() > 0 ? 10000 : -10000);
+                event.consume();
+            }
+        });
+
+        HBox playerRow = new HBox(8, prevButton, skipBackButton, playPauseHolder, skipForwardButton,
+                nextButton, stopButton, nowPlayingLabel, speedBox, muteButton, volumeSlider,
+                sleepButton);
+        playerRow.setAlignment(Pos.CENTER_LEFT);
         playerRow.setPadding(new Insets(8));
         statusLabel = new Label("Ready");
         statusLabel.setPadding(new Insets(0, 8, 8, 8));
-        return new VBox(playerRow, statusLabel);
+        return new VBox(scrubRow, playerRow, statusLabel);
+    }
+
+    private static Label buildTimeLabel(Pos alignment) {
+        Label label = new Label("0:00");
+        label.setMinWidth(52);
+        label.setAlignment(alignment);
+        label.setStyle("-fx-cursor: hand;");
+        return label;
+    }
+
+    private void handlePlayPauseAction() {
+        if (playback.getCurrentMedia() == null) {
+            resumeLastPlayed();
+        } else {
+            playback.togglePlayPause();
+        }
+    }
+
+    private void resumeLastPlayed() {
+        long mediaId = DesktopPreferences.getLastPlayedMediaId();
+        if (mediaId < 0) {
+            setStatus("Nothing to resume");
+            return;
+        }
+        setStatus("Resuming last episode…");
+        background.submit(() -> {
+            try {
+                FeedMedia media = database.getMedia(mediaId);
+                if (media == null) {
+                    setStatus("Could not resume: episode not found");
+                    return;
+                }
+                FeedItem item = database.getItem(media.getItemId());
+                if (item == null || item.getMedia() == null) {
+                    setStatus("Could not resume: episode not found");
+                    return;
+                }
+                List<FeedItem> queue = new ArrayList<>();
+                if (item.getFeedId() != 0) {
+                    Feed feed = database.getFeed(item.getFeedId());
+                    if (feed != null && feed.getItems() != null) {
+                        queue.addAll(feed.getItems());
+                        FeedPrefs prefs = database.getFeedPrefs(item.getFeedId());
+                        EpisodeSorter.sort(queue, prefs.sortCode);
+                    }
+                }
+                if (queue.isEmpty()) {
+                    queue.add(item);
+                }
+                int position = item.getMedia().getPosition();
+                Platform.runLater(() -> playback.playAt(item, queue, position));
+            } catch (Exception e) {
+                setStatus("Could not resume: " + e.getMessage());
+            }
+        });
+    }
+
+    private void skipChapter(boolean forward) {
+        FeedMedia current = playback.getCurrentMedia();
+        if (current == null || current.getItem() == null) {
+            return;
+        }
+        List<Chapter> chapters = current.getItem().getChapters();
+        if (chapters == null || chapters.isEmpty()) {
+            return;
+        }
+        int position = playback.getPosition();
+        int index = Chapter.getAfterPosition(chapters, position);
+        int target;
+        if (forward) {
+            target = index + 1 < chapters.size() ? (int) chapters.get(index + 1).getStart()
+                    : playback.getDuration();
+        } else if (index < 0) {
+            target = 0;
+        } else {
+            long start = chapters.get(index).getStart();
+            target = position > start + 2000 ? (int) start
+                    : (index > 0 ? (int) chapters.get(index - 1).getStart() : 0);
+        }
+        playback.seek(target);
+    }
+
+    private void setChapterButtonsVisible(boolean visible) {
+        if (chapterPrevButton != null) {
+            chapterPrevButton.setVisible(visible);
+            chapterPrevButton.setManaged(visible);
+        }
+        if (chapterNextButton != null) {
+            chapterNextButton.setVisible(visible);
+            chapterNextButton.setManaged(visible);
+        }
+    }
+
+    private void updateSkipTooltips() {
+        if (skipBackButton != null) {
+            skipBackButton.setTooltip(
+                    new Tooltip("Rewind " + DesktopPreferences.getSkipBackSec() + " s"));
+        }
+        if (skipForwardButton != null) {
+            skipForwardButton.setTooltip(
+                    new Tooltip("Forward " + DesktopPreferences.getSkipForwardSec() + " s"));
+        }
+    }
+
+    private void toggleMute() {
+        if (volumeSlider.getValue() > 0) {
+            lastVolume = volumeSlider.getValue();
+            volumeSlider.setValue(0);
+        } else {
+            volumeSlider.setValue(lastVolume > 0 ? lastVolume : 1.0);
+        }
+    }
+
+    private void adjustVolume(double delta) {
+        volumeSlider.setValue(Math.max(0, Math.min(1, volumeSlider.getValue() + delta)));
+    }
+
+    private void handleGlobalKey(KeyEvent event) {
+        Node focusOwner = scene != null ? scene.getFocusOwner() : null;
+        if (focusOwner instanceof TextInputControl || focusOwner instanceof WebView) {
+            return;
+        }
+        switch (event.getCode()) {
+            case SPACE:
+                handlePlayPauseAction();
+                event.consume();
+                break;
+            case LEFT:
+                if (event.isControlDown()) {
+                    playback.playPrevious();
+                } else {
+                    playback.skip(-5000);
+                }
+                event.consume();
+                break;
+            case RIGHT:
+                if (event.isControlDown()) {
+                    playback.playNext();
+                } else {
+                    playback.skip(5000);
+                }
+                event.consume();
+                break;
+            case UP:
+                if (event.isControlDown()) {
+                    adjustVolume(0.05);
+                    event.consume();
+                }
+                break;
+            case DOWN:
+                if (event.isControlDown()) {
+                    adjustVolume(-0.05);
+                    event.consume();
+                }
+                break;
+            case M:
+                if (!event.isControlDown() && !event.isAltDown() && !event.isShiftDown()) {
+                    toggleMute();
+                    event.consume();
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void updateTransportEnabled() {
+        FeedMedia current = playback.getCurrentMedia();
+        boolean hasMedia = current != null;
+        boolean hasChapters = hasMedia && current.getItem() != null
+                && current.getItem().getChapters() != null
+                && !current.getItem().getChapters().isEmpty();
+        if (seekSlider != null) {
+            seekSlider.setDisable(!hasMedia);
+            if (!hasMedia) {
+                seekSlider.setValue(0);
+            }
+        }
+        if (skipBackButton != null) {
+            skipBackButton.setDisable(!hasMedia);
+        }
+        if (skipForwardButton != null) {
+            skipForwardButton.setDisable(!hasMedia);
+        }
+        if (!hasMedia) {
+            updateTimeLabels(0, 0);
+        }
+        setChapterButtonsVisible(hasChapters);
+        if (!hasChapters && chapterLabel != null) {
+            chapterLabel.setText("");
+            chapterLabel.setVisible(false);
+            chapterLabel.setManaged(false);
+        }
+    }
+
+    private void updateLoadingIndicator() {
+        if (loadingSpinner != null) {
+            loadingSpinner.setVisible(loadingMediaId != -1);
+        }
+    }
+
+    private void updateTimeLabels(int positionMs, int durationMs) {
+        int clamped = durationMs > 0 ? Math.min(positionMs, durationMs) : Math.max(positionMs, 0);
+        elapsedLabel.setText(formatDuration(clamped));
+        if (durationMs <= 0) {
+            totalLabel.setText("--:--");
+        } else if (showRemainingTime) {
+            totalLabel.setText("-" + formatDuration(Math.max(durationMs - clamped, 0)));
+        } else {
+            totalLabel.setText(formatDuration(durationMs));
+        }
     }
 
     private void setStatus(String message) {
@@ -489,7 +819,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         background.submit(() -> {
             try {
                 List<Feed> all = database.getAllFeeds();
+                Map<Long, Long> lastPlayed = database.getFeedLastPlayedTimes();
                 Platform.runLater(() -> {
+                    feedLastPlayed.clear();
+                    feedLastPlayed.putAll(lastPlayed);
+                    FeedSorter.sortByLastPlayed(all, lastPlayed);
                     feeds.setAll(all);
                     feedList.refresh();
                     if (selectFeedId != null) {
@@ -508,6 +842,24 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 setStatus("Could not load feeds: " + e.getMessage());
             }
         });
+    }
+
+    private void markFeedPlayed(long feedId) {
+        feedLastPlayed.put(feedId, System.currentTimeMillis());
+        resortFeeds();
+    }
+
+    private void resortFeeds() {
+        List<Feed> sorted = new ArrayList<>(feeds);
+        FeedSorter.sortByLastPlayed(sorted, feedLastPlayed);
+        if (sorted.equals(new ArrayList<>(feeds))) {
+            return;
+        }
+        Feed selected = feedList.getSelectionModel().getSelectedItem();
+        feeds.setAll(sorted);
+        if (selected != null) {
+            feedList.getSelectionModel().select(selected);
+        }
     }
 
     private void loadEpisodes(Feed feed) {
@@ -834,11 +1186,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         return speed <= 0 ? "global" : String.format(Locale.US, "%.2fx", speed);
     }
 
+    private static final String[] SPEED_OPTIONS =
+            {"0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "1.75x", "2.0x", "2.5x", "3.0x"};
+
     private static String closestSpeed(float speed) {
-        String[] options = {"0.75x", "1.0x", "1.25x", "1.5x", "1.75x", "2.0x"};
         String closest = "1.0x";
         float bestDiff = Float.MAX_VALUE;
-        for (String option : options) {
+        for (String option : SPEED_OPTIONS) {
             float diff = Math.abs(Float.parseFloat(option.replace("x", "")) - speed);
             if (diff < bestDiff) {
                 bestDiff = diff;
@@ -1011,33 +1365,33 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         int row = 0;
         grid.add(sectionLabel("Playback"), 0, row++, 2, 1);
         grid.add(new Label("Default speed:"), 0, row);
-        ComboBox<String> speedBox = new ComboBox<>();
-        speedBox.getItems().addAll("0.75x", "1.0x", "1.25x", "1.5x", "1.75x", "2.0x");
-        float currentSpeed = DesktopPreferences.getPlaybackSpeed();
-        String closest = "1.0x";
-        float bestDiff = Float.MAX_VALUE;
-        for (String option : speedBox.getItems()) {
-            float value = Float.parseFloat(option.replace("x", ""));
-            float diff = Math.abs(value - currentSpeed);
-            if (diff < bestDiff) {
-                bestDiff = diff;
-                closest = option;
-            }
-        }
-        speedBox.setValue(closest);
-        grid.add(speedBox, 1, row++);
+        ComboBox<String> settingsSpeedBox = new ComboBox<>();
+        settingsSpeedBox.getItems().addAll(SPEED_OPTIONS);
+        settingsSpeedBox.setValue(closestSpeed(DesktopPreferences.getPlaybackSpeed()));
+        grid.add(settingsSpeedBox, 1, row++);
         grid.add(new Label("Skip intro (seconds):"), 0, row);
         TextField introField = new TextField(String.valueOf(DesktopPreferences.getSkipIntroSec()));
         grid.add(introField, 1, row++);
         grid.add(new Label("Skip ending (seconds):"), 0, row);
         TextField endingField = new TextField(String.valueOf(DesktopPreferences.getSkipEndingSec()));
         grid.add(endingField, 1, row++);
+        grid.add(new Label("Skip back (seconds):"), 0, row);
+        TextField skipBackField = new TextField(String.valueOf(DesktopPreferences.getSkipBackSec()));
+        grid.add(skipBackField, 1, row++);
+        grid.add(new Label("Skip forward (seconds):"), 0, row);
+        TextField skipForwardField =
+                new TextField(String.valueOf(DesktopPreferences.getSkipForwardSec()));
+        grid.add(skipForwardField, 1, row++);
         grid.add(new Label("Volume boost (dB, 0 = off):"), 0, row);
         Slider boostSlider = new Slider(0, 12, DesktopPreferences.getVolumeBoostDb());
         boostSlider.setShowTickLabels(true);
         boostSlider.setMajorTickUnit(3);
         boostSlider.setSnapToTicks(true);
         grid.add(boostSlider, 1, row++);
+        javafx.scene.control.CheckBox skipSilenceBox =
+                new javafx.scene.control.CheckBox("Skip silence (fast-forward quiet parts)");
+        skipSilenceBox.setSelected(DesktopPreferences.getSkipSilence());
+        grid.add(skipSilenceBox, 0, row++, 2, 1);
         grid.add(sectionLabel("Downloads"), 0, row++, 2, 1);
         javafx.scene.control.CheckBox downloadBox =
                 new javafx.scene.control.CheckBox("Auto-download new episodes by default");
@@ -1078,10 +1432,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         saveButton.setOnAction(event -> {
             try {
                 DesktopPreferences.setPlaybackSpeed(
-                        Float.parseFloat(speedBox.getValue().replace("x", "")));
+                        Float.parseFloat(settingsSpeedBox.getValue().replace("x", "")));
                 DesktopPreferences.setSkipIntroSec(parseNonNegative(introField.getText()));
                 DesktopPreferences.setSkipEndingSec(parseNonNegative(endingField.getText()));
+                DesktopPreferences.setSkipBackSec(parseNonNegative(skipBackField.getText()));
+                DesktopPreferences.setSkipForwardSec(parseNonNegative(skipForwardField.getText()));
+                updateSkipTooltips();
                 DesktopPreferences.setVolumeBoostDb((int) boostSlider.getValue());
+                DesktopPreferences.setSkipSilence(skipSilenceBox.isSelected());
                 DesktopPreferences.setAutoDownloadDefault(downloadBox.isSelected());
                 DesktopPreferences.setAutoDeleteDefault(deleteBox.isSelected());
                 DesktopPreferences.setAutoRefreshStartup(startupBox.isSelected());
@@ -1096,7 +1454,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 DesktopPreferences.setProxyPassword(proxyPass.getText());
                 applyProxy();
                 scheduleAutoRefresh();
-                savedLabel.setText("Saved — speed/skip/boost apply to newly started playback.");
+                savedLabel.setText(
+                        "Saved — speed/skip/silence/boost apply to newly started playback.");
                 setStatus("Settings saved");
             } catch (Exception e) {
                 savedLabel.setText("Could not save: " + e.getMessage());
@@ -1284,6 +1643,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         TextField deviceField = new TextField(DesktopPreferences.getSyncDeviceCaption());
         Label syncStatus = new Label(syncStatusText());
         syncStatus.setWrapText(true);
+        javafx.scene.control.CheckBox autoSyncBox = new javafx.scene.control.CheckBox(
+                "Sync automatically (at startup and after playback)");
+        autoSyncBox.setSelected(DesktopPreferences.getAutoSyncPlayback());
         Button saveButton = new Button("Save");
         saveButton.setOnAction(event -> {
             String selected = providerBox.getValue();
@@ -1293,6 +1655,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             DesktopPreferences.setSyncUsername(userField.getText().trim());
             DesktopPreferences.setSyncPassword(passField.getText());
             DesktopPreferences.setSyncDeviceCaption(deviceField.getText().trim());
+            DesktopPreferences.setAutoSyncPlayback(autoSyncBox.isSelected());
             syncStatus.setText(syncStatusText());
             setStatus("Sync settings saved");
         });
@@ -1312,28 +1675,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         Button syncNowButton = new Button("Sync now");
         syncNowButton.setOnAction(event -> {
             saveButton.fire();
-            syncStatus.setText("Syncing…");
-            background.submit(() -> {
-                try {
-                    SyncManager.SyncResult result = syncManager.sync();
-                    String hint = "";
-                    if (result.subscriptionsAdded == 0 && result.actionsUploaded == 0
-                            && result.actionsApplied == 0
-                            && "gpodder".equals(DesktopPreferences.getSyncProvider())) {
-                        hint = deviceImportHint();
-                    }
-                    String message = "Synced: " + result.subscriptionsAdded + " subscriptions added, "
-                            + result.actionsUploaded + " actions uploaded, "
-                            + result.actionsApplied + " actions applied" + hint;
-                    Platform.runLater(() -> {
+            runSync(
+                    () -> {
+                        syncNowButton.setDisable(true);
+                        syncStatus.setText("Syncing…");
+                        setStatus("Syncing…");
+                    },
+                    message -> {
                         syncStatus.setText(message);
-                        reloadFeeds(null);
+                        syncNowButton.setDisable(false);
                     });
-                    setStatus("Sync finished");
-                } catch (Exception e) {
-                    Platform.runLater(() -> syncStatus.setText("Sync failed: " + e.getMessage()));
-                }
-            });
         });
         Button devicesButton = new Button("Import from another device…");
         devicesButton.setOnAction(event -> {
@@ -1356,8 +1707,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         grid.add(deviceField, 1, 4);
         grid.add(new HBox(8, saveButton, testButton, syncNowButton), 0, 5, 2, 1);
         grid.add(devicesButton, 0, 6, 2, 1);
-        grid.add(syncStatus, 0, 7, 2, 1);
-        dialog.setScene(new Scene(new VBox(grid), 460, 400));
+        grid.add(autoSyncBox, 0, 7, 2, 1);
+        grid.add(syncStatus, 0, 8, 2, 1);
+        dialog.setScene(new Scene(new VBox(grid), 460, 430));
         dialog.show();
     }
 
@@ -1452,7 +1804,117 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             return "Sync is disabled.";
         }
         return "Sync enabled (" + DesktopPreferences.getSyncProvider() + " as "
-                + DesktopPreferences.getSyncUsername() + ").";
+                + DesktopPreferences.getSyncUsername() + ")." + lastSyncSuffix();
+    }
+
+    private String syncResultText(SyncManager.SyncResult result) {
+        StringBuilder message = new StringBuilder("Synced: ")
+                .append(result.subscriptionsAdded).append(" subscriptions added, ")
+                .append(result.actionsUploaded).append(" actions uploaded, ")
+                .append(result.actionsApplied).append(" state updates applied");
+        if (!result.playedItemIds.isEmpty()) {
+            message.append(" · ").append(result.playedItemIds.size()).append(" marked finished");
+        }
+        if (!result.unplayedItemIds.isEmpty()) {
+            message.append(" · ").append(result.unplayedItemIds.size())
+                    .append(" marked unfinished");
+        }
+        message.append(".").append(lastSyncSuffix());
+        if (result.subscriptionsAdded == 0 && result.actionsUploaded == 0
+                && result.actionsApplied == 0
+                && "gpodder".equals(DesktopPreferences.getSyncProvider())) {
+            message.append(deviceImportHint());
+        }
+        return message.toString();
+    }
+
+    private static String lastSyncSuffix() {
+        long last = DesktopPreferences.getLastSyncTime();
+        if (last <= 0) {
+            return " Never synced yet.";
+        }
+        return " Last synced "
+                + new SimpleDateFormat("d MMM HH:mm", Locale.US).format(new Date(last)) + ".";
+    }
+
+    private void updateSyncButtonTooltip() {
+        if (syncButton == null) {
+            return;
+        }
+        long last = DesktopPreferences.getLastSyncTime();
+        syncButton.setTooltip(new Tooltip(last <= 0 ? "Sync — never synced"
+                : "Sync — last synced "
+                        + new SimpleDateFormat("d MMM HH:mm", Locale.US).format(new Date(last))));
+    }
+
+    private void scheduleAutoSync() {
+        if (syncManager == null || !DesktopPreferences.isSyncEnabled()
+                || !DesktopPreferences.getAutoSyncPlayback()) {
+            return;
+        }
+        if (!autoSyncPending.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            if (autoSyncScheduler == null) {
+                autoSyncScheduler =
+                        java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                            Thread thread = new Thread(r, "auto-sync");
+                            thread.setDaemon(true);
+                            return thread;
+                        });
+            }
+            autoSyncScheduler.schedule(() -> {
+                autoSyncPending.set(false);
+                if (!syncRunning.get()) {
+                    runSync(null, null);
+                }
+            }, 20, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            autoSyncPending.set(false);
+        }
+    }
+
+    private void runSync(Runnable onStart, java.util.function.Consumer<String> onFinish) {
+        if (!syncRunning.compareAndSet(false, true)) {
+            if (onFinish != null) {
+                onFinish.accept("Sync already running");
+            }
+            return;
+        }
+        if (onStart != null) {
+            onStart.run();
+        }
+        background.submit(() -> {
+            try {
+                SyncManager.SyncResult result = syncManager.sync();
+                DesktopPreferences.setLastSyncTime(System.currentTimeMillis());
+                String message = syncResultText(result);
+                String summary = result.playedItemIds.isEmpty()
+                        ? "Sync finished"
+                        : "Sync finished: " + result.playedItemIds.size() + " marked finished";
+                Platform.runLater(() -> {
+                    syncedItemIds.clear();
+                    syncedItemIds.addAll(result.changedItemIds);
+                    if (onFinish != null) {
+                        onFinish.accept(message);
+                    }
+                    updateSyncButtonTooltip();
+                    reloadFeeds(null);
+                    episodeList.refresh();
+                });
+                setStatus(summary);
+            } catch (Exception e) {
+                Platform.runLater(() -> {
+                    if (onFinish != null) {
+                        onFinish.accept("Sync failed: " + e.getMessage());
+                    }
+                });
+                setStatus("Sync failed: " + e.getMessage());
+            } finally {
+                syncRunning.set(false);
+            }
+        });
     }
 
     private void search(String query) {
@@ -1733,14 +2195,18 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private void updatePlayPauseButton() {
         if (playPauseButton != null) {
             playPauseButton.setGraphic(playback != null && playback.isPlaying()
-                    ? Icons.pause() : Icons.play());
+                    ? Icons.pause(26) : Icons.play(26));
         }
     }
 
     @Override
     public void onStateChanged() {
         updatePlayPauseButton();
+        updateTransportEnabled();
         FeedMedia current = playback.getCurrentMedia();
+        if (current != null && current.getItem() != null && current.getItem().getFeedId() != 0) {
+            markFeedPlayed(current.getItem().getFeedId());
+        }
         String title = null;
         if (current != null && current.getItem() != null) {
             title = current.getItem().getTitle();
@@ -1762,31 +2228,31 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         FeedMedia current = playback.getCurrentMedia();
         loadingMediaId = loading && current != null ? current.getId() : -1;
         episodeList.refresh();
+        updateLoadingIndicator();
     }
 
     @Override
     public void onPositionChanged(int positionMs, int durationMs) {
-        sliderProgrammatic = true;
-        try {
-            seekSlider.setMax(Math.max(durationMs, 1));
-            seekSlider.setValue(Math.min(positionMs, Math.max(durationMs, 1)));
-            timeLabel.setText(formatDuration(positionMs) + " / " + formatDuration(durationMs));
-            FeedMedia current = playback.getCurrentMedia();
-            if (current != null && current.getItem() != null && current.getItem().getChapters() != null) {
-                int index = de.danoeh.antennapod.model.feed.Chapter.getAfterPosition(
-                        current.getItem().getChapters(), positionMs);
-                if (index >= 0) {
-                    chapterLabel.setText("▸ "
-                            + current.getItem().getChapters().get(index).getTitle());
-                } else {
-                    chapterLabel.setText("");
-                }
-            } else {
-                chapterLabel.setText("");
-            }
-        } finally {
-            sliderProgrammatic = false;
+        if (sliderDragging) {
+            return;
         }
+        seekSlider.setMax(Math.max(durationMs, 1));
+        seekSlider.setValue(Math.min(positionMs, Math.max(durationMs, 1)));
+        updateTimeLabels(positionMs, durationMs);
+        FeedMedia current = playback.getCurrentMedia();
+        if (current != null && current.getItem() != null && current.getItem().getChapters() != null) {
+            int index = Chapter.getAfterPosition(current.getItem().getChapters(), positionMs);
+            if (index >= 0) {
+                chapterLabel.setText("▸ "
+                        + current.getItem().getChapters().get(index).getTitle());
+                chapterLabel.setVisible(true);
+                chapterLabel.setManaged(true);
+                return;
+            }
+        }
+        chapterLabel.setText("");
+        chapterLabel.setVisible(false);
+        chapterLabel.setManaged(false);
     }
 
     private static String formatDuration(int millis) {
@@ -1822,6 +2288,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             // ignore
         }
         try {
+            if (autoSyncScheduler != null) {
+                autoSyncScheduler.shutdownNow();
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        try {
             playback.shutdown();
         } catch (Exception e) {
             // ignore
@@ -1839,6 +2312,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private class EpisodeCell extends ListCell<FeedItem> {
         private final Label titleLabel = new Label();
         private final Label metaLabel = new Label();
+        private final Label syncBadge = new Label("SYNCED");
         private final Button playButton = iconButton(Icons.play(), "Play");
         private final Button downloadButton = new Button("Download", Icons.download());
         private final Button queueButton = iconButton(Icons.queueAdd(), "Add to queue");
@@ -1854,6 +2328,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             metaLabel.setWrapText(true);
             metaLabel.setStyle("-fx-text-fill: gray;");
             metaLabel.setMaxWidth(Double.MAX_VALUE);
+            syncBadge.setStyle("-fx-background-color: -fx-accent; -fx-text-fill: white; "
+                    + "-fx-background-radius: 8; -fx-padding: 1 6 1 6; -fx-font-size: 10px;");
+            syncBadge.setTooltip(new Tooltip("Updated by the last sync"));
+            syncBadge.setVisible(false);
+            syncBadge.setManaged(false);
             playButton.setOnAction(event -> {
                 FeedItem item = getItem();
                 if (item != null) {
@@ -1956,6 +2435,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
             playedButton.setGraphic(item.isPlayed() ? Icons.replay() : Icons.check());
             metaLabel.setText(meta.toString());
+            boolean synced = syncedItemIds.contains(item.getId());
+            syncBadge.setVisible(synced);
+            syncBadge.setManaged(synced);
             if (item.isPlayed()) {
                 titleLabel.setStyle("-fx-font-weight: normal; -fx-text-fill: gray;");
             } else {
@@ -1965,8 +2447,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             HBox.setHgrow(texts, Priority.ALWAYS);
             favoriteButton.setGraphic(
                     Icons.star(item.isTagged(FeedItem.TAG_FAVORITE)));
-            HBox row = new HBox(8, texts, playButton, downloadButton, queueButton, favoriteButton,
-                    infoButton, playedButton);
+            HBox row = new HBox(8, texts, syncBadge, playButton, downloadButton, queueButton,
+                    favoriteButton, infoButton, playedButton);
             row.setPadding(new Insets(4));
             if (isCurrent) {
                 row.setStyle("-fx-background-color: derive(-fx-accent, 85%); -fx-background-radius: 4;");

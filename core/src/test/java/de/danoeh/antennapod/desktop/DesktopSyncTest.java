@@ -37,6 +37,8 @@ public class DesktopSyncTest {
     private String baseUrl;
     private DesktopDatabase database;
     private FakeSyncService fakeService;
+    private String originalSyncProvider;
+    private String originalSyncUsername;
 
     static class FakeSyncService implements ISyncService {
         List<String> remoteAdded = new ArrayList<>();
@@ -135,6 +137,8 @@ public class DesktopSyncTest {
     @Before
     public void setUp() throws Exception {
         System.setProperty("antennapod.desktop.dataDir", tempFolder.getRoot().getAbsolutePath());
+        originalSyncProvider = DesktopPreferences.getSyncProvider();
+        originalSyncUsername = DesktopPreferences.getSyncUsername();
         DesktopPreferences.setSyncProvider("gpodder");
         DesktopPreferences.setSyncUsername("testuser");
         byte[] feedXml = Files.readAllBytes(
@@ -162,8 +166,8 @@ public class DesktopSyncTest {
     public void tearDown() throws Exception {
         server.stop(0);
         database.close();
-        DesktopPreferences.setSyncProvider("none");
-        DesktopPreferences.setSyncUsername("");
+        DesktopPreferences.setSyncProvider(originalSyncProvider);
+        DesktopPreferences.setSyncUsername(originalSyncUsername);
         System.clearProperty("antennapod.desktop.dataDir");
     }
 
@@ -206,6 +210,9 @@ public class DesktopSyncTest {
         SyncManager.SyncResult result = manager.sync();
         assertEquals(1, result.actionsUploaded);
         assertEquals(1, result.actionsApplied);
+        assertTrue(result.changedItemIds.contains(item.getId()));
+        assertTrue(result.playedItemIds.isEmpty());
+        assertTrue(result.unplayedItemIds.isEmpty());
         assertTrue(database.getQueuedSyncActions().isEmpty());
         assertEquals(120000, database.getMedia(item.getMedia().getId()).getPosition());
     }
@@ -247,11 +254,41 @@ public class DesktopSyncTest {
                 .guid(item.getItemIdentifier())
                 .started(0).position(0).total(600).build();
         fakeService.remoteActions.add(remoteUnplayed);
+        item.setPlayed(true);
+        database.setItemState(item.getId(), item.getPlayState());
         SyncManager.SyncResult second = manager.sync();
         assertEquals(1, second.actionsApplied);
+        assertTrue(second.changedItemIds.contains(item.getId()));
+        assertTrue(second.unplayedItemIds.contains(item.getId()));
+        assertTrue(second.playedItemIds.isEmpty());
         FeedItem reloaded = database.getItem(item.getId());
         assertTrue(!reloaded.isPlayed());
         assertEquals(0, reloaded.getMedia().getPosition());
+    }
+
+    @Test
+    public void testRemoteFinishedActionReportedInSyncResult() throws Exception {
+        FeedUpdater updater = new FeedUpdater(database);
+        Feed feed = updater.subscribe(baseUrl + "/local.xml");
+        Feed stored = database.getFeed(feed.getId());
+        FeedItem item = stored.getItems().get(0);
+        item.setFeed(stored);
+        item.getMedia().setDuration(600000);
+
+        SyncManager manager = new TestSyncManager(database, updater, fakeService);
+        EpisodeAction remoteFinished = new EpisodeAction.Builder(
+                feed.getDownloadUrl(), item.getMedia().getDownloadUrl(), EpisodeAction.Action.PLAY)
+                .timestamp(new Date(System.currentTimeMillis() + 60000))
+                .guid(item.getItemIdentifier())
+                .started(0).position(590).total(600).build();
+        fakeService.remoteActions.add(remoteFinished);
+
+        SyncManager.SyncResult result = manager.sync();
+        assertEquals(1, result.actionsApplied);
+        assertTrue(result.changedItemIds.contains(item.getId()));
+        assertTrue(result.playedItemIds.contains(item.getId()));
+        assertTrue(result.unplayedItemIds.isEmpty());
+        assertTrue(database.getItem(item.getId()).isPlayed());
     }
 
     @Test

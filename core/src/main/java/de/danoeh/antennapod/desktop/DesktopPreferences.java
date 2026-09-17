@@ -106,6 +106,22 @@ public final class DesktopPreferences {
         return !"none".equals(getSyncProvider()) && !getSyncUsername().isEmpty();
     }
 
+    public static long getLastSyncTime() {
+        return PREFS.getLong("lastSyncTime", 0);
+    }
+
+    public static void setLastSyncTime(long timeMs) {
+        PREFS.putLong("lastSyncTime", timeMs);
+    }
+
+    public static boolean getAutoSyncPlayback() {
+        return PREFS.getBoolean("autoSyncPlayback", true);
+    }
+
+    public static void setAutoSyncPlayback(boolean enabled) {
+        PREFS.putBoolean("autoSyncPlayback", enabled);
+    }
+
     public static boolean getAutoDownloadDefault() {
         return PREFS.getBoolean("autoDownloadDefault", false);
     }
@@ -162,12 +178,36 @@ public final class DesktopPreferences {
         PREFS.putInt("skipEndingSec", Math.max(seconds, 0));
     }
 
+    public static int getSkipBackSec() {
+        return PREFS.getInt("skipBackSec", 10);
+    }
+
+    public static void setSkipBackSec(int seconds) {
+        PREFS.putInt("skipBackSec", Math.max(seconds, 0));
+    }
+
+    public static int getSkipForwardSec() {
+        return PREFS.getInt("skipForwardSec", 30);
+    }
+
+    public static void setSkipForwardSec(int seconds) {
+        PREFS.putInt("skipForwardSec", Math.max(seconds, 0));
+    }
+
     public static int getVolumeBoostDb() {
         return PREFS.getInt("volumeBoostDb", 0);
     }
 
     public static void setVolumeBoostDb(int db) {
         PREFS.putInt("volumeBoostDb", Math.max(0, Math.min(db, 12)));
+    }
+
+    public static boolean getSkipSilence() {
+        return PREFS.getBoolean("skipSilence", false);
+    }
+
+    public static void setSkipSilence(boolean enabled) {
+        PREFS.putBoolean("skipSilence", enabled);
     }
 
     public static boolean getAutoRefreshStartup() {

@@ -34,6 +34,11 @@ public final class PlaybackManager {
     private java.util.function.Consumer<FeedMedia> autoDeleteHandler;
     private boolean stopAfterCurrent;
     private int pendingSeekMs = -1;
+    private boolean suppressNextPlayAction;
+    private final SilenceSkipper silenceSkipper = new SilenceSkipper();
+
+    private static final double SILENCE_RATE_BOOST = 4.0;
+    private static final double MAX_RATE = 8.0;
 
     private float effectiveSpeed() {
         float rate = DesktopPreferences.getPlaybackSpeed();
@@ -91,6 +96,7 @@ public final class PlaybackManager {
     }
 
     private void startPlayback(FeedMedia media) {
+        saveAndRecordCurrent();
         stopPlayer();
         currentMedia = media;
         String source = media.localFileAvailable() && media.getLocalFileUrl() != null
@@ -108,6 +114,7 @@ public final class PlaybackManager {
         player.setRate(effectiveSpeed());
         player.setVolume(DesktopPreferences.getDefaultVolume());
         applyVolumeBoost();
+        configureSilenceSkipping();
         int startPosition = Math.max(media.getPosition(), DesktopPreferences.getSkipIntroSec() * 1000);
         player.setOnReady(() -> {
             int duration = (int) player.getTotalDuration().toMillis();
@@ -145,6 +152,7 @@ public final class PlaybackManager {
         if (currentMedia == null) {
             return;
         }
+        recordFinishedAction();
         currentMedia.setPosition(0);
         currentMedia.setPlayedDuration(currentMedia.getPlayedDuration() + currentMedia.getDuration());
         saveMedia();
@@ -181,6 +189,29 @@ public final class PlaybackManager {
             }
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    private void configureSilenceSkipping() {
+        silenceSkipper.reset();
+        if (!DesktopPreferences.getSkipSilence()) {
+            return;
+        }
+        player.setAudioSpectrumListener((timestamp, duration, magnitudes, phases) -> {
+            boolean silent = silenceSkipper.update(magnitudes, System.currentTimeMillis());
+            applySilenceRate(silent);
+        });
+    }
+
+    private void applySilenceRate(boolean silent) {
+        if (player == null) {
+            return;
+        }
+        float target = silent
+                ? (float) Math.min(effectiveSpeed() * SILENCE_RATE_BOOST, MAX_RATE)
+                : effectiveSpeed();
+        if (Math.abs(player.getRate() - target) > 0.01f) {
+            player.setRate(target);
         }
     }
 
@@ -224,6 +255,10 @@ public final class PlaybackManager {
     }
 
     private void recordPlayAction() {
+        if (suppressNextPlayAction) {
+            suppressNextPlayAction = false;
+            return;
+        }
         if (playActionRecorder != null && currentMedia != null) {
             try {
                 playActionRecorder.accept(currentMedia);
@@ -233,10 +268,36 @@ public final class PlaybackManager {
         }
     }
 
+    private void saveAndRecordCurrent() {
+        if (currentMedia == null || player == null) {
+            return;
+        }
+        saveMedia();
+        recordPlayAction();
+    }
+
+    private void recordFinishedAction() {
+        currentMedia.setPosition(currentMedia.getDuration());
+        recordPlayAction();
+        suppressNextPlayAction = true;
+    }
+
     public synchronized void seek(int positionMs) {
         if (player != null) {
-            player.seek(new Duration(positionMs));
+            player.seek(new Duration(clampPosition(positionMs)));
         }
+    }
+
+    public synchronized void skip(int deltaMs) {
+        if (player == null || deltaMs == 0) {
+            return;
+        }
+        seek((int) player.getCurrentTime().toMillis() + deltaMs);
+    }
+
+    private int clampPosition(int positionMs) {
+        int duration = getDuration();
+        return Math.max(0, duration > 0 ? Math.min(positionMs, duration) : positionMs);
     }
 
     public synchronized void setRate(float rate) {
@@ -301,7 +362,8 @@ public final class PlaybackManager {
         return currentMedia != null ? currentMedia.getDuration() : 0;
     }
 
-    public void shutdown() {
+    public synchronized void shutdown() {
+        saveAndRecordCurrent();
         scheduler.shutdownNow();
         stopPlayer();
     }
