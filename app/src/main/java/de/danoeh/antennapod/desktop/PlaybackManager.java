@@ -113,6 +113,12 @@ public final class PlaybackManager {
         }
         player.setRate(effectiveSpeed());
         player.setVolume(DesktopPreferences.getDefaultVolume());
+        player.statusProperty().addListener((obs, oldStatus, newStatus) -> {
+            if (newStatus == MediaPlayer.Status.PLAYING || newStatus == MediaPlayer.Status.PAUSED
+                    || newStatus == MediaPlayer.Status.STOPPED) {
+                notifyState();
+            }
+        });
         applyVolumeBoost();
         configureSilenceSkipping();
         int startPosition = Math.max(media.getPosition(), DesktopPreferences.getSkipIntroSec() * 1000);

@@ -50,7 +50,6 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
-import javafx.stage.Modality;
 import javafx.stage.Stage;
 
 public class DesktopApp extends Application implements PlaybackManager.Listener,
@@ -69,6 +68,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private ListView<FeedItem> episodeList;
     private TextField feedFilterField;
     private TextField episodeFilterField;
+    private VBox sidebar;
+    private Label sidebarTitle;
+    private VBox sidebarContent;
     private Label feedTitleLabel;
     private Label statusLabel;
     private Label nowPlayingLabel;
@@ -158,6 +160,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         root.setTop(buildToolbar());
         root.setLeft(buildFeedPane());
         root.setCenter(buildEpisodePane());
+        root.setRight(buildSidebar());
         root.setBottom(buildPlayerBar());
 
         stage.setTitle("AntennaPod Desktop");
@@ -184,8 +187,23 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
 
             @Override
+            public void onPrevious() {
+                playback.playPrevious();
+            }
+
+            @Override
             public void onNext() {
                 playback.playNext();
+            }
+
+            @Override
+            public void onSkipBack() {
+                playback.skip(-DesktopPreferences.getSkipBackSec() * 1000);
+            }
+
+            @Override
+            public void onSkipForward() {
+                playback.skip(DesktopPreferences.getSkipForwardSec() * 1000);
             }
 
             @Override
@@ -357,6 +375,46 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private static <T> ListCell<T> fullWidthCell(ListCell<T> cell) {
         cell.setPrefWidth(0);
         return cell;
+    }
+
+    private VBox buildSidebar() {
+        sidebarTitle = new Label();
+        sidebarTitle.getStyleClass().add("sidebar-title");
+        Button closeButton = iconButton(Icons.remove(), "Close panel");
+        closeButton.setOnAction(event -> hideSidebar());
+        HBox header = new HBox(8, sidebarTitle, closeButton);
+        header.getStyleClass().add("sidebar-header");
+        HBox.setHgrow(sidebarTitle, Priority.ALWAYS);
+        sidebarContent = new VBox();
+        sidebarContent.getStyleClass().add("sidebar-content");
+        VBox.setVgrow(sidebarContent, Priority.ALWAYS);
+        sidebar = new VBox(header, sidebarContent);
+        sidebar.getStyleClass().add("sidebar");
+        sidebar.setPrefWidth(460);
+        sidebar.setMinWidth(340);
+        sidebar.setVisible(false);
+        sidebar.setManaged(false);
+        return sidebar;
+    }
+
+    private void showSidebar(String title, Node content) {
+        sidebarTitle.setText(title);
+        sidebarContent.getChildren().setAll(content);
+        if (content instanceof Region) {
+            VBox.setVgrow(content, Priority.ALWAYS);
+        }
+        sidebar.setVisible(true);
+        sidebar.setManaged(true);
+    }
+
+    private void hideSidebar() {
+        if (!sidebar.isVisible()) {
+            return;
+        }
+        sidebarContent.getChildren().clear();
+        sidebar.setVisible(false);
+        sidebar.setManaged(false);
+        ThemeManager.applySavedMode();
     }
 
     private class FeedCell extends ListCell<Feed> {
@@ -1109,9 +1167,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             try {
                 List<FeedItem> favorites = database.getFavorites();
                 Platform.runLater(() -> {
-                    Stage dialog = new Stage();
-                    dialog.initModality(Modality.APPLICATION_MODAL);
-                    dialog.setTitle("Favorites");
                     ObservableList<FeedItem> items = FXCollections.observableArrayList(favorites);
                     ListView<FeedItem> list = new ListView<>(items);
                     list.setCellFactory(view -> fullWidthCell(new ListCell<>() {
@@ -1151,8 +1206,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     });
                     VBox pane = new VBox(8, list);
                     pane.setPadding(new Insets(8));
-                    dialog.setScene(new Scene(pane, 560, 420));
-                    dialog.show();
+                    showSidebar("Favorites", pane);
                 });
             } catch (Exception e) {
                 setStatus("Could not load favorites: " + e.getMessage());
@@ -1172,9 +1226,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void showFeedSettingsDialog(Feed feed, FeedPrefs prefs) {
-        Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.setTitle("Feed settings: " + feed.getTitle());
         javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
         grid.setHgap(8);
         grid.setVgap(8);
@@ -1229,7 +1280,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 database.saveFeedPrefs(prefs);
                 setStatus("Feed settings saved");
                 Platform.runLater(() -> {
-                    dialog.close();
+                    hideSidebar();
                     loadEpisodes(feed);
                 });
             } catch (Exception e) {
@@ -1237,8 +1288,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         }));
         grid.add(saveButton, 0, row, 2, 1);
-        dialog.setScene(new Scene(new VBox(grid), 480, 420));
-        dialog.show();
+        showSidebar("Feed settings: " + feed.getTitle(), new VBox(grid));
     }
 
     private static String speedLabel(float speed) {
@@ -1323,9 +1373,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             try {
                 List<FeedItem> history = database.getPlaybackHistory(200);
                 Platform.runLater(() -> {
-                    Stage dialog = new Stage();
-                    dialog.initModality(Modality.APPLICATION_MODAL);
-                    dialog.setTitle("Playback history");
                     ObservableList<FeedItem> items = FXCollections.observableArrayList(history);
                     ListView<FeedItem> list = new ListView<>(items);
                     SimpleDateFormat dateFormat = new SimpleDateFormat("d MMM yyyy HH:mm", Locale.US);
@@ -1365,8 +1412,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     VBox pane = new VBox(8, list, clearButton);
                     pane.setPadding(new Insets(8));
                     VBox.setVgrow(list, Priority.ALWAYS);
-                    dialog.setScene(new Scene(pane, 560, 420));
-                    dialog.show();
+                    showSidebar("Playback history", pane);
                 });
             } catch (Exception e) {
                 setStatus("Could not load history: " + e.getMessage());
@@ -1411,14 +1457,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     }
                 }
                 Platform.runLater(() -> {
-                    Stage dialog = new Stage();
-                    dialog.initModality(Modality.APPLICATION_MODAL);
-                    dialog.setTitle("Statistics");
                     ListView<String> list = new ListView<>(FXCollections.observableArrayList(lines));
                     VBox pane = new VBox(8, list);
                     pane.setPadding(new Insets(8));
-                    dialog.setScene(new Scene(pane, 560, 420));
-                    dialog.show();
+                    showSidebar("Statistics", pane);
                 });
             } catch (Exception e) {
                 setStatus("Could not load statistics: " + e.getMessage());
@@ -1440,9 +1482,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void showSettings() {
-        Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.setTitle("Settings");
         javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
         grid.setHgap(8);
         grid.setVgap(8);
@@ -1560,10 +1599,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         grid.add(savedLabel, 1, row++);
         javafx.scene.control.ScrollPane scroll = new javafx.scene.control.ScrollPane(grid);
         scroll.setFitToWidth(true);
-        scroll.setPrefSize(520, 560);
-        dialog.setScene(new Scene(new VBox(scroll), 540, 580));
-        dialog.setOnHidden(event -> ThemeManager.applySavedMode());
-        dialog.show();
+        showSidebar("Settings", scroll);
     }
 
     private static Label sectionLabel(String text) {
@@ -1581,9 +1617,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void showEpisodeDetails(FeedItem item) {
-        Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.setTitle(item.getTitle() != null ? item.getTitle() : "Episode");
         Label meta = new Label();
         StringBuilder metaText = new StringBuilder();
         if (item.getFeed() != null && item.getFeed().getTitle() != null) {
@@ -1647,7 +1680,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                             chapterList.getSelectionModel().getSelectedItem();
                     if (selected != null && item.getMedia() != null) {
                         seekToChapter(item, (int) selected.getStart());
-                        dialog.close();
+                        hideSidebar();
                     }
                 }
             });
@@ -1655,8 +1688,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             pane.getChildren().add(pane.getChildren().size() - 1, chapterList);
         }
         VBox.setVgrow(webView, Priority.ALWAYS);
-        dialog.setScene(new Scene(pane, 700, 560));
-        dialog.show();
+        showSidebar(item.getTitle() != null ? item.getTitle() : "Episode", pane);
     }
 
     private void showTranscript(FeedItem item) {
@@ -1665,9 +1697,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             try {
                 de.danoeh.antennapod.model.feed.Transcript transcript = TranscriptFetcher.fetch(item);
                 Platform.runLater(() -> {
-                    Stage dialog = new Stage();
-                    dialog.initModality(Modality.APPLICATION_MODAL);
-                    dialog.setTitle("Transcript: " + item.getTitle());
                     ListView<de.danoeh.antennapod.model.feed.TranscriptSegment> list =
                             new ListView<>();
                     for (int i = 0; i < transcript.getSegmentCount(); i++) {
@@ -1695,14 +1724,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                                     list.getSelectionModel().getSelectedItem();
                             if (selected != null && item.getMedia() != null) {
                                 seekToChapter(item, (int) selected.getStartTime());
-                                dialog.close();
+                                hideSidebar();
                             }
                         }
                     });
                     VBox pane = new VBox(8, list);
                     pane.setPadding(new Insets(8));
-                    dialog.setScene(new Scene(pane, 640, 480));
-                    dialog.show();
+                    showSidebar("Transcript: " + item.getTitle(), pane);
                 });
             } catch (Exception e) {
                 setStatus("Could not load transcript: " + e.getMessage());
@@ -1721,9 +1749,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void showSyncDialog() {
-        Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.setTitle("Sync settings");
         ComboBox<String> providerBox = new ComboBox<>();
         providerBox.getItems().addAll("Disabled", "gPodder.net", "Nextcloud");
         String provider = DesktopPreferences.getSyncProvider();
@@ -1805,8 +1830,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         grid.add(devicesButton, 0, 6, 2, 1);
         grid.add(autoSyncBox, 0, 7, 2, 1);
         grid.add(syncStatus, 0, 8, 2, 1);
-        dialog.setScene(new Scene(new VBox(grid), 460, 430));
-        dialog.show();
+        showSidebar("Sync settings", new VBox(grid));
     }
 
     private String deviceImportHint() {
@@ -1827,9 +1851,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void showDevicesDialog() {
-        Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.setTitle("Devices on sync account");
         Label status = new Label("Loading devices…");
         status.setWrapText(true);
         ListView<de.danoeh.antennapod.net.sync.gpoddernet.model.GpodnetDevice> list = new ListView<>();
@@ -1849,7 +1870,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 Button importButton = new Button("Import subscriptions");
                 boolean own = DesktopPreferences.getSyncDeviceId().equals(device.getId());
                 importButton.setDisable(own || device.getSubscriptions() <= 0);
-                importButton.setOnAction(event -> importDeviceSubscriptions(device, status, dialog));
+                importButton.setOnAction(event -> importDeviceSubscriptions(device, status));
                 HBox row = new HBox(8, title, importButton);
                 HBox.setHgrow(title, Priority.ALWAYS);
                 setGraphic(row);
@@ -1859,8 +1880,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         VBox pane = new VBox(8, status, list);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(list, Priority.ALWAYS);
-        dialog.setScene(new Scene(pane, 560, 380));
-        dialog.show();
+        showSidebar("Devices on sync account", pane);
         background.submit(() -> {
             try {
                 List<de.danoeh.antennapod.net.sync.gpoddernet.model.GpodnetDevice> devices =
@@ -1879,7 +1899,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private void importDeviceSubscriptions(
             de.danoeh.antennapod.net.sync.gpoddernet.model.GpodnetDevice device,
-            Label status, Stage dialog) {
+            Label status) {
         status.setText("Importing from " + device.getCaption() + "…");
         background.submit(() -> {
             try {
@@ -2031,9 +2051,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void showSearchResults(String query, List<PodcastSearchResult> results) {
-        Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.setTitle("Search results: " + query);
         ObservableList<PodcastSearchResult> items = FXCollections.observableArrayList(results);
         ListView<PodcastSearchResult> list = new ListView<>(items);
         list.setCellFactory(view -> fullWidthCell(new ListCell<>() {
@@ -2051,7 +2068,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 Button subscribeButton = new Button("Subscribe");
                 subscribeButton.setOnAction(event -> {
                     if (result.feedUrl != null) {
-                        dialog.close();
+                        hideSidebar();
                         subscribe(result.feedUrl);
                     }
                 });
@@ -2063,8 +2080,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }));
         VBox pane = new VBox(8, list);
         pane.setPadding(new Insets(8));
-        dialog.setScene(new Scene(pane, 560, 420));
-        dialog.show();
+        showSidebar("Search results: " + query, pane);
     }
 
     private void togglePlayed(FeedItem item) {
@@ -2104,9 +2120,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void showQueueDialog(List<FeedItem> initialQueue) {
-        Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.setTitle("Queue");
         ObservableList<FeedItem> queueItems = FXCollections.observableArrayList(initialQueue);
         ListView<FeedItem> queueList = new ListView<>(queueItems);
         queueList.setCellFactory(view -> fullWidthCell(new ListCell<>() {
@@ -2160,8 +2173,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         VBox pane = new VBox(8, queueList, buttons);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(queueList, Priority.ALWAYS);
-        dialog.setScene(new Scene(pane, 560, 420));
-        dialog.show();
+        showSidebar("Queue", pane);
     }
 
     private void moveQueueItem(FeedItem item, boolean up, ObservableList<FeedItem> queueItems) {
@@ -2353,7 +2365,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         updateNowPlayingArt(current);
         updatePlayPauseButton();
         if (trayActive) {
-            trayManager.update(playback.isPlaying(), title);
+            trayManager.update(playback.isPlaying(), title,
+                    nowPlayingArt != null ? nowPlayingArt.getImage() : null);
         }
         episodeList.refresh();
     }

@@ -2,7 +2,36 @@
     -fx-text-fill: #666666;
 }
 
+.list-view:focused .list-cell:filled:selected .label,
+.list-view:focused .list-cell:filled:selected .muted-label {
+    -fx-text-fill: white;
+}
+
 .episode-row-current {
-    -fx-background-color: derive(-fx-accent, 85%);
-    -fx-background-radius: 4;
+    -fx-background-color: rgba(0, 150, 201, 0.14);
+    -fx-border-color: -fx-accent;
+    -fx-border-width: 0 0 0 3;
+    -fx-background-radius: 0;
+}
+
+.sidebar {
+    -fx-background-color: -fx-background;
+    -fx-border-color: -fx-box-border;
+    -fx-border-width: 0 0 0 1;
+}
+
+.sidebar-header {
+    -fx-padding: 8;
+    -fx-alignment: center-left;
+    -fx-border-color: -fx-box-border;
+    -fx-border-width: 0 0 1 0;
+}
+
+.sidebar-title {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+
+.sidebar-content {
+    -fx-padding: 4;
 }
