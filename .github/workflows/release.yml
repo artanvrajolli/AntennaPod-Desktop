@@ -6,6 +6,9 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -48,4 +51,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: AntennaPod-Desktop-Windows.zip
-          generate_release_notes: true
+          body: |
+            AntennaPod Desktop for Windows — portable app, no install needed.
+            Unzip and run `AntennaPod-Desktop.exe` (Windows 10/11, 64-bit).
