@@ -67,6 +67,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private ComboBox<String> sortBox;
     private boolean sortBoxProgrammatic;
     private Feed selectedFeed;
+    private volatile long loadingMediaId = -1;
     private final TrayManager trayManager = new TrayManager();
     private boolean trayActive;
     private Stage mainStage;
@@ -443,7 +444,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         Button stopButton = iconButton(Icons.stop(), "Stop");
         stopButton.setOnAction(event -> playback.stop());
         nowPlayingLabel = new Label("Nothing playing");
-        nowPlayingLabel.setPrefWidth(280);
+        nowPlayingLabel.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(nowPlayingLabel, Priority.ALWAYS);
         timeLabel = new Label("--:-- / --:--");
         seekSlider = new Slider(0, 1000, 0);
         seekSlider.setPrefWidth(320);
@@ -454,7 +456,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         ComboBox<String> speedBox = new ComboBox<>();
         speedBox.getItems().addAll("0.75x", "1.0x", "1.25x", "1.5x", "1.75x", "2.0x");
-        speedBox.setValue("1.0x");
+        speedBox.setValue(closestSpeed(DesktopPreferences.getPlaybackSpeed()));
         speedBox.setOnAction(event -> {
             String value = speedBox.getValue().replace("x", "");
             playback.setRate(Float.parseFloat(value));
@@ -830,6 +832,20 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private static String speedLabel(float speed) {
         return speed <= 0 ? "global" : String.format(Locale.US, "%.2fx", speed);
+    }
+
+    private static String closestSpeed(float speed) {
+        String[] options = {"0.75x", "1.0x", "1.25x", "1.5x", "1.75x", "2.0x"};
+        String closest = "1.0x";
+        float bestDiff = Float.MAX_VALUE;
+        for (String option : options) {
+            float diff = Math.abs(Float.parseFloat(option.replace("x", "")) - speed);
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                closest = option;
+            }
+        }
+        return closest;
     }
 
     private static ComboBox<String> triStateBox(int value) {
@@ -1714,20 +1730,37 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         Platform.runLater(episodeList::refresh);
     }
 
+    private void updatePlayPauseButton() {
+        if (playPauseButton != null) {
+            playPauseButton.setGraphic(playback != null && playback.isPlaying()
+                    ? Icons.pause() : Icons.play());
+        }
+    }
+
     @Override
     public void onStateChanged() {
+        updatePlayPauseButton();
         FeedMedia current = playback.getCurrentMedia();
         String title = null;
         if (current != null && current.getItem() != null) {
             title = current.getItem().getTitle();
             nowPlayingLabel.setText(title);
+            nowPlayingLabel.setTooltip(title != null ? new Tooltip(title) : null);
         } else {
             nowPlayingLabel.setText("Nothing playing");
+            nowPlayingLabel.setTooltip(null);
         }
-        playPauseButton.setGraphic(playback.isPlaying() ? Icons.pause() : Icons.play());
+        updatePlayPauseButton();
         if (trayActive) {
             trayManager.update(playback.isPlaying(), title);
         }
+        episodeList.refresh();
+    }
+
+    @Override
+    public void onLoadingChanged(boolean loading) {
+        FeedMedia current = playback.getCurrentMedia();
+        loadingMediaId = loading && current != null ? current.getId() : -1;
         episodeList.refresh();
     }
 
@@ -1806,7 +1839,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private class EpisodeCell extends ListCell<FeedItem> {
         private final Label titleLabel = new Label();
         private final Label metaLabel = new Label();
-        private final Button playButton = new Button("Play", Icons.play());
+        private final Button playButton = iconButton(Icons.play(), "Play");
         private final Button downloadButton = new Button("Download", Icons.download());
         private final Button queueButton = iconButton(Icons.queueAdd(), "Add to queue");
         private final Button favoriteButton = iconButton(Icons.star(false), "Favorite");
@@ -1817,7 +1850,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         EpisodeCell() {
             titleLabel.setWrapText(true);
             titleLabel.setStyle("-fx-font-weight: bold;");
+            titleLabel.setMaxWidth(Double.MAX_VALUE);
+            metaLabel.setWrapText(true);
             metaLabel.setStyle("-fx-text-fill: gray;");
+            metaLabel.setMaxWidth(Double.MAX_VALUE);
             playButton.setOnAction(event -> {
                 FeedItem item = getItem();
                 if (item != null) {
@@ -1865,6 +1901,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 return;
             }
             titleLabel.setText(item.getTitle());
+            titleLabel.setTooltip(item.getTitle() != null ? new Tooltip(item.getTitle()) : null);
             StringBuilder meta = new StringBuilder();
             if (item.getPubDate() != null) {
                 meta.append(dateFormat.format(item.getPubDate()));
@@ -1899,7 +1936,24 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 downloadButton.setText("Download");
             }
             downloadButton.setDisable(media == null || media.getDownloadUrl() == null);
-            playButton.setDisable(media == null);
+            FeedMedia current = playback.getCurrentMedia();
+            boolean isCurrent = media != null && current != null && media.getId() == current.getId();
+            boolean isLoading = media != null && media.getId() == loadingMediaId;
+            if (isLoading) {
+                meta.append(" · Loading…");
+                javafx.scene.control.ProgressIndicator spinner =
+                        new javafx.scene.control.ProgressIndicator(-1);
+                spinner.setPrefSize(16, 16);
+                spinner.setMaxSize(16, 16);
+                playButton.setGraphic(spinner);
+                playButton.setDisable(true);
+            } else {
+                playButton.setGraphic(Icons.play());
+                playButton.setDisable(media == null);
+            }
+            if (isCurrent && !isLoading) {
+                meta.append(playback.isPlaying() ? " · Playing" : " · Paused");
+            }
             playedButton.setGraphic(item.isPlayed() ? Icons.replay() : Icons.check());
             metaLabel.setText(meta.toString());
             if (item.isPlayed()) {
@@ -1914,6 +1968,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             HBox row = new HBox(8, texts, playButton, downloadButton, queueButton, favoriteButton,
                     infoButton, playedButton);
             row.setPadding(new Insets(4));
+            if (isCurrent) {
+                row.setStyle("-fx-background-color: derive(-fx-accent, 85%); -fx-background-radius: 4;");
+            } else {
+                row.setStyle("");
+            }
             setGraphic(row);
             setText(null);
         }

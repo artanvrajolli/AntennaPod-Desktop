@@ -17,6 +17,8 @@ public final class PlaybackManager {
         void onStateChanged();
 
         void onPositionChanged(int positionMs, int durationMs);
+
+        void onLoadingChanged(boolean loading);
     }
 
     private final DesktopDatabase database;
@@ -100,6 +102,7 @@ public final class PlaybackManager {
         } catch (Exception e) {
             currentMedia = null;
             notifyState();
+            notifyLoading(false);
             return;
         }
         player.setRate(effectiveSpeed());
@@ -119,16 +122,23 @@ public final class PlaybackManager {
                 player.seek(new Duration(startPosition));
             }
             player.play();
+            notifyLoading(false);
+            notifyState();
         });
         player.currentTimeProperty().addListener((obs, oldTime, newTime) -> {
             listener.onPositionChanged((int) newTime.toMillis(), getDuration());
             checkSkipEnding((int) newTime.toMillis());
         });
         player.setOnEndOfMedia(this::finishPlayback);
-        player.setOnError(() -> stopPlayer());
+        player.setOnError(() -> {
+            stopPlayer();
+            notifyLoading(false);
+            notifyState();
+        });
         markStarted(currentMedia);
         saveTask = scheduler.scheduleWithFixedDelay(this::saveMedia, 5, 5, TimeUnit.SECONDS);
         notifyState();
+        notifyLoading(true);
     }
 
     private synchronized void finishPlayback() {
@@ -210,6 +220,7 @@ public final class PlaybackManager {
         stopPlayer();
         currentMedia = null;
         notifyState();
+        notifyLoading(false);
     }
 
     private void recordPlayAction() {
@@ -362,5 +373,9 @@ public final class PlaybackManager {
 
     private void notifyState() {
         Platform.runLater(listener::onStateChanged);
+    }
+
+    private void notifyLoading(boolean loading) {
+        Platform.runLater(() -> listener.onLoadingChanged(loading));
     }
 }
