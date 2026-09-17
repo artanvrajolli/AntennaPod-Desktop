@@ -14,7 +14,9 @@ import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class DesktopDatabase implements AutoCloseable {
     private final Connection connection;
@@ -162,6 +164,27 @@ public final class DesktopDatabase implements AutoCloseable {
             }
         }
         return feeds;
+    }
+
+    public synchronized Map<Long, Long> getFeedLastPlayedTimes() throws SQLException {
+        Map<Long, Long> times = new HashMap<>();
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(
+                     "SELECT i.feed_id AS feed_id,"
+                             + " MAX(CASE WHEN COALESCE(m.last_played_statistics, 0)"
+                             + " > COALESCE(m.last_played_history, 0)"
+                             + " THEN m.last_played_statistics ELSE m.last_played_history END)"
+                             + " AS last_played"
+                             + " FROM feed_items i JOIN feed_media m ON m.item_id = i.id"
+                             + " GROUP BY i.feed_id")) {
+            while (rs.next()) {
+                long value = rs.getLong("last_played");
+                if (!rs.wasNull() && value > 0) {
+                    times.put(rs.getLong("feed_id"), value);
+                }
+            }
+        }
+        return times;
     }
 
     public synchronized Feed getFeed(long feedId) throws SQLException {

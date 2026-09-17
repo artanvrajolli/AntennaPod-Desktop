@@ -107,8 +107,13 @@ public class SyncManager {
             List<DesktopDatabase.SyncAction> queued = database.getQueuedSyncActions();
             List<EpisodeAction> localActions = toEpisodeActions(queued);
             int actionsUploaded = uploadActions(service, queued);
-            int actionsApplied = downloadAndApplyActions(service, localActions);
-            return new SyncResult(subsAdded, actionsUploaded, actionsApplied);
+            List<Long> changedIds = new ArrayList<>();
+            List<Long> playedIds = new ArrayList<>();
+            List<Long> unplayedIds = new ArrayList<>();
+            int actionsApplied = downloadAndApplyActions(service, localActions, changedIds,
+                    playedIds, unplayedIds);
+            return new SyncResult(subsAdded, actionsUploaded, actionsApplied, changedIds,
+                    playedIds, unplayedIds);
         } finally {
             service.logout();
         }
@@ -231,8 +236,8 @@ public class SyncManager {
         return actions.size();
     }
 
-    private int downloadAndApplyActions(ISyncService service, List<EpisodeAction> localActions)
-            throws Exception {
+    private int downloadAndApplyActions(ISyncService service, List<EpisodeAction> localActions,
+            List<Long> changedIds, List<Long> playedIds, List<Long> unplayedIds) throws Exception {
         long lastSync = Long.parseLong(database.getSyncState(STATE_ACTION_TIMESTAMP, "0"));
         EpisodeActionChanges changes = service.getEpisodeActionChanges(lastSync);
         database.setSyncState(STATE_ACTION_TIMESTAMP, String.valueOf(changes.getTimestamp()));
@@ -241,14 +246,15 @@ public class SyncManager {
                         changes.getEpisodeActions(), localActions);
         int applied = 0;
         for (EpisodeAction action : overriding.values()) {
-            if (applyPlayAction(action)) {
+            if (applyPlayAction(action, changedIds, playedIds, unplayedIds)) {
                 applied++;
             }
         }
         return applied;
     }
 
-    private boolean applyPlayAction(EpisodeAction action) {
+    private boolean applyPlayAction(EpisodeAction action, List<Long> changedIds,
+            List<Long> playedIds, List<Long> unplayedIds) {
         try {
             FeedItem item = database.findItemByEpisodeUrl(
                     action.getPodcast(), action.getEpisode(), action.getGuid());
@@ -266,12 +272,15 @@ public class SyncManager {
                 item.setPlayed(true);
                 database.setItemState(item.getId(), item.getPlayState());
                 media.setPosition(0);
+                playedIds.add(item.getId());
             } else if (action.getTotal() > 0 && action.getPosition() <= 0 && item.isPlayed()) {
                 item.setPlayed(false);
                 database.setItemState(item.getId(), item.getPlayState());
                 media.setPosition(0);
+                unplayedIds.add(item.getId());
             }
             database.updateMedia(media);
+            changedIds.add(item.getId());
             return true;
         } catch (Exception e) {
             e.printStackTrace();
@@ -339,11 +348,18 @@ public class SyncManager {
         public final int subscriptionsAdded;
         public final int actionsUploaded;
         public final int actionsApplied;
+        public final List<Long> changedItemIds;
+        public final List<Long> playedItemIds;
+        public final List<Long> unplayedItemIds;
 
-        SyncResult(int subscriptionsAdded, int actionsUploaded, int actionsApplied) {
+        SyncResult(int subscriptionsAdded, int actionsUploaded, int actionsApplied,
+                List<Long> changedItemIds, List<Long> playedItemIds, List<Long> unplayedItemIds) {
             this.subscriptionsAdded = subscriptionsAdded;
             this.actionsUploaded = actionsUploaded;
             this.actionsApplied = actionsApplied;
+            this.changedItemIds = List.copyOf(changedItemIds);
+            this.playedItemIds = List.copyOf(playedItemIds);
+            this.unplayedItemIds = List.copyOf(unplayedItemIds);
         }
     }
 }
