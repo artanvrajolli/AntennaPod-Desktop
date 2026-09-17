@@ -6,7 +6,7 @@ import javafx.scene.shape.SVGPath;
 
 // Icon artwork from Phosphor Icons (https://phosphoricons.com), MIT License.
 public final class Icons {
-    private static final double SIZE = 18;
+    private static final double SIZE = 15;
     private static final double VIEW_BOX = 256;
 
     private Icons() {
@@ -255,5 +255,13 @@ public final class Icons {
 
     public static Node favorite() {
         return star(true);
+    }
+
+    public static Node wave() {
+        return icon(
+            "M40,176a8,8,0,0,1-8-8V104a8,8,0,0,1,16,0v40A8,8,0,0,1,40,176Zm32-16a8,8,0,0,1-8-8V96"
+            + "a8,8,0,0,1,16,0v40A8,8,0,0,1,72,160Zm40,24a8,8,0,0,1-8-8V80a8,8,0,0,1,16,0v96A8,8,0,0,"
+            + "1,112,184Zm40-16a8,8,0,0,1-8-8V96a8,8,0,0,1,16,0v64A8,8,0,0,1,152,168Zm40,16a8,8,0,0,"
+            + "1-8-8V80a8,8,0,0,1,16,0v96A8,8,0,0,1,192,184Zm40-24a8,8,0,0,1-8-8V104a8,8,0,0,1,16,0v40A8,8,0,0,1,232,160Z");
     }
 }

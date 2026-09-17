@@ -172,8 +172,12 @@ public class FeedMedia implements Playable {
         return duration;
     }
 
+    public static boolean isValidDuration(long duration) {
+        return duration > 0 && duration < (Integer.MAX_VALUE / 1000L) * 1000L;
+    }
+
     public void setDuration(int duration) {
-        this.duration = duration;
+        this.duration = isValidDuration(duration) ? duration : 0;
     }
 
     @Override

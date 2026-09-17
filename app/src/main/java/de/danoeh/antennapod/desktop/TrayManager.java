@@ -5,8 +5,22 @@ import java.awt.Dimension;
 import java.awt.EventQueue;
 import java.awt.Font;
 import java.awt.Graphics2D;
-import java.awt.MenuItem;
-import java.awt.PopupMenu;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.geometry.Point2D;
+import javafx.geometry.Rectangle2D;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.Tooltip;
+import javafx.scene.input.KeyCode;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
+import javafx.stage.Screen;
+import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 import java.awt.RenderingHints;
 import java.awt.SystemTray;
 import java.awt.TrayIcon;
@@ -34,9 +48,10 @@ public final class TrayManager {
         void onExit();
     }
 
-    private TrayIcon trayIcon;
-    private MenuItem playPauseItem;
-    private MenuItem nowPlayingItem;
+    private volatile TrayIcon trayIcon;
+    private Stage controlsWindow;
+    private Button playPauseButton;
+    private Label nowPlayingLabel;
     private BufferedImage defaultIcon;
     private java.awt.Image currentIcon;
     private Image pendingArtwork;
@@ -46,43 +61,105 @@ public final class TrayManager {
             return false;
         }
         defaultIcon = createDefaultIcon();
-        PopupMenu menu = new PopupMenu();
-        nowPlayingItem = new MenuItem("Nothing playing");
-        nowPlayingItem.setEnabled(false);
-        playPauseItem = new MenuItem("Play");
-        playPauseItem.addActionListener(fx(callbacks::onPlayPause));
-        MenuItem previousItem = new MenuItem("Previous episode");
-        previousItem.addActionListener(fx(callbacks::onPrevious));
-        MenuItem nextItem = new MenuItem("Next episode");
-        nextItem.addActionListener(fx(callbacks::onNext));
-        MenuItem skipBackItem = new MenuItem("Skip back");
-        skipBackItem.addActionListener(fx(callbacks::onSkipBack));
-        MenuItem skipForwardItem = new MenuItem("Skip forward");
-        skipForwardItem.addActionListener(fx(callbacks::onSkipForward));
-        MenuItem showItem = new MenuItem("Show AntennaPod");
-        showItem.addActionListener(fx(callbacks::onShow));
-        MenuItem exitItem = new MenuItem("Exit");
-        exitItem.addActionListener(fx(callbacks::onExit));
-        menu.add(nowPlayingItem);
-        menu.addSeparator();
-        menu.add(previousItem);
-        menu.add(playPauseItem);
-        menu.add(nextItem);
-        menu.addSeparator();
-        menu.add(skipBackItem);
-        menu.add(skipForwardItem);
-        menu.addSeparator();
-        menu.add(showItem);
-        menu.add(exitItem);
-        trayIcon = new TrayIcon(defaultIcon, "AntennaPod Desktop", menu);
+        controlsWindow = new Stage(StageStyle.UNDECORATED);
+        controlsWindow.setAlwaysOnTop(true);
+        controlsWindow.setResizable(false);
+        controlsWindow.setScene(new Scene(buildControls(callbacks)));
+        ThemeManager.style(controlsWindow.getScene());
+        controlsWindow.focusedProperty().addListener((obs, previous, focused) -> {
+            if (!focused) {
+                controlsWindow.hide();
+            }
+        });
+        controlsWindow.getScene().setOnKeyPressed(event -> {
+            if (event.getCode() == KeyCode.ESCAPE) {
+                controlsWindow.hide();
+            }
+        });
+        trayIcon = new TrayIcon(defaultIcon, "AntennaPod Desktop");
+        trayIcon.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseReleased(MouseEvent event) {
+                if (event.getButton() == MouseEvent.BUTTON3) {
+                    Platform.runLater(TrayManager.this::showControls);
+                }
+            }
+        });
         trayIcon.setImageAutoSize(true);
         trayIcon.addActionListener(fx(callbacks::onShow));
         try {
             SystemTray.getSystemTray().add(trayIcon);
             return true;
         } catch (AWTException e) {
+            remove();
             return false;
         }
+    }
+
+    VBox buildControls(Callbacks callbacks) {
+        nowPlayingLabel = new Label("Nothing playing");
+        nowPlayingLabel.setWrapText(true);
+        nowPlayingLabel.setMaxWidth(260);
+        playPauseButton = control(Icons.play(), "Play", callbacks::onPlayPause);
+        HBox transport = new HBox(8,
+                control(Icons.previous(), "Previous episode", callbacks::onPrevious),
+                control(Icons.replay10(), "Skip back", callbacks::onSkipBack),
+                playPauseButton,
+                control(Icons.forward30(), "Skip forward", callbacks::onSkipForward),
+                control(Icons.next(), "Next episode", callbacks::onNext));
+        transport.setAlignment(Pos.CENTER);
+        Button show = new Button("Show AntennaPod");
+        show.setOnAction(event -> {
+            hideControls();
+            callbacks.onShow();
+        });
+        Button exit = new Button("Exit");
+        exit.setOnAction(event -> {
+            hideControls();
+            callbacks.onExit();
+        });
+        HBox actions = new HBox(8, show, exit);
+        actions.setAlignment(Pos.CENTER);
+        VBox panel = new VBox(12, nowPlayingLabel, transport, actions);
+        panel.setPadding(new Insets(14));
+        panel.setPrefWidth(288);
+        return panel;
+    }
+
+    private static Button control(javafx.scene.Node icon, String label, Runnable action) {
+        Button button = new Button("", icon);
+        button.getStyleClass().add("icon-button");
+        button.setAccessibleText(label);
+        button.setTooltip(new Tooltip(label));
+        button.setMinSize(36, 32);
+        button.setOnAction(event -> action.run());
+        return button;
+    }
+
+    private void hideControls() {
+        if (controlsWindow != null) {
+            controlsWindow.hide();
+        }
+    }
+
+    private void showControls() {
+        if (trayIcon == null || controlsWindow == null) {
+            return;
+        }
+        if (controlsWindow.isShowing()) {
+            hideControls();
+            return;
+        }
+        Point2D pointer = new javafx.scene.robot.Robot().getMousePosition();
+        Rectangle2D bounds = Screen.getScreensForRectangle(pointer.getX(), pointer.getY(), 1, 1)
+                .stream().findFirst().orElse(Screen.getPrimary()).getVisualBounds();
+        controlsWindow.show();
+        controlsWindow.sizeToScene();
+        controlsWindow.setX(Math.max(bounds.getMinX(), Math.min(pointer.getX() - controlsWindow.getWidth(),
+                bounds.getMaxX() - controlsWindow.getWidth())));
+        controlsWindow.setY(Math.max(bounds.getMinY(), Math.min(pointer.getY() - controlsWindow.getHeight(),
+                bounds.getMaxY() - controlsWindow.getHeight())));
+        controlsWindow.requestFocus();
     }
 
     public void update(boolean playing, String nowPlaying, Image artwork) {
@@ -90,9 +167,14 @@ public final class TrayManager {
             return;
         }
         boolean hasEpisode = nowPlaying != null && !nowPlaying.isEmpty();
+        playPauseButton.setGraphic(playing ? Icons.pause() : Icons.play());
+        playPauseButton.setAccessibleText(playing ? "Pause" : "Play");
+        playPauseButton.getTooltip().setText(playing ? "Pause" : "Play");
+        nowPlayingLabel.setText(hasEpisode ? truncate(nowPlaying, 100) : "Nothing playing");
         EventQueue.invokeLater(() -> {
-            playPauseItem.setLabel(playing ? "Pause" : "Play");
-            nowPlayingItem.setLabel(hasEpisode ? truncate(nowPlaying, 70) : "Nothing playing");
+            if (trayIcon == null) {
+                return;
+            }
             String tooltip = hasEpisode
                     ? (playing ? "Playing: " : "Paused: ") + nowPlaying
                     : "AntennaPod Desktop";
@@ -102,9 +184,12 @@ public final class TrayManager {
     }
 
     public void remove() {
-        if (trayIcon != null) {
-            SystemTray.getSystemTray().remove(trayIcon);
-            trayIcon = null;
+        hideControls();
+        TrayIcon removed = trayIcon;
+        trayIcon = null;
+        pendingArtwork = null;
+        if (removed != null) {
+            EventQueue.invokeLater(() -> SystemTray.getSystemTray().remove(removed));
         }
     }
 

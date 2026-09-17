@@ -56,3 +56,42 @@
 .episode-row-current .muted-label {
     -fx-text-fill: #cfe3ec;
 }
+
+.ghost-marker {
+    -fx-background-color: rgba(236, 236, 236, 0.75);
+    -fx-background-radius: 5;
+    -fx-border-color: transparent;
+    -fx-border-radius: 5;
+}
+
+.icon-button {
+    -fx-padding: 4 6 4 6;
+    -fx-background-insets: 0;
+    -fx-background-radius: 6;
+}
+
+.icon-button > .region {
+    -fx-scale-x: 0.85;
+    -fx-scale-y: 0.85;
+}
+
+.icon-button:hover {
+    -fx-background-color: -fx-selection-bar;
+}
+
+.icon-button:pressed {
+    -fx-background-color: -fx-selection-bar-non-focused;
+}
+
+.icon-button.flat {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+
+.icon-button.flat:hover {
+    -fx-background-color: -fx-selection-bar;
+}
+
+.icon-button.flat:pressed {
+    -fx-background-color: -fx-selection-bar-non-focused;
+}

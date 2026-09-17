@@ -123,7 +123,7 @@ public final class PlaybackManager {
         configureSilenceSkipping();
         int startPosition = Math.max(media.getPosition(), DesktopPreferences.getSkipIntroSec() * 1000);
         player.setOnReady(() -> {
-            int duration = (int) player.getTotalDuration().toMillis();
+            int duration = getDuration();
             if (duration > 0) {
                 currentMedia.setDuration(duration);
                 saveMedia();
@@ -196,6 +196,23 @@ public final class PlaybackManager {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    public synchronized void setSilenceSkipping(boolean enabled) {
+        DesktopPreferences.setSkipSilence(enabled);
+        if (player == null) {
+            return;
+        }
+        if (!enabled) {
+            player.setAudioSpectrumListener(null);
+            applySilenceRate(false);
+            return;
+        }
+        configureSilenceSkipping();
+    }
+
+    public synchronized boolean isSilenceSkipping() {
+        return DesktopPreferences.getSkipSilence();
     }
 
     private void configureSilenceSkipping() {
@@ -360,12 +377,18 @@ public final class PlaybackManager {
                 : (currentMedia != null ? currentMedia.getPosition() : 0);
     }
 
-    public synchronized int getDuration() {
-        if (player != null && player.getTotalDuration() != null
-                && player.getTotalDuration().greaterThan(Duration.ZERO)) {
-            return (int) player.getTotalDuration().toMillis();
+    static int resolveDuration(Duration duration, int fallback) {
+        double millis = duration == null ? Double.NaN : duration.toMillis();
+        if (Double.isFinite(millis) && millis > 0 && millis < Integer.MAX_VALUE
+                && FeedMedia.isValidDuration((long) millis)) {
+            return (int) millis;
         }
-        return currentMedia != null ? currentMedia.getDuration() : 0;
+        return FeedMedia.isValidDuration(fallback) ? fallback : 0;
+    }
+
+    public synchronized int getDuration() {
+        return resolveDuration(player != null ? player.getTotalDuration() : null,
+                currentMedia != null ? currentMedia.getDuration() : 0);
     }
 
     public synchronized void shutdown() {

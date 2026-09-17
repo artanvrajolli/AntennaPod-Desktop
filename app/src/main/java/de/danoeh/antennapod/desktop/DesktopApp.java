@@ -84,8 +84,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Button chapterPrevButton;
     private Button chapterNextButton;
     private Slider seekSlider;
+    private StackPane ghostMarker;
     private Slider volumeSlider;
     private ComboBox<String> speedBox;
+    private Button silenceButton;
     private ProgressIndicator loadingSpinner;
     private Scene scene;
     private boolean sliderDragging;
@@ -110,6 +112,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private volatile long loadingMediaId = -1;
     private final TrayManager trayManager = new TrayManager();
     private boolean trayActive;
+    private boolean shuttingDown;
     private Stage mainStage;
     private java.util.concurrent.ScheduledExecutorService autoRefreshScheduler;
     private java.util.concurrent.ScheduledFuture<?> autoRefreshTask;
@@ -174,7 +177,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             if (trayActive) {
                 event.consume();
                 stage.hide();
-                setStatus("Minimized to tray — right-click the tray icon to exit");
             } else {
                 shutdown();
             }
@@ -219,6 +221,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 shutdown();
             }
         });
+        Platform.setImplicitExit(!trayActive);
 
         reloadFeeds(null);
         applyProxy();
@@ -380,11 +383,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private VBox buildSidebar() {
         sidebarTitle = new Label();
         sidebarTitle.getStyleClass().add("sidebar-title");
+        sidebarTitle.setMaxWidth(Double.MAX_VALUE);
         Button closeButton = iconButton(Icons.remove(), "Close panel");
+        closeButton.getStyleClass().add("flat");
         closeButton.setOnAction(event -> hideSidebar());
         HBox header = new HBox(8, sidebarTitle, closeButton);
         header.getStyleClass().add("sidebar-header");
+        header.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(sidebarTitle, Priority.ALWAYS);
+        HBox.setMargin(closeButton, new Insets(0, 0, 0, 8));
         sidebarContent = new VBox();
         sidebarContent.getStyleClass().add("sidebar-content");
         VBox.setVgrow(sidebarContent, Priority.ALWAYS);
@@ -581,6 +588,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private static Button iconButton(javafx.scene.Node graphic, String tooltip) {
         Button button = new Button("", graphic);
+        button.getStyleClass().add("icon-button");
         button.setTooltip(new Tooltip(tooltip));
         return button;
     }
@@ -652,6 +660,17 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 updateTimeLabels(newValue.intValue(), (int) seekSlider.getMax());
             }
         });
+        ghostMarker = new StackPane();
+        ghostMarker.getStyleClass().add("ghost-marker");
+        ghostMarker.setMouseTransparent(true);
+        ghostMarker.setVisible(false);
+        ghostMarker.setManaged(false);
+        ghostMarker.setPrefSize(10, 10);
+        ghostMarker.setMinSize(10, 10);
+        ghostMarker.setMaxSize(10, 10);
+        StackPane.setAlignment(ghostMarker, Pos.CENTER_LEFT);
+        StackPane stack = new StackPane(seekSlider, ghostMarker);
+        StackPane.setAlignment(stack, Pos.CENTER_LEFT);
 
         speedBox = new ComboBox<>();
         speedBox.getItems().addAll(SPEED_OPTIONS);
@@ -660,6 +679,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             String value = speedBox.getValue().replace("x", "");
             playback.setRate(Float.parseFloat(value));
         });
+
+        silenceButton = iconButton(Icons.wave(), "Skip silence");
+        silenceButton.setOnAction(event -> {
+            boolean enabled = !DesktopPreferences.getSkipSilence();
+            playback.setSilenceSkipping(enabled);
+            updateSilenceButtonTooltip();
+            setStatus(enabled ? "Skip silence enabled" : "Skip silence disabled");
+        });
+        updateSilenceButtonTooltip();
 
         volumeSlider = new Slider(0, 1, DesktopPreferences.getDefaultVolume());
         volumeSlider.setPrefWidth(100);
@@ -695,11 +723,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         chapterNextButton.setOnAction(event -> skipChapter(true));
         setChapterButtonsVisible(false);
 
-        HBox scrubRow = new HBox(8, elapsedLabel, seekSlider, totalLabel, chapterLabel,
+        HBox scrubRow = new HBox(8, elapsedLabel, stack, totalLabel, chapterLabel,
                 chapterPrevButton, chapterNextButton);
         scrubRow.setAlignment(Pos.CENTER_LEFT);
         scrubRow.setPadding(new Insets(8, 8, 0, 8));
-        HBox.setHgrow(seekSlider, Priority.ALWAYS);
+        HBox.setHgrow(stack, Priority.ALWAYS);
         scrubRow.setOnScroll(event -> {
             if (Math.abs(event.getDeltaY()) >= 20 && playback.getCurrentMedia() != null) {
                 playback.skip(event.getDeltaY() > 0 ? 10000 : -10000);
@@ -708,8 +736,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
 
         HBox playerRow = new HBox(8, prevButton, skipBackButton, playPauseHolder, skipForwardButton,
-                nextButton, stopButton, nowPlayingArt, nowPlayingLabel, speedBox, muteButton,
-                volumeSlider, sleepButton);
+                nextButton, stopButton, nowPlayingArt, nowPlayingLabel, speedBox, silenceButton,
+                muteButton, volumeSlider, sleepButton);
         playerRow.setAlignment(Pos.CENTER_LEFT);
         playerRow.setPadding(new Insets(8));
         statusLabel = new Label("Ready");
@@ -1295,6 +1323,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         return speed <= 0 ? "global" : String.format(Locale.US, "%.2fx", speed);
     }
 
+    private void updateSilenceButtonTooltip() {
+        if (silenceButton != null) {
+            boolean enabled = DesktopPreferences.getSkipSilence();
+            silenceButton.setTooltip(new Tooltip(enabled
+                    ? "Skip silence: on" : "Skip silence: off"));
+            silenceButton.setOpacity(enabled ? 1.0 : 0.55);
+        }
+    }
+
     private static final String[] SPEED_OPTIONS =
             {"0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "1.75x", "2.0x", "2.5x", "3.0x"};
 
@@ -1520,10 +1557,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         boostSlider.setMajorTickUnit(3);
         boostSlider.setSnapToTicks(true);
         grid.add(boostSlider, 1, row++);
-        javafx.scene.control.CheckBox skipSilenceBox =
-                new javafx.scene.control.CheckBox("Skip silence (fast-forward quiet parts)");
-        skipSilenceBox.setSelected(DesktopPreferences.getSkipSilence());
-        grid.add(skipSilenceBox, 0, row++, 2, 1);
         grid.add(sectionLabel("Downloads"), 0, row++, 2, 1);
         javafx.scene.control.CheckBox downloadBox =
                 new javafx.scene.control.CheckBox("Auto-download new episodes by default");
@@ -1571,7 +1604,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 DesktopPreferences.setSkipForwardSec(parseNonNegative(skipForwardField.getText()));
                 updateSkipTooltips();
                 DesktopPreferences.setVolumeBoostDb((int) boostSlider.getValue());
-                DesktopPreferences.setSkipSilence(skipSilenceBox.isSelected());
                 DesktopPreferences.setAutoDownloadDefault(downloadBox.isSelected());
                 DesktopPreferences.setAutoDeleteDefault(deleteBox.isSelected());
                 DesktopPreferences.setAutoRefreshStartup(startupBox.isSelected());
@@ -2011,7 +2043,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                         : "Sync finished: " + result.playedItemIds.size() + " marked finished";
                 Platform.runLater(() -> {
                     syncedItemIds.clear();
-                    syncedItemIds.addAll(result.changedItemIds);
+                    syncedItemIds.addAll(result.syncedItemIds);
+                    updateGhostMarker(playback.getDuration());
                     if (onFinish != null) {
                         onFinish.accept(message);
                     }
@@ -2054,6 +2087,17 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         ObservableList<PodcastSearchResult> items = FXCollections.observableArrayList(results);
         ListView<PodcastSearchResult> list = new ListView<>(items);
         list.setCellFactory(view -> fullWidthCell(new ListCell<>() {
+            private final ImageView art = new ImageView();
+            private final Label title = new Label();
+
+            {
+                art.setFitWidth(48);
+                art.setFitHeight(48);
+                art.setPreserveRatio(true);
+                art.setSmooth(true);
+                title.setWrapText(true);
+            }
+
             @Override
             protected void updateItem(PodcastSearchResult result, boolean empty) {
                 super.updateItem(result, empty);
@@ -2062,9 +2106,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     setGraphic(null);
                     return;
                 }
-                Label title = new Label(result.title
+                title.setText(result.title
                         + (result.author != null && !result.author.isEmpty() ? " — " + result.author : ""));
-                title.setWrapText(true);
                 Button subscribeButton = new Button("Subscribe");
                 subscribeButton.setOnAction(event -> {
                     if (result.feedUrl != null) {
@@ -2072,7 +2115,18 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                         subscribe(result.feedUrl);
                     }
                 });
-                HBox row = new HBox(8, title, subscribeButton);
+                boolean hasImage = result.imageUrl != null && !result.imageUrl.isEmpty();
+                art.setImage(hasImage ? ImageCache.get(result.imageUrl, 48, 48) : null);
+                art.setVisible(hasImage);
+                art.setManaged(hasImage);
+                Node artNode = hasImage ? art : new Region();
+                HBox row = new HBox(8, artNode, title, subscribeButton);
+                if (!hasImage) {
+                    ((Region) artNode).setMinSize(48, 48);
+                    ((Region) artNode).setMaxSize(48, 48);
+                    artNode.setStyle("-fx-background-color: -fx-control-inner-background;"
+                            + "-fx-background-radius: 4;");
+                }
                 HBox.setHgrow(title, Priority.ALWAYS);
                 setGraphic(row);
                 setText(null);
@@ -2386,6 +2440,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         seekSlider.setMax(Math.max(durationMs, 1));
         seekSlider.setValue(Math.min(positionMs, Math.max(durationMs, 1)));
+        updateGhostMarker(durationMs);
         updateTimeLabels(positionMs, durationMs);
         FeedMedia current = playback.getCurrentMedia();
         if (current != null && current.getItem() != null && current.getItem().getChapters() != null) {
@@ -2403,6 +2458,38 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         chapterLabel.setManaged(false);
     }
 
+    private void updateGhostMarker(int durationMs) {
+        if (ghostMarker == null) {
+            return;
+        }
+        FeedMedia current = playback.getCurrentMedia();
+        if (current == null || durationMs <= 0) {
+            ghostMarker.setVisible(false);
+            return;
+        }
+        try {
+            int syncedPosition = database.getSyncedPosition(current.getItem().getId());
+            if (syncedPosition < 0 || syncedPosition > durationMs) {
+                ghostMarker.setVisible(false);
+                return;
+            }
+            double trackWidth = seekSlider.getWidth() - seekSlider.getPadding().getLeft()
+                    - seekSlider.getPadding().getRight();
+            if (trackWidth <= 0) {
+                ghostMarker.setVisible(false);
+                return;
+            }
+            double fraction = syncedPosition / (double) durationMs;
+            double thumbAllowance = 12;
+            double x = seekSlider.getPadding().getLeft()
+                    + (fraction * (trackWidth - 10)) + 5 - 5;
+            ghostMarker.setTranslateX(x);
+            ghostMarker.setVisible(true);
+        } catch (Exception e) {
+            ghostMarker.setVisible(false);
+        }
+    }
+
     private static String formatDuration(int millis) {
         int totalSeconds = Math.max(millis / 1000, 0);
         int hours = totalSeconds / 3600;
@@ -2414,7 +2501,17 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         return String.format(Locale.US, "%d:%02d", minutes, seconds);
     }
 
+    @Override
+    public void stop() {
+        shutdown();
+    }
+
     private void shutdown() {
+        if (shuttingDown) {
+            return;
+        }
+        shuttingDown = true;
+        trayActive = false;
         try {
             if (autoRefreshTask != null) {
                 autoRefreshTask.cancel(false);

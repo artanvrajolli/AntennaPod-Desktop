@@ -76,6 +76,7 @@ public final class DesktopDatabase implements AutoCloseable {
         ensureColumn("feed_media", "last_played_history", "INTEGER DEFAULT 0");
         ensureColumn("feed_items", "transcript_url", "TEXT");
         ensureColumn("feed_items", "transcript_type", "TEXT");
+        ensureColumn("feed_items", "synced_position", "INTEGER DEFAULT -1");
     }
 
     private void ensureColumn(String table, String column, String definition) throws SQLException {
@@ -598,6 +599,25 @@ public final class DesktopDatabase implements AutoCloseable {
             media.setLastPlayedTimeHistory(new Date(history));
         }
         return media;
+    }
+
+    public synchronized int getSyncedPosition(long itemId) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "SELECT synced_position FROM feed_items WHERE id = ?")) {
+            stmt.setLong(1, itemId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() ? rs.getInt("synced_position") : -1;
+            }
+        }
+    }
+
+    public synchronized void setSyncedPosition(long itemId, int positionMs) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "UPDATE feed_items SET synced_position = ? WHERE id = ?")) {
+            stmt.setInt(1, positionMs);
+            stmt.setLong(2, itemId);
+            stmt.executeUpdate();
+        }
     }
 
     public synchronized int countUnplayed(long feedId) throws SQLException {

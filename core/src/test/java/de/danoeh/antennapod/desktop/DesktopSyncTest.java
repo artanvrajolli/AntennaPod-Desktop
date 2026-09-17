@@ -47,6 +47,7 @@ public class DesktopSyncTest {
         List<String> uploadedAdded = new ArrayList<>();
         List<String> uploadedRemoved = new ArrayList<>();
         List<EpisodeAction> uploadedActions = new ArrayList<>();
+        long requestedActionTimestamp = -1;
 
         @Override
         public void login() {
@@ -68,7 +69,12 @@ public class DesktopSyncTest {
 
         @Override
         public EpisodeActionChanges getEpisodeActionChanges(long lastSync) {
-            return new EpisodeActionChanges(new ArrayList<>(remoteActions), lastSync + 1);
+            requestedActionTimestamp = lastSync;
+            List<EpisodeAction> parsedActions = new ArrayList<>();
+            for (EpisodeAction action : remoteActions) {
+                parsedActions.add(EpisodeAction.readFromJsonObject(action.writeToJsonObject()));
+            }
+            return new EpisodeActionChanges(parsedActions, lastSync + 1);
         }
 
         @Override
@@ -215,6 +221,35 @@ public class DesktopSyncTest {
         assertTrue(result.unplayedItemIds.isEmpty());
         assertTrue(database.getQueuedSyncActions().isEmpty());
         assertEquals(120000, database.getMedia(item.getMedia().getId()).getPosition());
+    }
+
+    @Test
+    public void testEpisodeUploadPreservesDownloadCursor() throws Exception {
+        SyncManager manager = new TestSyncManager(database, new FeedUpdater(database), fakeService);
+        for (long lastSync : new long[] {0, 17}) {
+            database.setSyncState("syncActionTimestamp", String.valueOf(lastSync));
+            database.enqueueSyncAction("podcast", "episode", "guid-1", "PLAY",
+                    1700000000000L, 0, 60, 600);
+
+            SyncManager.SyncResult result = manager.sync();
+
+            assertEquals(1, result.actionsUploaded);
+            assertEquals(lastSync, fakeService.requestedActionTimestamp);
+            assertEquals(String.valueOf(lastSync + 1), database.getSyncState("syncActionTimestamp", "0"));
+            assertTrue(database.getQueuedSyncActions().isEmpty());
+        }
+    }
+
+    @Test
+    public void testZeroPositionEpisodeActionJsonRoundTrip() {
+        EpisodeAction action = new EpisodeAction.Builder("podcast", "episode", EpisodeAction.Action.PLAY)
+                .timestamp(new Date(1700000000000L)).started(0).position(0).total(600).build();
+
+        EpisodeAction parsed = EpisodeAction.readFromJsonObject(action.writeToJsonObject());
+
+        assertEquals(0, parsed.getStarted());
+        assertEquals(0, parsed.getPosition());
+        assertEquals(600, parsed.getTotal());
     }
 
     @Test

@@ -110,10 +110,16 @@ public class SyncManager {
             List<Long> changedIds = new ArrayList<>();
             List<Long> playedIds = new ArrayList<>();
             List<Long> unplayedIds = new ArrayList<>();
+            List<Long> syncedItemIds = new ArrayList<>();
             int actionsApplied = downloadAndApplyActions(service, localActions, changedIds,
+                    playedIds, unplayedIds, syncedItemIds);
+            for (long itemId : syncedItemIds) {
+                database.setSyncedPosition(itemId, database.getItem(itemId).getMedia().getPosition());
+            }
+            SyncResult result = new SyncResult(subsAdded, actionsUploaded, actionsApplied, changedIds,
                     playedIds, unplayedIds);
-            return new SyncResult(subsAdded, actionsUploaded, actionsApplied, changedIds,
-                    playedIds, unplayedIds);
+            result.syncedItemIds.addAll(syncedItemIds);
+            return result;
         } finally {
             service.logout();
         }
@@ -230,14 +236,12 @@ public class SyncManager {
             uploadedIds.add(action.id);
         }
         database.deleteSyncActions(uploadedIds);
-        if (response != null) {
-            database.setSyncState(STATE_ACTION_TIMESTAMP, String.valueOf(response.timestamp));
-        }
         return actions.size();
     }
 
     private int downloadAndApplyActions(ISyncService service, List<EpisodeAction> localActions,
-            List<Long> changedIds, List<Long> playedIds, List<Long> unplayedIds) throws Exception {
+            List<Long> changedIds, List<Long> playedIds, List<Long> unplayedIds,
+            List<Long> syncedItemIds) throws Exception {
         long lastSync = Long.parseLong(database.getSyncState(STATE_ACTION_TIMESTAMP, "0"));
         EpisodeActionChanges changes = service.getEpisodeActionChanges(lastSync);
         database.setSyncState(STATE_ACTION_TIMESTAMP, String.valueOf(changes.getTimestamp()));
@@ -248,6 +252,17 @@ public class SyncManager {
         for (EpisodeAction action : overriding.values()) {
             if (applyPlayAction(action, changedIds, playedIds, unplayedIds)) {
                 applied++;
+            }
+        }
+        for (EpisodeAction action : changes.getEpisodeActions()) {
+            try {
+                FeedItem item = database.findItemByEpisodeUrl(
+                        action.getPodcast(), action.getEpisode(), action.getGuid());
+                if (item != null && !syncedItemIds.contains(item.getId())) {
+                    syncedItemIds.add(item.getId());
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         }
         return applied;
@@ -351,6 +366,7 @@ public class SyncManager {
         public final List<Long> changedItemIds;
         public final List<Long> playedItemIds;
         public final List<Long> unplayedItemIds;
+        public final List<Long> syncedItemIds = new ArrayList<>();
 
         SyncResult(int subscriptionsAdded, int actionsUploaded, int actionsApplied,
                 List<Long> changedItemIds, List<Long> playedItemIds, List<Long> unplayedItemIds) {
