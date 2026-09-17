@@ -7,12 +7,17 @@ installation of Java or anything else required.
 
 ## Download
 
-Get the latest `AntennaPod-Desktop-Windows.zip` from the
-[**Releases page**](https://github.com/artanvrajolli/AntennaPod-Desktop/releases),
-unzip it anywhere, and run `AntennaPod-Desktop.exe` (Windows 10/11, 64-bit).
+From the [**Releases page**](https://github.com/artanvrajolli/AntennaPod-Desktop/releases)
+(Windows 10/11, 64-bit):
+
+- **Installer (recommended)** — run `AntennaPod-Desktop-Setup-*.exe`, then start
+  AntennaPod Desktop from the Start menu. Per-user install in
+  `%LOCALAPPDATA%\AntennaPod-Desktop`, no admin rights needed.
+- **Portable** — unzip `AntennaPod-Desktop-Windows.zip` anywhere and run
+  `AntennaPod-Desktop.exe`.
 
 Your data (subscriptions, downloads, playback positions) lives in
-`%APPDATA%\AntennaPod`.
+`%APPDATA%\AntennaPod`, so both ways share the same library.
 
 ## Features
 
@@ -47,13 +52,24 @@ gradlew :core:test :app:installDist
 
 Run: `app\build\install\app\bin\app.bat`
 
-Package the exe (needs a JDK with `jpackage`):
+Package the portable app (needs a JDK with `jpackage`):
 
 ```bat
-jpackage --type app-image --name "AntennaPod-Desktop" --app-version "0.1.4" ^
+jpackage --type app-image --name "AntennaPod-Desktop" --app-version "0.1.5" ^
   --vendor "AntennaPod" --dest release --input app\build\install\app\lib ^
-  --main-jar app-0.1.4.jar --main-class de.danoeh.antennapod.desktop.Launcher ^
+  --main-jar app-0.1.5.jar --main-class de.danoeh.antennapod.desktop.Launcher ^
   --java-options "--enable-native-access=javafx.media"
+```
+
+Package the single-file installer (also needs WiX Toolset v3 on PATH):
+
+```bat
+jpackage --type exe --name "AntennaPod-Desktop" --app-version "0.1.5" ^
+  --vendor "AntennaPod" --dest installer --input app\build\install\app\lib ^
+  --main-jar app-0.1.5.jar --main-class de.danoeh.antennapod.desktop.Launcher ^
+  --java-options "--enable-native-access=javafx.media" ^
+  --win-per-user-install --win-menu --win-shortcut ^
+  --win-upgrade-uuid 6f2f2b7c-6a3e-4f4a-9f4a-6b7c2f2b7c11
 ```
 
 Every push to `main` builds and tests automatically; every `v*` tag publishes
