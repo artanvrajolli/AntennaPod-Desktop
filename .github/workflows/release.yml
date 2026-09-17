@@ -30,11 +30,15 @@ jobs:
       - name: Package exe with jpackage
         shell: pwsh
         run: |
+          $version = (Select-String -Path app/build.gradle -Pattern "version = '([^']+)'").Matches.Groups[1].Value
+          if (-not $version) { throw "Could not read app version from app/build.gradle" }
+          Write-Host "Packaging version $version"
           $jpackage = Join-Path $env:JAVA_HOME 'bin\jpackage.exe'
-          & $jpackage --type app-image --name "AntennaPod-Desktop" --app-version "0.1.0" `
+          & $jpackage --type app-image --name "AntennaPod-Desktop" --app-version $version `
             --vendor "AntennaPod" --dest release --input app/build/install/app/lib `
-            --main-jar app-0.1.0.jar --main-class de.danoeh.antennapod.desktop.Launcher `
+            --main-jar "app-$version.jar" --main-class de.danoeh.antennapod.desktop.Launcher `
             --java-options "--enable-native-access=javafx.media"
+          if ($LASTEXITCODE -ne 0) { throw "jpackage failed with exit code $LASTEXITCODE" }
 
       - name: Zip portable app
         shell: pwsh

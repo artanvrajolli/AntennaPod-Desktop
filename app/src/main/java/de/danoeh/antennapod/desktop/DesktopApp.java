@@ -38,7 +38,6 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.control.ToolBar;
 import javafx.scene.control.Tooltip;
-import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
@@ -67,6 +66,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Label feedTitleLabel;
     private Label statusLabel;
     private Label nowPlayingLabel;
+    private ImageView nowPlayingArt;
     private Label elapsedLabel;
     private Label totalLabel;
     private Button playPauseButton;
@@ -295,45 +295,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         feedList = new ListView<>(feeds);
         feedList.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
         feedList.setPrefWidth(280);
-        feedList.setCellFactory(list -> new ListCell<>() {
-            @Override
-            protected void updateItem(Feed feed, boolean empty) {
-                super.updateItem(feed, empty);
-                if (empty || feed == null) {
-                    setText(null);
-                    setGraphic(null);
-                    return;
-                }
-                HBox row = new HBox(8);
-                ImageView art = new ImageView();
-                art.setFitWidth(40);
-                art.setFitHeight(40);
-                if (feed.getImageUrl() != null && !feed.getImageUrl().isEmpty()) {
-                    try {
-                        art.setImage(new Image(feed.getImageUrl(), 40, 40, true, true, true));
-                    } catch (Exception e) {
-                        // leave empty
-                    }
-                }
-                VBox texts = new VBox(2);
-                Label title = new Label(feed.getTitle() != null ? feed.getTitle() : feed.getDownloadUrl());
-                title.setWrapText(true);
-                Label count = new Label("");
-                count.setStyle("-fx-text-fill: gray;");
-                try {
-                    int unplayed = database.countUnplayed(feed.getId());
-                    if (unplayed > 0) {
-                        count.setText(unplayed + " unplayed");
-                    }
-                } catch (Exception e) {
-                    // ignore
-                }
-                texts.getChildren().addAll(title, count);
-                row.getChildren().addAll(art, texts);
-                setGraphic(row);
-                setText(null);
-            }
-        });
+        feedList.setCellFactory(list -> new FeedCell());
         feedList.getSelectionModel().selectedItemProperty().addListener((obs, oldFeed, newFeed) -> {
             if (newFeed != null) {
                 loadEpisodes(newFeed);
@@ -366,6 +328,58 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         pane.setPadding(new Insets(8));
         VBox.setVgrow(feedList, Priority.ALWAYS);
         return pane;
+    }
+
+    private class FeedCell extends ListCell<Feed> {
+        private final ImageView art = new ImageView();
+        private final Label titleLabel = new Label();
+        private final Label countLabel = new Label();
+        private final HBox row;
+
+        FeedCell() {
+            art.setFitWidth(40);
+            art.setFitHeight(40);
+            titleLabel.setWrapText(true);
+            countLabel.setStyle("-fx-text-fill: gray;");
+            VBox texts = new VBox(2, titleLabel, countLabel);
+            HBox.setHgrow(texts, Priority.ALWAYS);
+            row = new HBox(8, art, texts);
+        }
+
+        @Override
+        protected void updateItem(Feed feed, boolean empty) {
+            super.updateItem(feed, empty);
+            if (empty || feed == null) {
+                setGraphic(null);
+                return;
+            }
+            titleLabel.setText(feed.getTitle() != null ? feed.getTitle() : feed.getDownloadUrl());
+            String unplayedText = "";
+            try {
+                int unplayed = database.countUnplayed(feed.getId());
+                if (unplayed > 0) {
+                    unplayedText = unplayed + " unplayed";
+                }
+            } catch (Exception e) {
+                // ignore count on error
+            }
+            countLabel.setText(unplayedText);
+            updateArt(feed.getImageUrl());
+            setGraphic(row);
+        }
+
+        private void updateArt(String imageUrl) {
+            if (imageUrl == null || imageUrl.isEmpty()) {
+                art.setUserData(null);
+                art.setImage(null);
+                return;
+            }
+            if (imageUrl.equals(art.getUserData())) {
+                return;
+            }
+            art.setUserData(imageUrl);
+            art.setImage(ImageCache.get(imageUrl, 40, 40));
+        }
     }
 
     private VBox buildEpisodePane() {
@@ -497,6 +511,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         loadingSpinner.setVisible(false);
         StackPane playPauseHolder = new StackPane(playPauseButton, loadingSpinner);
 
+        nowPlayingArt = new ImageView();
+        nowPlayingArt.setFitWidth(36);
+        nowPlayingArt.setFitHeight(36);
+        nowPlayingArt.setVisible(false);
+        nowPlayingArt.setManaged(false);
+
         nowPlayingLabel = new Label("Nothing playing");
         nowPlayingLabel.setMaxWidth(Double.MAX_VALUE);
         nowPlayingLabel.setStyle("-fx-cursor: hand;");
@@ -591,8 +611,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
 
         HBox playerRow = new HBox(8, prevButton, skipBackButton, playPauseHolder, skipForwardButton,
-                nextButton, stopButton, nowPlayingLabel, speedBox, muteButton, volumeSlider,
-                sleepButton);
+                nextButton, stopButton, nowPlayingArt, nowPlayingLabel, speedBox, muteButton,
+                volumeSlider, sleepButton);
         playerRow.setAlignment(Pos.CENTER_LEFT);
         playerRow.setPadding(new Insets(8));
         statusLabel = new Label("Ready");
@@ -2192,6 +2212,44 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         Platform.runLater(episodeList::refresh);
     }
 
+    private void updateNowPlayingArt(FeedMedia current) {
+        if (nowPlayingArt == null) {
+            return;
+        }
+        String artUrl = null;
+        if (current != null && current.getItem() != null) {
+            artUrl = current.getItem().getImageUrl();
+            if (artUrl == null || artUrl.isEmpty()) {
+                artUrl = feedImageUrl(current.getItem().getFeedId());
+            }
+        }
+        if (artUrl == null || artUrl.isEmpty()) {
+            nowPlayingArt.setUserData(null);
+            nowPlayingArt.setImage(null);
+            nowPlayingArt.setVisible(false);
+            nowPlayingArt.setManaged(false);
+            return;
+        }
+        if (!artUrl.equals(nowPlayingArt.getUserData())) {
+            nowPlayingArt.setUserData(artUrl);
+            nowPlayingArt.setImage(ImageCache.get(artUrl, 36, 36));
+        }
+        nowPlayingArt.setVisible(true);
+        nowPlayingArt.setManaged(true);
+    }
+
+    private String feedImageUrl(long feedId) {
+        if (feedId == 0) {
+            return null;
+        }
+        for (Feed feed : feeds) {
+            if (feed.getId() == feedId) {
+                return feed.getImageUrl();
+            }
+        }
+        return null;
+    }
+
     private void updatePlayPauseButton() {
         if (playPauseButton != null) {
             playPauseButton.setGraphic(playback != null && playback.isPlaying()
@@ -2216,6 +2274,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             nowPlayingLabel.setText("Nothing playing");
             nowPlayingLabel.setTooltip(null);
         }
+        updateNowPlayingArt(current);
         updatePlayPauseButton();
         if (trayActive) {
             trayManager.update(playback.isPlaying(), title);
@@ -2313,6 +2372,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         private final Label titleLabel = new Label();
         private final Label metaLabel = new Label();
         private final Label syncBadge = new Label("SYNCED");
+        private final ImageView art = new ImageView();
         private final Button playButton = iconButton(Icons.play(), "Play");
         private final Button downloadButton = new Button("Download", Icons.download());
         private final Button queueButton = iconButton(Icons.queueAdd(), "Add to queue");
@@ -2320,23 +2380,39 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         private final Button infoButton = iconButton(Icons.info(), "Episode details");
         private final Button playedButton = iconButton(Icons.check(), "Mark played / unplayed");
         private final SimpleDateFormat dateFormat = new SimpleDateFormat("d MMM yyyy", Locale.US);
+        private final Tooltip titleTooltip = new Tooltip();
+        private final Tooltip metaTooltip = new Tooltip();
+        private final Tooltip playTooltip = new Tooltip("Play");
 
         EpisodeCell() {
-            titleLabel.setWrapText(true);
+            titleLabel.setWrapText(false);
             titleLabel.setStyle("-fx-font-weight: bold;");
             titleLabel.setMaxWidth(Double.MAX_VALUE);
-            metaLabel.setWrapText(true);
+            titleLabel.setTooltip(titleTooltip);
+            metaLabel.setWrapText(false);
             metaLabel.setStyle("-fx-text-fill: gray;");
             metaLabel.setMaxWidth(Double.MAX_VALUE);
+            metaLabel.setTooltip(metaTooltip);
+            playButton.setTooltip(playTooltip);
             syncBadge.setStyle("-fx-background-color: -fx-accent; -fx-text-fill: white; "
                     + "-fx-background-radius: 8; -fx-padding: 1 6 1 6; -fx-font-size: 10px;");
             syncBadge.setTooltip(new Tooltip("Updated by the last sync"));
             syncBadge.setVisible(false);
             syncBadge.setManaged(false);
+            art.setFitWidth(40);
+            art.setFitHeight(40);
+            art.setVisible(false);
+            art.setManaged(false);
             playButton.setOnAction(event -> {
                 FeedItem item = getItem();
                 if (item != null) {
-                    playback.play(item, new ArrayList<>(episodes));
+                    FeedMedia current = playback.getCurrentMedia();
+                    if (item.getMedia() != null && current != null
+                            && item.getMedia().getId() == current.getId()) {
+                        playback.togglePlayPause();
+                    } else {
+                        playback.play(item, new ArrayList<>(episodes));
+                    }
                 }
             });
             downloadButton.setOnAction(event -> {
@@ -2380,7 +2456,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 return;
             }
             titleLabel.setText(item.getTitle());
-            titleLabel.setTooltip(item.getTitle() != null ? new Tooltip(item.getTitle()) : null);
+            titleTooltip.setText(item.getTitle() != null ? item.getTitle() : "");
             StringBuilder meta = new StringBuilder();
             if (item.getPubDate() != null) {
                 meta.append(dateFormat.format(item.getPubDate()));
@@ -2427,17 +2503,34 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 playButton.setGraphic(spinner);
                 playButton.setDisable(true);
             } else {
-                playButton.setGraphic(Icons.play());
+                boolean playingCurrent = isCurrent && playback.isPlaying();
+                playButton.setGraphic(playingCurrent ? Icons.pause() : Icons.play());
                 playButton.setDisable(media == null);
+                playTooltip.setText(playingCurrent ? "Pause" : "Play");
             }
             if (isCurrent && !isLoading) {
                 meta.append(playback.isPlaying() ? " · Playing" : " · Paused");
             }
             playedButton.setGraphic(item.isPlayed() ? Icons.replay() : Icons.check());
             metaLabel.setText(meta.toString());
+            metaTooltip.setText(meta.toString());
             boolean synced = syncedItemIds.contains(item.getId());
             syncBadge.setVisible(synced);
             syncBadge.setManaged(synced);
+            String imageUrl = item.getImageUrl();
+            if (imageUrl != null && !imageUrl.isEmpty()) {
+                if (!imageUrl.equals(art.getUserData())) {
+                    art.setUserData(imageUrl);
+                    art.setImage(ImageCache.get(imageUrl, 40, 40));
+                }
+                art.setVisible(true);
+                art.setManaged(true);
+            } else {
+                art.setUserData(null);
+                art.setImage(null);
+                art.setVisible(false);
+                art.setManaged(false);
+            }
             if (item.isPlayed()) {
                 titleLabel.setStyle("-fx-font-weight: normal; -fx-text-fill: gray;");
             } else {
@@ -2447,7 +2540,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             HBox.setHgrow(texts, Priority.ALWAYS);
             favoriteButton.setGraphic(
                     Icons.star(item.isTagged(FeedItem.TAG_FAVORITE)));
-            HBox row = new HBox(8, texts, syncBadge, playButton, downloadButton, queueButton,
+            HBox row = new HBox(8, art, texts, syncBadge, playButton, downloadButton, queueButton,
                     favoriteButton, infoButton, playedButton);
             row.setPadding(new Insets(4));
             if (isCurrent) {

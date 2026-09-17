@@ -48,9 +48,9 @@ Run: `app\build\install\app\bin\app.bat`
 Package the exe (needs a JDK with `jpackage`):
 
 ```bat
-jpackage --type app-image --name "AntennaPod-Desktop" --app-version "0.1.0" ^
+jpackage --type app-image --name "AntennaPod-Desktop" --app-version "0.1.3" ^
   --vendor "AntennaPod" --dest release --input app\build\install\app\lib ^
-  --main-jar app-0.1.0.jar --main-class de.danoeh.antennapod.desktop.Launcher ^
+  --main-jar app-0.1.3.jar --main-class de.danoeh.antennapod.desktop.Launcher ^
   --java-options "--enable-native-access=javafx.media"
 ```
 
