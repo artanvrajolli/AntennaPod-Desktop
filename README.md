@@ -8,7 +8,7 @@ installation of Java or anything else required.
 ## Download
 
 Get the latest `AntennaPod-Desktop-Windows.zip` from the
-[**Releases page**](https://github.com/artanvrajolli/AntennaPodWindows/releases),
+[**Releases page**](https://github.com/artanvrajolli/AntennaPod-Desktop/releases),
 unzip it anywhere, and run `AntennaPod-Desktop.exe` (Windows 10/11, 64-bit).
 
 Your data (subscriptions, downloads, playback positions) lives in
