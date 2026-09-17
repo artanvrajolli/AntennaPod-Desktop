@@ -46,6 +46,7 @@ public class ThemeSceneTest {
             public void onNext() { actions.add("next"); }
             public void onSkipBack() { actions.add("back"); }
             public void onSkipForward() { actions.add("forward"); }
+            public void onSeek(int positionMs) { actions.add("seek:" + positionMs); }
             public void onShow() { actions.add("show"); }
             public void onExit() { actions.add("exit"); }
         });
@@ -58,12 +59,22 @@ public class ThemeSceneTest {
             org.junit.Assert.assertNotNull(button.getTooltip());
             button.fire();
         }
-        javafx.scene.layout.HBox footer = (javafx.scene.layout.HBox) panel.getChildren().get(2);
+        javafx.scene.layout.HBox progressRow = (javafx.scene.layout.HBox) panel.getChildren().get(2);
+        javafx.scene.control.Slider progressSlider =
+                (javafx.scene.control.Slider) progressRow.getChildren().get(1);
+        org.junit.Assert.assertTrue(progressSlider.isDisable());
+        manager.updateProgress(65000, 3600000);
+        org.junit.Assert.assertFalse(progressSlider.isDisable());
+        org.junit.Assert.assertEquals(65000.0, progressSlider.getValue(), 0.01);
+        progressSlider.setValue(120000);
+        progressSlider.getOnMousePressed().handle(null);
+        progressSlider.getOnMouseReleased().handle(null);
+        javafx.scene.layout.HBox footer = (javafx.scene.layout.HBox) panel.getChildren().get(3);
         for (javafx.scene.Node node : footer.getChildren()) {
             ((javafx.scene.control.Button) node).fire();
         }
         org.junit.Assert.assertEquals(java.util.List.of("previous", "back", "play", "forward", "next",
-                "show", "exit"), actions);
+                "seek:120000", "show", "exit"), actions);
         manager.remove();
         manager.remove();
     }
