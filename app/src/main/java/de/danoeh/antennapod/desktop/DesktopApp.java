@@ -209,6 +209,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
 
             @Override
+            public void onSeek(int positionMs) {
+                playback.seek(positionMs);
+            }
+
+            @Override
             public void onShow() {
                 mainStage.show();
                 mainStage.toFront();
@@ -340,13 +345,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 refreshFeed(selected);
             }
         });
-        Button unsubscribeButton = new Button("Unsubscribe");
-        unsubscribeButton.setOnAction(event -> {
-            Feed selected = feedList.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                unsubscribe(selected);
-            }
-        });
         Button settingsButton = new Button("Feed settings");
         settingsButton.setOnAction(event -> {
             Feed selected = feedList.getSelectionModel().getSelectedItem();
@@ -354,12 +352,29 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 showFeedSettings(selected);
             }
         });
-        HBox buttons = new HBox(8, refreshButton, unsubscribeButton, settingsButton);
+        HBox buttons = new HBox(8, refreshButton, settingsButton);
         buttons.setPadding(new Insets(8));
         VBox pane = new VBox(4, new Label("Subscriptions"), feedFilterField, feedList, buttons);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(feedList, Priority.ALWAYS);
         return pane;
+    }
+
+    private javafx.scene.control.ContextMenu buildFeedContextMenu(Feed feed) {
+        javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
+        javafx.scene.control.MenuItem refresh =
+                new javafx.scene.control.MenuItem("Refresh");
+        refresh.setOnAction(event -> refreshFeed(feed));
+        javafx.scene.control.MenuItem settings =
+                new javafx.scene.control.MenuItem("Feed settings");
+        settings.setOnAction(event -> showFeedSettings(feed));
+        javafx.scene.control.MenuItem unsubscribe =
+                new javafx.scene.control.MenuItem("Unsubscribe");
+        unsubscribe.setStyle("-fx-text-fill: #d9534f;");
+        unsubscribe.setOnAction(event -> unsubscribe(feed));
+        menu.getItems().addAll(refresh, settings,
+                new javafx.scene.control.SeparatorMenuItem(), unsubscribe);
+        return menu;
     }
 
     private void applyFeedFilter() {
@@ -445,6 +460,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             super.updateItem(feed, empty);
             if (empty || feed == null) {
                 setGraphic(null);
+                setContextMenu(null);
                 return;
             }
             titleLabel.setText(feed.getTitle() != null ? feed.getTitle() : feed.getDownloadUrl());
@@ -460,6 +476,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             countLabel.setText(unplayedText);
             updateArt(feed.getImageUrl());
             setGraphic(row);
+            setContextMenu(buildFeedContextMenu(feed));
         }
 
         private void updateArt(String imageUrl) {
@@ -2120,20 +2137,22 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 art.setVisible(hasImage);
                 art.setManaged(hasImage);
                 Node artNode = hasImage ? art : new Region();
-                HBox row = new HBox(8, artNode, title, subscribeButton);
                 if (!hasImage) {
                     ((Region) artNode).setMinSize(48, 48);
                     ((Region) artNode).setMaxSize(48, 48);
                     artNode.setStyle("-fx-background-color: -fx-control-inner-background;"
                             + "-fx-background-radius: 4;");
                 }
-                HBox.setHgrow(title, Priority.ALWAYS);
+                VBox textBlock = new VBox(4, title, subscribeButton);
+                HBox row = new HBox(8, artNode, textBlock);
+                HBox.setHgrow(textBlock, Priority.ALWAYS);
                 setGraphic(row);
                 setText(null);
             }
         }));
         VBox pane = new VBox(8, list);
         pane.setPadding(new Insets(8));
+        VBox.setVgrow(list, Priority.ALWAYS);
         showSidebar("Search results: " + query, pane);
     }
 
@@ -2442,6 +2461,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         seekSlider.setValue(Math.min(positionMs, Math.max(durationMs, 1)));
         updateGhostMarker(durationMs);
         updateTimeLabels(positionMs, durationMs);
+        if (trayActive) {
+            trayManager.updateProgress(positionMs, durationMs);
+        }
         FeedMedia current = playback.getCurrentMedia();
         if (current != null && current.getItem() != null && current.getItem().getChapters() != null) {
             int index = Chapter.getAfterPosition(current.getItem().getChapters(), positionMs);

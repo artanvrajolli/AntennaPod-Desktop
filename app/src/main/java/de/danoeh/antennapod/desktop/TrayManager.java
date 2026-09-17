@@ -12,8 +12,10 @@ import javafx.geometry.Pos;
 import javafx.geometry.Point2D;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
+import javafx.scene.layout.Priority;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.Slider;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
@@ -43,6 +45,8 @@ public final class TrayManager {
 
         void onSkipForward();
 
+        void onSeek(int positionMs);
+
         void onShow();
 
         void onExit();
@@ -52,6 +56,9 @@ public final class TrayManager {
     private Stage controlsWindow;
     private Button playPauseButton;
     private Label nowPlayingLabel;
+    private Label positionLabel;
+    private Slider progressSlider;
+    private boolean traySeeking;
     private BufferedImage defaultIcon;
     private java.awt.Image currentIcon;
     private Image pendingArtwork;
@@ -108,6 +115,21 @@ public final class TrayManager {
                 control(Icons.forward30(), "Skip forward", callbacks::onSkipForward),
                 control(Icons.next(), "Next episode", callbacks::onNext));
         transport.setAlignment(Pos.CENTER);
+        positionLabel = new Label("");
+        positionLabel.getStyleClass().add("muted-label");
+        progressSlider = new Slider(0, 1, 0);
+        progressSlider.setMaxWidth(Double.MAX_VALUE);
+        progressSlider.setDisable(true);
+        progressSlider.setOnMousePressed(event -> traySeeking = true);
+        progressSlider.setOnMouseReleased(event -> {
+            if (traySeeking) {
+                traySeeking = false;
+                callbacks.onSeek((int) progressSlider.getValue());
+            }
+        });
+        HBox progressRow = new HBox(6, positionLabel, progressSlider);
+        progressRow.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(progressSlider, Priority.ALWAYS);
         Button show = new Button("Show AntennaPod");
         show.setOnAction(event -> {
             hideControls();
@@ -120,10 +142,34 @@ public final class TrayManager {
         });
         HBox actions = new HBox(8, show, exit);
         actions.setAlignment(Pos.CENTER);
-        VBox panel = new VBox(12, nowPlayingLabel, transport, actions);
+        VBox panel = new VBox(12, nowPlayingLabel, transport, progressRow, actions);
         panel.setPadding(new Insets(14));
         panel.setPrefWidth(288);
         return panel;
+    }
+
+    void updateProgress(int positionMs, int durationMs) {
+        if (progressSlider == null) {
+            return;
+        }
+        if (durationMs <= 0) {
+            progressSlider.setDisable(true);
+            progressSlider.setValue(0);
+            positionLabel.setText("");
+            return;
+        }
+        progressSlider.setDisable(false);
+        progressSlider.setMax(durationMs);
+        if (!traySeeking) {
+            progressSlider.setValue(Math.min(positionMs, durationMs));
+        }
+        positionLabel.setText(formatTime(positionMs) + " / " + formatTime(durationMs));
+    }
+
+    private static String formatTime(int millis) {
+        int totalSeconds = Math.max(millis / 1000, 0);
+        long minutes = totalSeconds / 60;
+        return String.format(java.util.Locale.US, "%d:%02d", minutes, totalSeconds % 60);
     }
 
     private static Button control(javafx.scene.Node icon, String label, Runnable action) {
