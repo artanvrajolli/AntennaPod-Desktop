@@ -22,13 +22,17 @@ Your data (subscriptions, downloads, playback positions) lives in
 ## Features
 
 - Subscribe by URL, OPML import/export (+ HTML export), podcast search
-  (Apple, fyyd, Podcast Index)
+  (Apple, fyyd, Podcast Index) with cover art in results
 - Streaming + downloads with progress, per-feed auto-download rules and
   auto-delete after playing
 - Playback queue, per-feed sort orders, ▶ Play-all from oldest to newest
 - Sleep timer, per-feed playback speed, skip intro/ending, volume boost,
-  favorites, chapters, transcripts (SRT/VTT/JSON), shownotes
-- Playback history, listening statistics, system-tray integration
+  one-click **skip silence** toggle in the player bar, favorites, chapters,
+  transcripts (SRT/VTT/JSON), shownotes
+- Playback history, listening statistics, system-tray integration with
+  compact icon playback controls (right-click the tray icon)
+- Progress bars show a ghost marker at the last position saved to your sync
+  provider, and playback duration fixes keep gPodder.net episode actions clean
 - Search/filter your subscriptions and episodes, light/dark/system theme
   (follows the Windows app theme by default)
 - **Sync** with gPodder.net and Nextcloud (two-way subscriptions, positions,

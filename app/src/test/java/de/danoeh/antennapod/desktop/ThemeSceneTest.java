@@ -37,6 +37,37 @@ public class ThemeSceneTest {
         }
     }
 
+    private static void verifyTrayControls() {
+        java.util.List<String> actions = new java.util.ArrayList<>();
+        TrayManager manager = new TrayManager();
+        javafx.scene.layout.VBox panel = manager.buildControls(new TrayManager.Callbacks() {
+            public void onPlayPause() { actions.add("play"); }
+            public void onPrevious() { actions.add("previous"); }
+            public void onNext() { actions.add("next"); }
+            public void onSkipBack() { actions.add("back"); }
+            public void onSkipForward() { actions.add("forward"); }
+            public void onShow() { actions.add("show"); }
+            public void onExit() { actions.add("exit"); }
+        });
+        javafx.scene.layout.HBox transport = (javafx.scene.layout.HBox) panel.getChildren().get(1);
+        org.junit.Assert.assertEquals(5, transport.getChildren().size());
+        for (javafx.scene.Node node : transport.getChildren()) {
+            javafx.scene.control.Button button = (javafx.scene.control.Button) node;
+            assertTrue(button.getText().isEmpty());
+            org.junit.Assert.assertNotNull(button.getGraphic());
+            org.junit.Assert.assertNotNull(button.getTooltip());
+            button.fire();
+        }
+        javafx.scene.layout.HBox footer = (javafx.scene.layout.HBox) panel.getChildren().get(2);
+        for (javafx.scene.Node node : footer.getChildren()) {
+            ((javafx.scene.control.Button) node).fire();
+        }
+        org.junit.Assert.assertEquals(java.util.List.of("previous", "back", "play", "forward", "next",
+                "show", "exit"), actions);
+        manager.remove();
+        manager.remove();
+    }
+
     @Test
     public void testNewWindowsReceiveActiveTheme() throws Exception {
         String previousMode = DesktopPreferences.getThemeMode();
@@ -45,6 +76,7 @@ public class ThemeSceneTest {
         Platform.runLater(() -> {
             Stage stage = null;
             try {
+                verifyTrayControls();
                 DesktopPreferences.setThemeMode(ThemeManager.MODE_DARK);
                 ThemeManager.init();
                 stage = new Stage();
