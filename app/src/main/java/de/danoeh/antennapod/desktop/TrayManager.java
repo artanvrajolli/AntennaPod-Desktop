@@ -336,6 +336,17 @@ public final class TrayManager {
     }
 
     private static BufferedImage createDefaultIcon() {
+        try (java.io.InputStream stream =
+                     TrayManager.class.getResourceAsStream("/icons/app-icon-32.png")) {
+            if (stream != null) {
+                BufferedImage loaded = javax.imageio.ImageIO.read(stream);
+                if (loaded != null) {
+                    return loaded;
+                }
+            }
+        } catch (Exception e) {
+            // fall through to the drawn placeholder
+        }
         int size = 32;
         BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = image.createGraphics();
