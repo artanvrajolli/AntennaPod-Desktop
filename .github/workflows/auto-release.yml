@@ -1,0 +1,134 @@
+name: Auto version release
+
+# Publishes a versioned release automatically: when no commit has landed for 30
+# minutes and the version in app/build.gradle has no v<version> tag yet, this
+# builds the installer and portable zip and publishes them as that version.
+# Bump `version` in app/build.gradle and simply stop committing - the release
+# appears on its own. Manual tags (v*) keep working through release.yml.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-version-release
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether to release
+        id: check
+        shell: bash
+        run: |
+          last_commit=$(git log -1 --format=%ct)
+          now=$(date +%s)
+          age=$((now - last_commit))
+          echo "last commit was $age seconds ago"
+          if [ "$age" -lt 1800 ]; then
+            echo "release=no" >> "$GITHUB_OUTPUT"
+            echo "a commit landed within the last 30 minutes - waiting"
+            exit 0
+          fi
+          version=$(grep -oP "version = '\K[^']+" app/build.gradle | head -n1)
+          if [ -z "$version" ]; then
+            echo "release=no" >> "$GITHUB_OUTPUT"
+            echo "could not read the app version"
+            exit 0
+          fi
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "release=no" >> "$GITHUB_OUTPUT"
+            echo "v$version is already released"
+            exit 0
+          fi
+          echo "release=yes" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "will release v$version"
+
+  build:
+    needs: decide
+    if: needs.decide.outputs.release == 'yes'
+    runs-on: windows-latest
+    env:
+      APP_VERSION: ${{ needs.decide.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build and test
+        run: ./gradlew :core:test :app:installDist --console=plain
+
+      - name: Package portable app image
+        shell: pwsh
+        run: |
+          $jpackage = Join-Path $env:JAVA_HOME 'bin\jpackage.exe'
+          & $jpackage --type app-image --name "AntennaPod-Desktop" --app-version $env:APP_VERSION `
+            --vendor "AntennaPod" --dest release --input app/build/install/app/lib `
+            --main-jar "app-$env:APP_VERSION.jar" --main-class de.danoeh.antennapod.desktop.Launcher `
+            --icon icons/app.ico --java-options "--enable-native-access=javafx.media"
+          if ($LASTEXITCODE -ne 0) { throw "jpackage failed with exit code $LASTEXITCODE" }
+
+      - name: Zip portable app
+        shell: pwsh
+        run: Compress-Archive -Path release/AntennaPod-Desktop -DestinationPath AntennaPod-Desktop-Windows.zip
+
+      - name: Build installer (single .exe)
+        shell: pwsh
+        run: |
+          $jpackage = Join-Path $env:JAVA_HOME 'bin\jpackage.exe'
+          & $jpackage --type exe --name "AntennaPod-Desktop" --app-version $env:APP_VERSION `
+            --vendor "AntennaPod" --dest installer --input app/build/install/app/lib `
+            --main-jar "app-$env:APP_VERSION.jar" --main-class de.danoeh.antennapod.desktop.Launcher `
+            --icon icons/app.ico --java-options "--enable-native-access=javafx.media" `
+            --win-per-user-install --win-menu --win-shortcut `
+            --win-upgrade-uuid 6f2f2b7c-6a3e-4f4a-9f4a-6b7c2f2b7c11
+          if ($LASTEXITCODE -ne 0) { throw "jpackage installer failed with exit code $LASTEXITCODE" }
+          Move-Item "installer/AntennaPod-Desktop-$env:APP_VERSION.exe" `
+            "AntennaPod-Desktop-Setup-$env:APP_VERSION.exe"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AntennaPod-Desktop-Windows
+          path: |
+            AntennaPod-Desktop-Windows.zip
+            AntennaPod-Desktop-Setup-*.exe
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.decide.outputs.version }}
+          name: v${{ needs.decide.outputs.version }}
+          files: |
+            AntennaPod-Desktop-Setup-*.exe
+            AntennaPod-Desktop-Windows.zip
+          body: |
+            AntennaPod Desktop ${{ needs.decide.outputs.version }} for Windows (10/11, 64-bit).
+
+            **Installer** — download `AntennaPod-Desktop-Setup-*.exe`, run it, and start
+            AntennaPod Desktop from the Start menu. Per-user install, no admin rights needed.
+
+            **Portable** — download `AntennaPod-Desktop-Windows.zip`, unzip anywhere and run
+            `AntennaPod-Desktop.exe`.
+
+            Your data (subscriptions, downloads, playback positions) lives in `%APPDATA%\AntennaPod`.
