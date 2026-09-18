@@ -982,6 +982,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         transportRow.setAlignment(Pos.CENTER);
         HBox extrasRow = new HBox(8, speedBox, silenceButton, muteButton, volumeSlider, sleepButton);
         extrasRow.setAlignment(Pos.CENTER_RIGHT);
+        // keep the overlay only as wide as its content, otherwise it swallows
+        // the mouse clicks meant for the transport buttons underneath
+        extrasRow.setMaxWidth(Region.USE_PREF_SIZE);
 
         nowPlayingLabel.setAlignment(Pos.CENTER_LEFT);
         HBox titleRow = new HBox(nowPlayingLabel);
@@ -991,6 +994,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
         // transport centred on the full bar width; extras overlaid on the right
         StackPane controlArea = new StackPane(transportRow, extrasRow);
+        StackPane.setAlignment(transportRow, Pos.CENTER);
+        StackPane.setAlignment(extrasRow, Pos.CENTER_RIGHT);
 
         statusLabel = new Label("Ready");
         statusLabel.setMinWidth(Region.USE_PREF_SIZE);
