@@ -93,6 +93,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Scene scene;
     private boolean sliderDragging;
     private long lastProgressRefreshMs;
+    private static final int SYNCED_MARKER_MIN_GAP_MS = 30000;
+    private static final double SYNCED_MARKER_WIDTH = 3;
+    private static final double SLIDER_THUMB_DIAMETER = 14;
     private final javafx.beans.property.DoubleProperty loadingPhase =
             new javafx.beans.property.SimpleDoubleProperty(0);
     private javafx.animation.Timeline loadingPulseTimeline;
@@ -783,9 +786,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         ghostMarker.getStyleClass().add("ghost-marker");
         ghostMarker.setMouseTransparent(true);
         ghostMarker.setVisible(false);
-        ghostMarker.setPrefSize(10, 10);
-        ghostMarker.setMinSize(10, 10);
-        ghostMarker.setMaxSize(10, 10);
+        ghostMarker.setPrefSize(3, 14);
+        ghostMarker.setMinSize(3, 14);
+        ghostMarker.setMaxSize(3, 14);
         StackPane.setAlignment(ghostMarker, Pos.CENTER_LEFT);
         seekPulse = buildLoadingPulse(72, 5, seekSlider.widthProperty());
         seekPulse.setVisible(false);
@@ -2226,7 +2229,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 Platform.runLater(() -> {
                     syncedItemIds.clear();
                     syncedItemIds.addAll(result.syncedItemIds);
-                    updateGhostMarker(playback.getDuration());
+                    updateGhostMarker(playback.getPosition(), playback.getDuration());
                     if (onFinish != null) {
                         onFinish.accept(message);
                     }
@@ -2745,7 +2748,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         seekSlider.setMax(Math.max(durationMs, 1));
         seekSlider.setValue(Math.min(positionMs, Math.max(durationMs, 1)));
-        updateGhostMarker(durationMs);
+        updateGhostMarker(positionMs, durationMs);
         updateTimeLabels(positionMs, durationMs);
         long now = System.currentTimeMillis();
         if (now - lastProgressRefreshMs > 3000) {
@@ -2771,7 +2774,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         chapterLabel.setManaged(false);
     }
 
-    private void updateGhostMarker(int durationMs) {
+    private void updateGhostMarker(int positionMs, int durationMs) {
         if (ghostMarker == null) {
             return;
         }
@@ -2786,6 +2789,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 ghostMarker.setVisible(false);
                 return;
             }
+            if (Math.abs(syncedPosition - positionMs) < SYNCED_MARKER_MIN_GAP_MS) {
+                ghostMarker.setVisible(false);
+                return;
+            }
             double trackWidth = seekSlider.getWidth() - seekSlider.getPadding().getLeft()
                     - seekSlider.getPadding().getRight();
             if (trackWidth <= 0) {
@@ -2793,10 +2800,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 return;
             }
             double fraction = syncedPosition / (double) durationMs;
-            double thumbAllowance = 12;
-            double x = seekSlider.getPadding().getLeft()
-                    + (fraction * (trackWidth - 10)) + 5 - 5;
-            ghostMarker.setTranslateX(x);
+            double thumbCenter = (SLIDER_THUMB_DIAMETER / 2)
+                    + fraction * (trackWidth - SLIDER_THUMB_DIAMETER);
+            ghostMarker.setTranslateX(seekSlider.getPadding().getLeft()
+                    + thumbCenter - (SYNCED_MARKER_WIDTH / 2));
             ghostMarker.setVisible(true);
         } catch (Exception e) {
             ghostMarker.setVisible(false);
