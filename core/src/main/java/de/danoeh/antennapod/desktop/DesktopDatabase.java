@@ -631,6 +631,17 @@ public final class DesktopDatabase implements AutoCloseable {
         }
     }
 
+    public synchronized int countNew(long feedId) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "SELECT COUNT(*) FROM feed_items WHERE feed_id = ? AND state = -1")) {
+            stmt.setLong(1, feedId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                rs.next();
+                return rs.getInt(1);
+            }
+        }
+    }
+
     public synchronized void addToQueue(long itemId) throws SQLException {
         if (isInQueue(itemId)) {
             return;

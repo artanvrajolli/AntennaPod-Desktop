@@ -20,6 +20,15 @@
     -fx-text-fill: #a6a6a6;
 }
 
+.badge-new {
+    -fx-background-color: #35a86b;
+    -fx-text-fill: white;
+    -fx-background-radius: 8;
+    -fx-padding: 1 6 1 6;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+}
+
 .list-cell:filled:selected .muted-label {
     -fx-text-fill: #d3e6ef;
 }
@@ -94,4 +103,63 @@
 
 .icon-button.flat:pressed {
     -fx-background-color: -fx-selection-bar-non-focused;
+}
+
+.slider .track {
+    -fx-background-color: #5f5f5f;
+    -fx-background-insets: 0;
+    -fx-background-radius: 3;
+    -fx-pref-height: 6;
+}
+
+.slider .thumb {
+    -fx-background-color: -fx-accent;
+    -fx-background-insets: 0;
+    -fx-background-radius: 1em;
+}
+
+.slider:hover .thumb {
+    -fx-background-color: derive(-fx-accent, 25%);
+}
+
+.slider:disabled {
+    -fx-opacity: 0.75;
+}
+
+.slider:disabled .track {
+    -fx-background-color: #4f4f4f;
+}
+
+.slider:disabled .thumb {
+    -fx-background-color: #767676;
+}
+
+.episode-progress {
+    -fx-background-color: rgba(255, 255, 255, 0.18);
+    -fx-background-radius: 2;
+}
+
+.episode-progress-fill {
+    -fx-background-color: -fx-accent;
+    -fx-background-radius: 2;
+}
+
+.episode-progress-synced {
+    -fx-background-color: rgba(236, 236, 236, 0.9);
+    -fx-background-radius: 2;
+}
+
+.badge-loading {
+    -fx-background-color: #e0a33a;
+    -fx-text-fill: white;
+    -fx-background-radius: 8;
+    -fx-padding: 1 6 1 6;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+}
+
+.loading-pulse {
+    -fx-background-color: #4cc2f1;
+    -fx-background-radius: 3;
+    -fx-opacity: 0.9;
 }
