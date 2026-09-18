@@ -33,6 +33,12 @@ tasks.named('test') {
     useJUnit()
 }
 
+tasks.named('jar') {
+    manifest {
+        attributes('Implementation-Version': project.version)
+    }
+}
+
 tasks.named('run') {
     jvmArgs = ['--enable-native-access=javafx.media']
 }

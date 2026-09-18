@@ -194,7 +194,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         root.setBottom(buildPlayerBar());
 
         appShell = new StackPane(root);
-        stage.setTitle("AntennaPod Desktop");
+        stage.setTitle("AntennaPod Desktop " + appVersion());
         stage.getIcons().addAll(appIcons());
         scene = new Scene(appShell, 1100, 700);
         ThemeManager.init();
@@ -539,6 +539,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         overlay.getStyleClass().add("modal-overlay");
         closeButton.setOnAction(event -> appShell.getChildren().remove(overlay));
         appShell.getChildren().add(overlay);
+    }
+
+    private static String appVersion() {
+        Package appPackage = DesktopApp.class.getPackage();
+        String version = appPackage == null ? null : appPackage.getImplementationVersion();
+        return version == null || version.isEmpty() ? "dev" : version;
     }
 
     private List<Image> appIcons() {
@@ -982,8 +988,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         HBox.setHgrow(controlsColumn, Priority.ALWAYS);
 
         HBox main = new HBox(12, artColumn, controlsColumn);
-        main.setAlignment(Pos.CENTER_LEFT);
-        main.setPadding(new Insets(8));
+        main.setAlignment(Pos.BOTTOM_LEFT);
+        main.setPadding(new Insets(8, 8, 6, 8));
         return new VBox(main);
     }
 
