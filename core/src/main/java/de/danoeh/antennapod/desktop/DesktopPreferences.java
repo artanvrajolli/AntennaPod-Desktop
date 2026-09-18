@@ -138,6 +138,14 @@ public final class DesktopPreferences {
         PREFS.putBoolean("autoDeleteDefault", enabled);
     }
 
+    public static boolean getCloseToTray() {
+        return PREFS.getBoolean("closeToTray", false);
+    }
+
+    public static void setCloseToTray(boolean enabled) {
+        PREFS.putBoolean("closeToTray", enabled);
+    }
+
     public static String getThemeMode() {
         return PREFS.get("themeMode", "auto");
     }
