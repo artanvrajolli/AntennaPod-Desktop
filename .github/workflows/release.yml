@@ -42,7 +42,7 @@ jobs:
           & $jpackage --type app-image --name "AntennaPod-Desktop" --app-version $env:APP_VERSION `
             --vendor "AntennaPod" --dest release --input app/build/install/app/lib `
             --main-jar "app-$env:APP_VERSION.jar" --main-class de.danoeh.antennapod.desktop.Launcher `
-            --java-options "--enable-native-access=javafx.media"
+            --icon icons/app.ico --java-options "--enable-native-access=javafx.media"
           if ($LASTEXITCODE -ne 0) { throw "jpackage failed with exit code $LASTEXITCODE" }
 
       - name: Zip portable app
@@ -56,7 +56,7 @@ jobs:
           & $jpackage --type exe --name "AntennaPod-Desktop" --app-version $env:APP_VERSION `
             --vendor "AntennaPod" --dest installer --input app/build/install/app/lib `
             --main-jar "app-$env:APP_VERSION.jar" --main-class de.danoeh.antennapod.desktop.Launcher `
-            --java-options "--enable-native-access=javafx.media" `
+            --icon icons/app.ico --java-options "--enable-native-access=javafx.media" `
             --win-per-user-install --win-menu --win-shortcut `
             --win-upgrade-uuid 6f2f2b7c-6a3e-4f4a-9f4a-6b7c2f2b7c11
           if ($LASTEXITCODE -ne 0) { throw "jpackage installer failed with exit code $LASTEXITCODE" }

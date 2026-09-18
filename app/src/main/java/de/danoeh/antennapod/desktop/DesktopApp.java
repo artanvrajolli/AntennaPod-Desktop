@@ -41,6 +41,7 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.control.ToolBar;
 import javafx.scene.control.Tooltip;
+import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -194,6 +195,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
         appShell = new StackPane(root);
         stage.setTitle("AntennaPod Desktop");
+        stage.getIcons().addAll(appIcons());
         scene = new Scene(appShell, 1100, 700);
         ThemeManager.init();
         ThemeManager.style(scene);
@@ -537,6 +539,29 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         overlay.getStyleClass().add("modal-overlay");
         closeButton.setOnAction(event -> appShell.getChildren().remove(overlay));
         appShell.getChildren().add(overlay);
+    }
+
+    private List<Image> appIcons() {
+        List<Image> icons = new ArrayList<>();
+        for (String name : new String[]{"/icons/app-icon-16.png", "/icons/app-icon-32.png",
+                "/icons/app-icon-48.png", "/icons/app-icon-64.png", "/icons/app-icon-128.png",
+                "/icons/app-icon-256.png"}) {
+            java.io.InputStream stream = getClass().getResourceAsStream(name);
+            if (stream != null) {
+                try {
+                    icons.add(new Image(stream));
+                } catch (Exception e) {
+                    // ignore a broken icon resource
+                } finally {
+                    try {
+                        stream.close();
+                    } catch (Exception e) {
+                        // ignore
+                    }
+                }
+            }
+        }
+        return icons;
     }
 
     private boolean acquireInstanceLock() {
