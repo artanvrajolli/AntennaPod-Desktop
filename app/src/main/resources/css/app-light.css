@@ -82,6 +82,14 @@
     -fx-border-radius: 5;
 }
 
+.art-placeholder {
+    -fx-background-color: rgba(0, 0, 0, 0.04);
+    -fx-background-radius: 6;
+    -fx-border-color: rgba(0, 0, 0, 0.08);
+    -fx-border-radius: 6;
+    -fx-opacity: 0.55;
+}
+
 .icon-button {
     -fx-padding: 4 6 4 6;
     -fx-background-insets: 0;

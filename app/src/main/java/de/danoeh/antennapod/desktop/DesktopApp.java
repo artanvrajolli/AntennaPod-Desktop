@@ -75,6 +75,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Label statusLabel;
     private Label nowPlayingLabel;
     private ImageView nowPlayingArt;
+    private StackPane artPlaceholder;
     private Label elapsedLabel;
     private Label totalLabel;
     private Button playPauseButton;
@@ -728,7 +729,17 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         nowPlayingArt.setFitWidth(96);
         nowPlayingArt.setFitHeight(96);
         nowPlayingArt.setVisible(false);
-        nowPlayingArt.setManaged(false);
+
+        artPlaceholder = new StackPane(Icons.wave(34));
+        artPlaceholder.getStyleClass().add("art-placeholder");
+        artPlaceholder.setMinSize(96, 96);
+        artPlaceholder.setPrefSize(96, 96);
+        artPlaceholder.setMaxSize(96, 96);
+
+        StackPane artBox = new StackPane(nowPlayingArt, artPlaceholder);
+        artBox.setMinSize(96, 96);
+        artBox.setPrefSize(96, 96);
+        artBox.setMaxSize(96, 96);
 
         nowPlayingLabel = new Label("Nothing playing");
         nowPlayingLabel.setMaxWidth(Double.MAX_VALUE);
@@ -858,11 +869,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         controlArea.setRight(extrasRow);
 
         statusLabel = new Label("Ready");
-        statusLabel.setMinWidth(150);
-        statusLabel.setPrefWidth(150);
-        statusLabel.setMaxWidth(150);
-        VBox artColumn = new VBox(6, nowPlayingArt, statusLabel);
+        statusLabel.setMinWidth(Region.USE_PREF_SIZE);
+        statusLabel.setMaxWidth(360);
+        VBox artColumn = new VBox(4, artBox, statusLabel);
         artColumn.setAlignment(Pos.TOP_LEFT);
+        artColumn.setMinWidth(96);
+        artColumn.setPrefWidth(96);
+        artColumn.setMaxWidth(96);
 
         VBox controlsColumn = new VBox(6, scrubRow, controlArea);
         VBox.setVgrow(controlArea, Priority.ALWAYS);
@@ -2656,7 +2669,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             nowPlayingArt.setUserData(null);
             nowPlayingArt.setImage(null);
             nowPlayingArt.setVisible(false);
-            nowPlayingArt.setManaged(false);
+            if (artPlaceholder != null) {
+                artPlaceholder.setVisible(true);
+            }
             return;
         }
         if (!artUrl.equals(nowPlayingArt.getUserData())) {
@@ -2664,7 +2679,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             nowPlayingArt.setImage(ImageCache.get(artUrl, 96, 96));
         }
         nowPlayingArt.setVisible(true);
-        nowPlayingArt.setManaged(true);
+        if (artPlaceholder != null) {
+            artPlaceholder.setVisible(false);
+        }
     }
 
     private String feedImageUrl(long feedId) {
