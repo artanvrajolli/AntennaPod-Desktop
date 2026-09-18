@@ -985,21 +985,20 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         HBox titleRow = new HBox(nowPlayingLabel);
         titleRow.setAlignment(Pos.CENTER);
 
-        VBox centerColumn = new VBox(6, transportRow, titleRow);
-        BorderPane controlArea = new BorderPane(centerColumn);
-        controlArea.setRight(extrasRow);
+        // transport centred on the full bar width; extras overlaid on the right
+        StackPane controlArea = new StackPane(transportRow, extrasRow);
 
         statusLabel = new Label("Ready");
         statusLabel.setMinWidth(Region.USE_PREF_SIZE);
-        statusLabel.setMaxWidth(360);
+        statusLabel.setMaxWidth(220);
+
+        VBox controlsColumn = new VBox(6, scrubRow, controlArea, titleRow);
+        controlsColumn.setAlignment(Pos.BOTTOM_LEFT);
+        HBox.setHgrow(controlsColumn, Priority.ALWAYS);
         artColumn = new VBox(4, artBox, statusLabel);
         artColumn.setAlignment(Pos.TOP_LEFT);
         artPlaceholder.setVisible(false);
         setArtColumnWidth(0);
-
-        VBox controlsColumn = new VBox(6, scrubRow, controlArea);
-        controlsColumn.setAlignment(Pos.BOTTOM_LEFT);
-        HBox.setHgrow(controlsColumn, Priority.ALWAYS);
 
         HBox main = new HBox(12, artColumn, controlsColumn);
         main.setAlignment(Pos.BOTTOM_LEFT);
@@ -1254,7 +1253,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void setStatus(String message) {
-        Platform.runLater(() -> statusLabel.setText(message));
+        Platform.runLater(() -> {
+            statusLabel.setText(message);
+            if (statusLabel.getTooltip() == null) {
+                statusLabel.setTooltip(new Tooltip(message));
+            } else {
+                statusLabel.getTooltip().setText(message);
+            }
+        });
     }
 
     private void reloadFeeds(Long selectFeedId) {
