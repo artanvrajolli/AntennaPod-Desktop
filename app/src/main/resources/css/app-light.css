@@ -2,6 +2,45 @@
     -fx-text-fill: #666666;
 }
 
+.badge-new {
+    -fx-background-color: #2e9e5b;
+    -fx-text-fill: white;
+    -fx-background-radius: 8;
+    -fx-padding: 1 6 1 6;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+}
+
+.episode-progress {
+    -fx-background-color: rgba(0, 0, 0, 0.12);
+    -fx-background-radius: 2;
+}
+
+.episode-progress-fill {
+    -fx-background-color: -fx-accent;
+    -fx-background-radius: 2;
+}
+
+.episode-progress-synced {
+    -fx-background-color: rgba(40, 40, 40, 0.85);
+    -fx-background-radius: 2;
+}
+
+.badge-loading {
+    -fx-background-color: #d08b1a;
+    -fx-text-fill: white;
+    -fx-background-radius: 8;
+    -fx-padding: 1 6 1 6;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+}
+
+.loading-pulse {
+    -fx-background-color: #1f8fce;
+    -fx-background-radius: 3;
+    -fx-opacity: 0.9;
+}
+
 .list-view:focused .list-cell:filled:selected .label,
 .list-view:focused .list-cell:filled:selected .muted-label {
     -fx-text-fill: white;

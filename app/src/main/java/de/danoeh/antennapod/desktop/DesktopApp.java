@@ -91,6 +91,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private ProgressIndicator loadingSpinner;
     private Scene scene;
     private boolean sliderDragging;
+    private long lastProgressRefreshMs;
+    private final javafx.beans.property.DoubleProperty loadingPhase =
+            new javafx.beans.property.SimpleDoubleProperty(0);
+    private javafx.animation.Timeline loadingPulseTimeline;
+    private Region seekPulse;
     private boolean showRemainingTime;
     private double lastVolume;
     private final Map<Long, Integer> downloadProgress = new HashMap<>();
@@ -377,6 +382,42 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         return menu;
     }
 
+    private javafx.scene.control.ContextMenu buildEpisodeContextMenu(FeedItem item) {
+        List<FeedItem> targets = actionTargets(item);
+        javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
+        javafx.scene.control.MenuItem markPlayed =
+                new javafx.scene.control.MenuItem("Mark played");
+        markPlayed.setOnAction(event -> applyPlayedState(targets, true));
+        javafx.scene.control.MenuItem markUnplayed =
+                new javafx.scene.control.MenuItem("Mark unplayed");
+        markUnplayed.setOnAction(event -> applyPlayedState(targets, false));
+        javafx.scene.control.MenuItem addToQueue =
+                new javafx.scene.control.MenuItem("Add to queue");
+        addToQueue.setOnAction(event -> enqueueItems(targets));
+        javafx.scene.control.MenuItem removeFromQueue =
+                new javafx.scene.control.MenuItem("Remove from queue");
+        removeFromQueue.setOnAction(event -> dequeueItems(targets));
+        javafx.scene.control.MenuItem addFavorite =
+                new javafx.scene.control.MenuItem("Add to favorites");
+        addFavorite.setOnAction(event -> setFavorites(targets, true));
+        javafx.scene.control.MenuItem removeFavorite =
+                new javafx.scene.control.MenuItem("Remove from favorites");
+        removeFavorite.setOnAction(event -> setFavorites(targets, false));
+        javafx.scene.control.MenuItem download =
+                new javafx.scene.control.MenuItem("Download");
+        download.setOnAction(event -> enqueueDownloads(targets));
+        download.setDisable(!hasDownloadable(targets));
+        javafx.scene.control.MenuItem deleteDownload =
+                new javafx.scene.control.MenuItem("Delete download");
+        deleteDownload.setOnAction(event -> deleteDownloads(targets));
+        deleteDownload.setDisable(!hasDownloaded(targets));
+        menu.getItems().addAll(markPlayed, markUnplayed,
+                new javafx.scene.control.SeparatorMenuItem(), addToQueue, removeFromQueue,
+                new javafx.scene.control.SeparatorMenuItem(), addFavorite, removeFavorite,
+                new javafx.scene.control.SeparatorMenuItem(), download, deleteDownload);
+        return menu;
+    }
+
     private void applyFeedFilter() {
         String query = feedFilterField.getText().trim().toLowerCase(Locale.ROOT);
         visibleFeeds.setPredicate(feed -> query.isEmpty() || feedSearchText(feed).contains(query));
@@ -429,6 +470,33 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         sidebar.setManaged(true);
     }
 
+    private void showModal(String title, Node content) {
+        Stage dialog = new Stage();
+        dialog.initOwner(mainStage);
+        dialog.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        dialog.setTitle(title);
+        Label modalTitle = new Label(title);
+        modalTitle.getStyleClass().add("sidebar-title");
+        modalTitle.setMaxWidth(Double.MAX_VALUE);
+        Button closeButton = iconButton(Icons.remove(), "Close");
+        closeButton.getStyleClass().add("flat");
+        closeButton.setOnAction(event -> dialog.close());
+        HBox header = new HBox(8, modalTitle, closeButton);
+        header.getStyleClass().add("sidebar-header");
+        header.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(modalTitle, Priority.ALWAYS);
+        HBox.setMargin(closeButton, new Insets(0, 0, 0, 8));
+        VBox contentBox = new VBox(content);
+        contentBox.getStyleClass().add("sidebar-content");
+        VBox.setVgrow(content, Priority.ALWAYS);
+        VBox.setVgrow(contentBox, Priority.ALWAYS);
+        Scene dialogScene = new Scene(new VBox(header, contentBox), 560, Region.USE_COMPUTED_SIZE);
+        ThemeManager.style(dialogScene);
+        dialog.setScene(dialogScene);
+        dialog.sizeToScene();
+        dialog.show();
+    }
+
     private void hideSidebar() {
         if (!sidebar.isVisible()) {
             return;
@@ -443,6 +511,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         private final ImageView art = new ImageView();
         private final Label titleLabel = new Label();
         private final Label countLabel = new Label();
+        private final Label newCountBadge = new Label();
+        private final Tooltip newCountTooltip = new Tooltip();
         private final HBox row;
 
         FeedCell() {
@@ -450,9 +520,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             art.setFitHeight(40);
             titleLabel.setWrapText(true);
             countLabel.getStyleClass().add("muted-label");
+            newCountBadge.getStyleClass().add("badge-new");
+            newCountBadge.setMinWidth(Region.USE_PREF_SIZE);
+            newCountBadge.setTooltip(newCountTooltip);
+            newCountBadge.setVisible(false);
+            newCountBadge.setManaged(false);
             VBox texts = new VBox(2, titleLabel, countLabel);
             HBox.setHgrow(texts, Priority.ALWAYS);
-            row = new HBox(8, art, texts);
+            row = new HBox(8, art, texts, newCountBadge);
+            row.setAlignment(Pos.CENTER_LEFT);
         }
 
         @Override
@@ -465,15 +541,22 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
             titleLabel.setText(feed.getTitle() != null ? feed.getTitle() : feed.getDownloadUrl());
             String unplayedText = "";
+            int newCount = 0;
             try {
                 int unplayed = database.countUnplayed(feed.getId());
                 if (unplayed > 0) {
                     unplayedText = unplayed + " unplayed";
                 }
+                newCount = database.countNew(feed.getId());
             } catch (Exception e) {
-                // ignore count on error
+                // ignore counts on error
             }
             countLabel.setText(unplayedText);
+            boolean hasNew = newCount > 0;
+            newCountBadge.setText(String.valueOf(newCount));
+            newCountTooltip.setText(newCount == 1 ? "1 new episode" : newCount + " new episodes");
+            newCountBadge.setVisible(hasNew);
+            newCountBadge.setManaged(hasNew);
             updateArt(feed.getImageUrl());
             setGraphic(row);
             setContextMenu(buildFeedContextMenu(feed));
@@ -514,6 +597,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         HBox header = new HBox(8, feedTitleLabel, episodeFilterField, sortBox, playAllButton);
         HBox.setHgrow(feedTitleLabel, Priority.ALWAYS);
         episodeList = new ListView<>(visibleEpisodes);
+        episodeList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         episodeList.setCellFactory(list -> new EpisodeCell());
         episodeList.setOnMouseClicked(event -> {
             if (event.getClickCount() == 2) {
@@ -543,14 +627,21 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void playAll() {
-        for (FeedItem item : new ArrayList<>(visibleEpisodes)) {
+        List<FeedItem> order = playbackOrder();
+        for (FeedItem item : order) {
             if (item.getMedia() != null) {
-                playback.play(item, new ArrayList<>(visibleEpisodes));
+                playback.play(item, order);
                 setStatus("Playing from \"" + item.getTitle() + "\" to the end");
                 return;
             }
         }
         setStatus("Nothing playable in this list");
+    }
+
+    private List<FeedItem> playbackOrder() {
+        List<FeedItem> order = new ArrayList<>(visibleEpisodes);
+        EpisodeSorter.sort(order, EpisodeSorter.OLDEST);
+        return order;
     }
 
     private void applyEpisodeFilter() {
@@ -686,7 +777,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         ghostMarker.setMinSize(10, 10);
         ghostMarker.setMaxSize(10, 10);
         StackPane.setAlignment(ghostMarker, Pos.CENTER_LEFT);
-        StackPane stack = new StackPane(seekSlider, ghostMarker);
+        seekPulse = buildLoadingPulse(72, 5, seekSlider.widthProperty());
+        seekPulse.setVisible(false);
+        seekPulse.setManaged(false);
+        StackPane stack = new StackPane(seekSlider, ghostMarker, seekPulse);
         StackPane.setAlignment(stack, Pos.CENTER_LEFT);
 
         speedBox = new ComboBox<>();
@@ -955,9 +1049,41 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
     }
 
+    private Region buildLoadingPulse(double width, double height,
+            javafx.beans.binding.DoubleExpression available) {
+        Region pulse = new Region();
+        pulse.getStyleClass().add("loading-pulse");
+        pulse.setMouseTransparent(true);
+        pulse.setMinSize(width, height);
+        pulse.setPrefSize(width, height);
+        pulse.setMaxSize(width, height);
+        pulse.translateXProperty().bind(loadingPhase.multiply(available.subtract(width)));
+        StackPane.setAlignment(pulse, Pos.CENTER_LEFT);
+        return pulse;
+    }
+
     private void updateLoadingIndicator() {
+        boolean loading = loadingMediaId != -1;
         if (loadingSpinner != null) {
-            loadingSpinner.setVisible(loadingMediaId != -1);
+            loadingSpinner.setVisible(loading);
+        }
+        if (loading) {
+            if (loadingPulseTimeline == null) {
+                loadingPulseTimeline = new javafx.animation.Timeline(
+                        new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1.1),
+                                new javafx.animation.KeyValue(loadingPhase, 1.0)));
+                loadingPulseTimeline.setAutoReverse(true);
+                loadingPulseTimeline.setCycleCount(javafx.animation.Timeline.INDEFINITE);
+            }
+            if (loadingPulseTimeline.getStatus() != javafx.animation.Animation.Status.RUNNING) {
+                loadingPulseTimeline.play();
+            }
+        } else if (loadingPulseTimeline != null) {
+            loadingPulseTimeline.stop();
+            loadingPhase.set(0);
+        }
+        if (seekPulse != null) {
+            seekPulse.setVisible(loading);
         }
     }
 
@@ -1191,18 +1317,25 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void toggleFavorite(FeedItem item) {
+        setFavorites(actionTargets(item), !item.isTagged(FeedItem.TAG_FAVORITE));
+    }
+
+    private void setFavorites(List<FeedItem> items, boolean favorite) {
         background.submit(() -> {
             try {
-                boolean favorite = !item.isTagged(FeedItem.TAG_FAVORITE);
-                database.setFavorite(item.getId(), favorite);
-                if (favorite) {
-                    item.addTag(FeedItem.TAG_FAVORITE);
-                } else {
-                    item.removeTag(FeedItem.TAG_FAVORITE);
+                for (FeedItem item : items) {
+                    database.setFavorite(item.getId(), favorite);
+                    if (favorite) {
+                        item.addTag(FeedItem.TAG_FAVORITE);
+                    } else {
+                        item.removeTag(FeedItem.TAG_FAVORITE);
+                    }
                 }
+                setStatus((favorite ? "Added to favorites: " : "Removed from favorites: ")
+                        + episodeCountText(items));
                 Platform.runLater(episodeList::refresh);
             } catch (Exception e) {
-                setStatus("Could not update favorite: " + e.getMessage());
+                setStatus("Could not update favorites: " + e.getMessage());
             }
         });
     }
@@ -1879,7 +2012,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         grid.add(devicesButton, 0, 6, 2, 1);
         grid.add(autoSyncBox, 0, 7, 2, 1);
         grid.add(syncStatus, 0, 8, 2, 1);
-        showSidebar("Sync settings", new VBox(grid));
+        showModal("Sync settings", new VBox(grid));
     }
 
     private String deviceImportHint() {
@@ -1928,8 +2061,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }));
         VBox pane = new VBox(8, status, list);
         pane.setPadding(new Insets(8));
+        list.setPrefHeight(280);
         VBox.setVgrow(list, Priority.ALWAYS);
-        showSidebar("Devices on sync account", pane);
+        showModal("Devices on sync account", pane);
         background.submit(() -> {
             try {
                 List<de.danoeh.antennapod.net.sync.gpoddernet.model.GpodnetDevice> devices =
@@ -2157,26 +2291,79 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void togglePlayed(FeedItem item) {
+        applyPlayedState(actionTargets(item), !item.isPlayed());
+    }
+
+    private void applyPlayedState(List<FeedItem> items, boolean played) {
         background.submit(() -> {
             try {
-                boolean played = !item.isPlayed();
-                item.setPlayed(played);
-                database.setItemState(item.getId(), item.getPlayState());
-                syncManager.recordPlayedState(item, played);
-                Platform.runLater(episodeList::refresh);
+                for (FeedItem item : items) {
+                    item.setPlayed(played);
+                    database.setItemState(item.getId(), item.getPlayState());
+                    syncManager.recordPlayedState(item, played);
+                }
+                setStatus((played ? "Marked played: " : "Marked unplayed: ") + episodeCountText(items));
+                Platform.runLater(() -> {
+                    episodeList.refresh();
+                    feedList.refresh();
+                });
             } catch (Exception e) {
-                setStatus("Could not update episode: " + e.getMessage());
+                setStatus("Could not update episodes: " + e.getMessage());
             }
         });
     }
 
+    private List<FeedItem> actionTargets(FeedItem item) {
+        List<FeedItem> selected = new ArrayList<>(episodeList.getSelectionModel().getSelectedItems());
+        if (item != null && selected.size() > 1 && selected.contains(item)) {
+            return selected;
+        }
+        if (item != null) {
+            List<FeedItem> single = new ArrayList<>();
+            single.add(item);
+            return single;
+        }
+        return selected;
+    }
+
+    private static String episodeCountText(List<FeedItem> items) {
+        return episodeCountText(items.size());
+    }
+
+    private static String episodeCountText(int count) {
+        return count == 1 ? "1 episode" : count + " episodes";
+    }
+
     private void enqueue(FeedItem item) {
+        enqueueItems(actionTargets(item));
+    }
+
+    private void enqueueItems(List<FeedItem> targets) {
         background.submit(() -> {
             try {
-                database.addToQueue(item.getId());
-                setStatus("Added to queue: " + item.getTitle());
+                for (FeedItem target : targets) {
+                    database.addToQueue(target.getId());
+                }
+                setStatus("Added to queue: " + episodeCountText(targets));
             } catch (Exception e) {
                 setStatus("Could not add to queue: " + e.getMessage());
+            }
+        });
+    }
+
+    private void dequeue(FeedItem item) {
+        dequeueItems(actionTargets(item));
+    }
+
+    private void dequeueItems(List<FeedItem> targets) {
+        background.submit(() -> {
+            try {
+                for (FeedItem target : targets) {
+                    database.removeFromQueue(target.getId());
+                }
+                setStatus("Removed from queue: " + episodeCountText(targets));
+            } catch (Exception e) {
+                setStatus("Could not remove from queue: " + e.getMessage());
             }
         });
     }
@@ -2277,26 +2464,89 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (media == null) {
             return;
         }
+        List<FeedItem> targets = actionTargets(item);
         if (downloader.isDownloading(media.getId())) {
-            downloader.cancel(media.getId());
+            for (FeedItem target : targets) {
+                if (target.getMedia() != null) {
+                    downloader.cancel(target.getMedia().getId());
+                }
+            }
             return;
         }
         if (media.localFileAvailable() && media.getLocalFileUrl() != null) {
-            background.submit(() -> {
-                new File(media.getLocalFileUrl()).delete();
-                media.setLocalFileUrl(null);
-                try {
-                    database.updateMedia(media);
-                } catch (Exception e) {
-                    setStatus("Could not update episode: " + e.getMessage());
-                }
-                Platform.runLater(episodeList::refresh);
-            });
+            deleteDownloads(targets);
             return;
         }
-        downloadProgress.put(media.getId(), 0);
-        downloader.enqueue(media, this);
+        enqueueDownloads(targets);
+    }
+
+    private void enqueueDownloads(List<FeedItem> items) {
+        int queued = 0;
+        for (FeedItem item : items) {
+            FeedMedia media = item.getMedia();
+            if (media == null || media.getDownloadUrl() == null
+                    || media.localFileAvailable() || downloader.isDownloading(media.getId())) {
+                continue;
+            }
+            downloadProgress.put(media.getId(), 0);
+            downloader.enqueue(media, this);
+            queued++;
+        }
+        if (queued == 0) {
+            setStatus("Nothing to download");
+            return;
+        }
+        setStatus("Downloading " + episodeCountText(queued));
         episodeList.refresh();
+    }
+
+    private void deleteDownloads(List<FeedItem> items) {
+        List<FeedMedia> deletable = new ArrayList<>();
+        for (FeedItem item : items) {
+            FeedMedia media = item.getMedia();
+            if (media != null && media.localFileAvailable() && media.getLocalFileUrl() != null) {
+                deletable.add(media);
+            }
+        }
+        if (deletable.isEmpty()) {
+            setStatus("Nothing to delete");
+            return;
+        }
+        background.submit(() -> {
+            try {
+                for (FeedMedia media : deletable) {
+                    new File(media.getLocalFileUrl()).delete();
+                    media.setLocalFileUrl(null);
+                    database.updateMedia(media);
+                }
+                setStatus("Deleted downloads: "
+                        + (deletable.size() == 1 ? "1 episode" : deletable.size() + " episodes"));
+            } catch (Exception e) {
+                setStatus("Could not delete download: " + e.getMessage());
+            }
+            Platform.runLater(episodeList::refresh);
+        });
+    }
+
+    private boolean hasDownloadable(List<FeedItem> items) {
+        for (FeedItem item : items) {
+            FeedMedia media = item.getMedia();
+            if (media != null && media.getDownloadUrl() != null && !media.localFileAvailable()
+                    && !downloader.isDownloading(media.getId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasDownloaded(List<FeedItem> items) {
+        for (FeedItem item : items) {
+            FeedMedia media = item.getMedia();
+            if (media != null && media.localFileAvailable() && media.getLocalFileUrl() != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void autoDeleteFinished(FeedMedia media) {
@@ -2442,6 +2692,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     nowPlayingArt != null ? nowPlayingArt.getImage() : null);
         }
         episodeList.refresh();
+        feedList.refresh();
     }
 
     @Override
@@ -2461,6 +2712,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         seekSlider.setValue(Math.min(positionMs, Math.max(durationMs, 1)));
         updateGhostMarker(durationMs);
         updateTimeLabels(positionMs, durationMs);
+        long now = System.currentTimeMillis();
+        if (now - lastProgressRefreshMs > 3000) {
+            lastProgressRefreshMs = now;
+            episodeList.refresh();
+        }
         if (trayActive) {
             trayManager.updateProgress(positionMs, durationMs);
         }
@@ -2509,6 +2765,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             ghostMarker.setVisible(true);
         } catch (Exception e) {
             ghostMarker.setVisible(false);
+        }
+    }
+
+    private int syncedPositionOf(FeedItem item) {
+        try {
+            return database.getSyncedPosition(item.getId());
+        } catch (Exception e) {
+            return -1;
         }
     }
 
@@ -2580,6 +2844,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         private final Label titleLabel = new Label();
         private final Label metaLabel = new Label();
         private final Label syncBadge = new Label("SYNCED");
+        private final Label newBadge = new Label("NEW");
+        private final Label loadingBadge = new Label("LOADING");
+        private Region progressPulse;
         private final ImageView art = new ImageView();
         private final Button playButton = iconButton(Icons.play(), "Play");
         private final Button downloadButton = new Button("Download", Icons.download());
@@ -2607,14 +2874,22 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             playButton.setTooltip(playTooltip);
             syncBadge.setStyle("-fx-background-color: -fx-accent; -fx-text-fill: white; "
                     + "-fx-background-radius: 8; -fx-padding: 1 6 1 6; -fx-font-size: 10px;");
-            Region[] fixedControls = {syncBadge, playButton, downloadButton, queueButton,
-                    favoriteButton, infoButton, playedButton};
+            newBadge.getStyleClass().add("badge-new");
+            loadingBadge.getStyleClass().add("badge-loading");
+            Region[] fixedControls = {newBadge, loadingBadge, syncBadge, playButton, downloadButton,
+                    queueButton, favoriteButton, infoButton, playedButton};
             for (Region control : fixedControls) {
                 control.setMinWidth(Region.USE_PREF_SIZE);
             }
             syncBadge.setTooltip(new Tooltip("Updated by the last sync"));
             syncBadge.setVisible(false);
             syncBadge.setManaged(false);
+            newBadge.setTooltip(new Tooltip("New episode"));
+            newBadge.setVisible(false);
+            newBadge.setManaged(false);
+            loadingBadge.setTooltip(new Tooltip("Loading media"));
+            loadingBadge.setVisible(false);
+            loadingBadge.setManaged(false);
             art.setFitWidth(40);
             art.setFitHeight(40);
             art.setVisible(false);
@@ -2627,7 +2902,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                             && item.getMedia().getId() == current.getId()) {
                         playback.togglePlayPause();
                     } else {
-                        playback.play(item, new ArrayList<>(visibleEpisodes));
+                        playback.play(item, playbackOrder());
                     }
                 }
             });
@@ -2661,11 +2936,77 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     toggleFavorite(item);
                 }
             });
+            setOnContextMenuRequested(event -> {
+                FeedItem item = getItem();
+                if (item == null) {
+                    return;
+                }
+                if (!isSelected()) {
+                    getListView().getSelectionModel().clearAndSelect(getIndex());
+                }
+                buildEpisodeContextMenu(item).show(this, event.getScreenX(), event.getScreenY());
+                event.consume();
+            });
+        }
+
+        private Node buildProgressBar(FeedItem item, boolean loading) {
+            FeedMedia media = item.getMedia();
+            if (media == null || media.getDuration() <= 0) {
+                return null;
+            }
+            int duration = media.getDuration();
+            int position = Math.max(media.getPosition(), 0);
+            int synced = syncedPositionOf(item);
+            boolean hasLocal = position > 0 && position < duration;
+            boolean hasSynced = synced > 0 && synced <= duration
+                    && Math.abs(synced - position) > duration / 100;
+            if (!hasLocal && !hasSynced && !loading) {
+                return null;
+            }
+            Region track = new Region();
+            track.getStyleClass().add("episode-progress");
+            track.setMinHeight(3);
+            track.setPrefHeight(3);
+            track.setMaxHeight(3);
+            track.setMaxWidth(Double.MAX_VALUE);
+            StackPane bar = new StackPane(track);
+            bar.setAlignment(Pos.CENTER_LEFT);
+            bar.setMaxWidth(Double.MAX_VALUE);
+            if (hasLocal) {
+                Region fill = new Region();
+                fill.getStyleClass().add("episode-progress-fill");
+                fill.setMaxHeight(Double.MAX_VALUE);
+                fill.setMaxWidth(Region.USE_PREF_SIZE);
+                fill.prefWidthProperty().bind(
+                        track.widthProperty().multiply(position / (double) duration));
+                StackPane.setAlignment(fill, Pos.CENTER_LEFT);
+                bar.getChildren().add(fill);
+            }
+            if (hasSynced) {
+                Region ghost = new Region();
+                ghost.getStyleClass().add("episode-progress-synced");
+                ghost.setMinSize(3, 3);
+                ghost.setPrefSize(3, 3);
+                ghost.setMaxSize(3, 3);
+                ghost.translateXProperty().bind(
+                        track.widthProperty().multiply(synced / (double) duration).subtract(1.5));
+                StackPane.setAlignment(ghost, Pos.CENTER_LEFT);
+                bar.getChildren().add(ghost);
+            }
+            if (loading) {
+                progressPulse = buildLoadingPulse(48, 3, track.widthProperty());
+                bar.getChildren().add(progressPulse);
+            }
+            return bar;
         }
 
         @Override
         protected void updateItem(FeedItem item, boolean empty) {
             super.updateItem(item, empty);
+            if (progressPulse != null) {
+                progressPulse.translateXProperty().unbind();
+                progressPulse = null;
+            }
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
@@ -2687,7 +3028,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             if (meta.length() > 0) {
                 meta.append(" · ");
             }
-            if (item.isNew()) {
+            boolean isNew = item.isNew();
+            if (isNew) {
                 meta.append("New");
             } else if (item.isPlayed()) {
                 meta.append("Played");
@@ -2733,6 +3075,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             boolean synced = syncedItemIds.contains(item.getId());
             syncBadge.setVisible(synced);
             syncBadge.setManaged(synced);
+            newBadge.setVisible(isNew);
+            newBadge.setManaged(isNew);
+            loadingBadge.setVisible(isLoading);
+            loadingBadge.setManaged(isLoading);
             String imageUrl = item.getImageUrl();
             if (imageUrl != null && !imageUrl.isEmpty()) {
                 if (!imageUrl.equals(art.getUserData())) {
@@ -2756,13 +3102,19 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 titleLabel.setStyle("-fx-font-weight: bold;");
                 titleLabel.getStyleClass().remove("muted-label");
             }
-            VBox texts = new VBox(2, titleLabel, metaLabel);
+            Node progress = buildProgressBar(item, isLoading);
+            VBox texts = progress != null
+                    ? new VBox(2, titleLabel, metaLabel, progress)
+                    : new VBox(2, titleLabel, metaLabel);
+            if (progress != null) {
+                VBox.setMargin(progress, new Insets(3, 0, 0, 0));
+            }
             texts.setMinWidth(0);
             HBox.setHgrow(texts, Priority.ALWAYS);
             favoriteButton.setGraphic(
                     Icons.star(item.isTagged(FeedItem.TAG_FAVORITE)));
-            HBox row = new HBox(8, art, texts, syncBadge, playButton, downloadButton, queueButton,
-                    favoriteButton, infoButton, playedButton);
+            HBox row = new HBox(8, art, texts, newBadge, loadingBadge, syncBadge, playButton,
+                    downloadButton, queueButton, favoriteButton, infoButton, playedButton);
             row.setPadding(new Insets(4));
             if (isCurrent) {
                 row.getStyleClass().add("episode-row-current");
