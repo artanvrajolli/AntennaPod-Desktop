@@ -983,9 +983,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         HBox extrasRow = new HBox(8, speedBox, silenceButton, muteButton, volumeSlider, sleepButton);
         extrasRow.setAlignment(Pos.CENTER_RIGHT);
 
-        nowPlayingLabel.setAlignment(Pos.CENTER);
+        nowPlayingLabel.setAlignment(Pos.CENTER_LEFT);
         HBox titleRow = new HBox(nowPlayingLabel);
-        titleRow.setAlignment(Pos.CENTER);
+        titleRow.setAlignment(Pos.CENTER_LEFT);
+        // line the title up with the seek slider's left edge (elapsed label + spacing)
+        titleRow.setPadding(new Insets(0, 0, 0, 60));
 
         // transport centred on the full bar width; extras overlaid on the right
         StackPane controlArea = new StackPane(transportRow, extrasRow);
