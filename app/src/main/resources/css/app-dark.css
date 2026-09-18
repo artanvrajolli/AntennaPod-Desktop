@@ -67,10 +67,10 @@
 }
 
 .ghost-marker {
-    -fx-background-color: rgba(236, 236, 236, 0.75);
-    -fx-background-radius: 5;
+    -fx-background-color: rgba(236, 236, 236, 0.85);
+    -fx-background-radius: 2;
     -fx-border-color: transparent;
-    -fx-border-radius: 5;
+    -fx-border-radius: 2;
 }
 
 .art-placeholder {
