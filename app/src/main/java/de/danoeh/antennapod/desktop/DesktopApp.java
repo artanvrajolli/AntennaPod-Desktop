@@ -80,6 +80,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Label nowPlayingLabel;
     private ImageView nowPlayingArt;
     private StackPane artPlaceholder;
+    private VBox artColumn;
     private Label elapsedLabel;
     private Label totalLabel;
     private Button playPauseButton;
@@ -97,9 +98,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Scene scene;
     private boolean sliderDragging;
     private long lastProgressRefreshMs;
+    private static final String PROJECT_URL = "https://github.com/artanvrajolli/AntennaPod-Desktop";
     private static final int SYNCED_MARKER_MIN_GAP_MS = 30000;
     private static final double SYNCED_MARKER_WIDTH = 3;
     private static final double SLIDER_THUMB_DIAMETER = 14;
+    private static final double ART_COLUMN_WIDTH = 96;
     private final javafx.beans.property.DoubleProperty loadingPhase =
             new javafx.beans.property.SimpleDoubleProperty(0);
     private javafx.animation.Timeline loadingPulseTimeline;
@@ -357,9 +360,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         statsButton.setOnAction(event -> showStatistics());
         Button settingsButton = new Button("Settings", Icons.settings());
         settingsButton.setOnAction(event -> showSettings());
+        Button githubButton = new Button("GitHub", Icons.github());
+        githubButton.setTooltip(new Tooltip("Open the project page on GitHub"));
+        githubButton.setOnAction(event -> openProjectPage());
         return new ToolBar(urlField, subscribeButton, searchField, searchButton, refreshAllButton,
                 queueButton, importButton, exportButton, syncButton, favoritesButton,
-                historyButton, statsButton, settingsButton);
+                historyButton, statsButton, settingsButton, githubButton);
     }
 
     private VBox buildFeedPane() {
@@ -539,6 +545,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         overlay.getStyleClass().add("modal-overlay");
         closeButton.setOnAction(event -> appShell.getChildren().remove(overlay));
         appShell.getChildren().add(overlay);
+    }
+
+    private void openProjectPage() {
+        try {
+            getHostServices().showDocument(PROJECT_URL);
+            setStatus("Opened " + PROJECT_URL);
+        } catch (Exception e) {
+            setStatus("Could not open the browser: " + e.getMessage());
+        }
     }
 
     private static String appVersion() {
@@ -977,14 +992,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         statusLabel = new Label("Ready");
         statusLabel.setMinWidth(Region.USE_PREF_SIZE);
         statusLabel.setMaxWidth(360);
-        VBox artColumn = new VBox(4, artBox, statusLabel);
+        artColumn = new VBox(4, artBox, statusLabel);
         artColumn.setAlignment(Pos.TOP_LEFT);
-        artColumn.setMinWidth(96);
-        artColumn.setPrefWidth(96);
-        artColumn.setMaxWidth(96);
+        artPlaceholder.setVisible(false);
+        setArtColumnWidth(0);
 
         VBox controlsColumn = new VBox(6, scrubRow, controlArea);
-        VBox.setVgrow(controlArea, Priority.ALWAYS);
+        controlsColumn.setAlignment(Pos.BOTTOM_LEFT);
         HBox.setHgrow(controlsColumn, Priority.ALWAYS);
 
         HBox main = new HBox(12, artColumn, controlsColumn);
@@ -2773,19 +2787,21 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (nowPlayingArt == null) {
             return;
         }
+        boolean hasMedia = current != null && current.getItem() != null;
         String artUrl = null;
-        if (current != null && current.getItem() != null) {
+        if (hasMedia) {
             artUrl = current.getItem().getImageUrl();
             if (artUrl == null || artUrl.isEmpty()) {
                 artUrl = feedImageUrl(current.getItem().getFeedId());
             }
         }
+        setArtColumnWidth(hasMedia ? ART_COLUMN_WIDTH : 0);
         if (artUrl == null || artUrl.isEmpty()) {
             nowPlayingArt.setUserData(null);
             nowPlayingArt.setImage(null);
             nowPlayingArt.setVisible(false);
             if (artPlaceholder != null) {
-                artPlaceholder.setVisible(true);
+                artPlaceholder.setVisible(hasMedia);
             }
             return;
         }
@@ -2797,6 +2813,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (artPlaceholder != null) {
             artPlaceholder.setVisible(false);
         }
+    }
+
+    private void setArtColumnWidth(double width) {
+        if (artColumn == null) {
+            return;
+        }
+        artColumn.setMinWidth(width);
+        artColumn.setPrefWidth(width);
+        artColumn.setMaxWidth(width);
     }
 
     private String feedImageUrl(long feedId) {
