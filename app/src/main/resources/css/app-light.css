@@ -82,6 +82,23 @@
     -fx-border-radius: 2;
 }
 
+.modal-backdrop {
+    -fx-background-color: rgba(0, 0, 0, 0.35);
+}
+
+.modal-card {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 8;
+    -fx-border-color: rgba(0, 0, 0, 0.14);
+    -fx-border-radius: 8;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.28), 26, 0.2, 0, 10);
+}
+
+.modal-scroll,
+.modal-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
 .art-placeholder {
     -fx-background-color: rgba(0, 0, 0, 0.04);
     -fx-background-radius: 6;

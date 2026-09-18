@@ -33,6 +33,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.Slider;
 import javafx.scene.control.TextField;
@@ -40,6 +41,7 @@ import javafx.scene.control.TextInputControl;
 import javafx.scene.control.ToolBar;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
@@ -99,6 +101,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private final javafx.beans.property.DoubleProperty loadingPhase =
             new javafx.beans.property.SimpleDoubleProperty(0);
     private javafx.animation.Timeline loadingPulseTimeline;
+    private StackPane appShell;
     private Region seekPulse;
     private boolean showRemainingTime;
     private double lastVolume;
@@ -175,11 +178,18 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         root.setRight(buildSidebar());
         root.setBottom(buildPlayerBar());
 
+        appShell = new StackPane(root);
         stage.setTitle("AntennaPod Desktop");
-        scene = new Scene(root, 1100, 700);
+        scene = new Scene(appShell, 1100, 700);
         ThemeManager.init();
         ThemeManager.style(scene);
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handleGlobalKey);
+        scene.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if (event.getCode() == KeyCode.ESCAPE && hasModal()) {
+                closeTopModal();
+                event.consume();
+            }
+        });
         stage.setScene(scene);
         mainStage = stage;
         stage.setOnCloseRequest(event -> {
@@ -475,30 +485,57 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void showModal(String title, Node content) {
-        Stage dialog = new Stage();
-        dialog.initOwner(mainStage);
-        dialog.initModality(javafx.stage.Modality.APPLICATION_MODAL);
-        dialog.setTitle(title);
         Label modalTitle = new Label(title);
         modalTitle.getStyleClass().add("sidebar-title");
         modalTitle.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(modalTitle, Priority.ALWAYS);
         Button closeButton = iconButton(Icons.remove(), "Close");
         closeButton.getStyleClass().add("flat");
-        closeButton.setOnAction(event -> dialog.close());
         HBox header = new HBox(8, modalTitle, closeButton);
         header.getStyleClass().add("sidebar-header");
         header.setAlignment(Pos.CENTER_LEFT);
-        HBox.setHgrow(modalTitle, Priority.ALWAYS);
         HBox.setMargin(closeButton, new Insets(0, 0, 0, 8));
+
         VBox contentBox = new VBox(content);
         contentBox.getStyleClass().add("sidebar-content");
         VBox.setVgrow(content, Priority.ALWAYS);
-        VBox.setVgrow(contentBox, Priority.ALWAYS);
-        Scene dialogScene = new Scene(new VBox(header, contentBox), 560, Region.USE_COMPUTED_SIZE);
-        ThemeManager.style(dialogScene);
-        dialog.setScene(dialogScene);
-        dialog.sizeToScene();
-        dialog.show();
+        ScrollPane scroller = new ScrollPane(contentBox);
+        scroller.setFitToWidth(true);
+        scroller.getStyleClass().add("modal-scroll");
+        scroller.maxHeightProperty().bind(appShell.heightProperty().subtract(160));
+        VBox.setVgrow(scroller, Priority.ALWAYS);
+
+        VBox card = new VBox(header, scroller);
+        card.getStyleClass().add("modal-card");
+        card.setMinWidth(420);
+        card.setPrefWidth(560);
+        card.setMaxWidth(560);
+        card.setMaxHeight(Region.USE_PREF_SIZE);
+
+        Region backdrop = new Region();
+        backdrop.getStyleClass().add("modal-backdrop");
+        backdrop.setPickOnBounds(true);
+        backdrop.addEventHandler(MouseEvent.ANY, mouseEvent -> mouseEvent.consume());
+
+        StackPane overlay = new StackPane(backdrop, card);
+        overlay.getStyleClass().add("modal-overlay");
+        closeButton.setOnAction(event -> appShell.getChildren().remove(overlay));
+        appShell.getChildren().add(overlay);
+    }
+
+    private boolean hasModal() {
+        return appShell != null && appShell.getChildren().stream()
+                .anyMatch(node -> node.getStyleClass().contains("modal-overlay"));
+    }
+
+    private void closeTopModal() {
+        for (int i = appShell.getChildren().size() - 1; i >= 0; i--) {
+            Node node = appShell.getChildren().get(i);
+            if (node.getStyleClass().contains("modal-overlay")) {
+                appShell.getChildren().remove(i);
+                return;
+            }
+        }
     }
 
     private void hideSidebar() {
@@ -1006,6 +1043,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void handleGlobalKey(KeyEvent event) {
+        if (hasModal()) {
+            return;
+        }
         Node focusOwner = scene != null ? scene.getFocusOwner() : null;
         if (focusOwner instanceof TextInputControl || focusOwner instanceof WebView) {
             return;
