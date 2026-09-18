@@ -725,8 +725,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         StackPane playPauseHolder = new StackPane(playPauseButton, loadingSpinner);
 
         nowPlayingArt = new ImageView();
-        nowPlayingArt.setFitWidth(36);
-        nowPlayingArt.setFitHeight(36);
+        nowPlayingArt.setFitWidth(96);
+        nowPlayingArt.setFitHeight(96);
         nowPlayingArt.setVisible(false);
         nowPlayingArt.setManaged(false);
 
@@ -772,14 +772,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         ghostMarker.getStyleClass().add("ghost-marker");
         ghostMarker.setMouseTransparent(true);
         ghostMarker.setVisible(false);
-        ghostMarker.setManaged(false);
         ghostMarker.setPrefSize(10, 10);
         ghostMarker.setMinSize(10, 10);
         ghostMarker.setMaxSize(10, 10);
         StackPane.setAlignment(ghostMarker, Pos.CENTER_LEFT);
         seekPulse = buildLoadingPulse(72, 5, seekSlider.widthProperty());
         seekPulse.setVisible(false);
-        seekPulse.setManaged(false);
         StackPane stack = new StackPane(seekSlider, ghostMarker, seekPulse);
         StackPane.setAlignment(stack, Pos.CENTER_LEFT);
 
@@ -837,7 +835,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         HBox scrubRow = new HBox(8, elapsedLabel, stack, totalLabel, chapterLabel,
                 chapterPrevButton, chapterNextButton);
         scrubRow.setAlignment(Pos.CENTER_LEFT);
-        scrubRow.setPadding(new Insets(8, 8, 0, 8));
         HBox.setHgrow(stack, Priority.ALWAYS);
         scrubRow.setOnScroll(event -> {
             if (Math.abs(event.getDeltaY()) >= 20 && playback.getCurrentMedia() != null) {
@@ -846,14 +843,32 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         });
 
-        HBox playerRow = new HBox(8, prevButton, skipBackButton, playPauseHolder, skipForwardButton,
-                nextButton, stopButton, nowPlayingArt, nowPlayingLabel, speedBox, silenceButton,
-                muteButton, volumeSlider, sleepButton);
-        playerRow.setAlignment(Pos.CENTER_LEFT);
-        playerRow.setPadding(new Insets(8));
+        HBox transportRow = new HBox(8, prevButton, skipBackButton, playPauseHolder,
+                skipForwardButton, nextButton, stopButton);
+        transportRow.setAlignment(Pos.CENTER);
+        HBox extrasRow = new HBox(8, speedBox, silenceButton, muteButton, volumeSlider, sleepButton);
+        extrasRow.setAlignment(Pos.CENTER_RIGHT);
+        BorderPane controlRow = new BorderPane(transportRow);
+        controlRow.setRight(extrasRow);
+
+        nowPlayingLabel.setAlignment(Pos.CENTER);
+        HBox titleRow = new HBox(nowPlayingLabel);
+        titleRow.setAlignment(Pos.CENTER);
+
+        VBox controlsColumn = new VBox(6, scrubRow, controlRow, titleRow);
+        HBox.setHgrow(controlsColumn, Priority.ALWAYS);
+
         statusLabel = new Label("Ready");
-        statusLabel.setPadding(new Insets(0, 8, 8, 8));
-        return new VBox(scrubRow, playerRow, statusLabel);
+        statusLabel.setMinWidth(200);
+        statusLabel.setPrefWidth(200);
+        statusLabel.setMaxWidth(200);
+        VBox artColumn = new VBox(6, nowPlayingArt, statusLabel);
+        artColumn.setAlignment(Pos.TOP_LEFT);
+
+        HBox main = new HBox(12, artColumn, controlsColumn);
+        main.setAlignment(Pos.CENTER_LEFT);
+        main.setPadding(new Insets(8));
+        return new VBox(main);
     }
 
     private static Label buildTimeLabel(Pos alignment) {
@@ -2643,7 +2658,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         if (!artUrl.equals(nowPlayingArt.getUserData())) {
             nowPlayingArt.setUserData(artUrl);
-            nowPlayingArt.setImage(ImageCache.get(artUrl, 36, 36));
+            nowPlayingArt.setImage(ImageCache.get(artUrl, 96, 96));
         }
         nowPlayingArt.setVisible(true);
         nowPlayingArt.setManaged(true);
