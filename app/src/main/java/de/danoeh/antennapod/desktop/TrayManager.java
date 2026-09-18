@@ -107,7 +107,7 @@ public final class TrayManager {
         nowPlayingLabel = new Label("Nothing playing");
         nowPlayingLabel.setWrapText(true);
         nowPlayingLabel.setMaxWidth(260);
-        playPauseButton = control(Icons.play(), "Play", callbacks::onPlayPause);
+        playPauseButton = control(Icons.accent(Icons.play()), "Play", callbacks::onPlayPause);
         HBox transport = new HBox(8,
                 control(Icons.previous(), "Previous episode", callbacks::onPrevious),
                 control(Icons.replay10(), "Skip back", callbacks::onSkipBack),
@@ -213,7 +213,7 @@ public final class TrayManager {
             return;
         }
         boolean hasEpisode = nowPlaying != null && !nowPlaying.isEmpty();
-        playPauseButton.setGraphic(playing ? Icons.pause() : Icons.play());
+        playPauseButton.setGraphic(Icons.accent(playing ? Icons.pause() : Icons.play()));
         playPauseButton.setAccessibleText(playing ? "Pause" : "Play");
         playPauseButton.getTooltip().setText(playing ? "Pause" : "Play");
         nowPlayingLabel.setText(hasEpisode ? truncate(nowPlaying, 100) : "Nothing playing");
