@@ -234,8 +234,19 @@ public final class TrayManager {
         TrayIcon removed = trayIcon;
         trayIcon = null;
         pendingArtwork = null;
-        if (removed != null) {
-            EventQueue.invokeLater(() -> SystemTray.getSystemTray().remove(removed));
+        if (removed == null) {
+            return;
+        }
+        if (EventQueue.isDispatchThread()) {
+            SystemTray.getSystemTray().remove(removed);
+            return;
+        }
+        try {
+            EventQueue.invokeAndWait(() -> SystemTray.getSystemTray().remove(removed));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            // the icon is already gone
         }
     }
 

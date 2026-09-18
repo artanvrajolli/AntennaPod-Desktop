@@ -27,6 +27,7 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
@@ -126,6 +127,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private boolean trayActive;
     private boolean shuttingDown;
     private Stage mainStage;
+    private java.nio.channels.FileChannel instanceLockChannel;
+    private java.nio.channels.FileLock instanceLock;
     private java.util.concurrent.ScheduledExecutorService autoRefreshScheduler;
     private java.util.concurrent.ScheduledFuture<?> autoRefreshTask;
 
@@ -138,6 +141,17 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         DesktopPreferences.getDataDir().mkdirs();
         DesktopPreferences.getMediaDir().mkdirs();
         DesktopPreferences.getCacheDir().mkdirs();
+        if (!acquireInstanceLock()) {
+            Platform.runLater(() -> {
+                Alert alert = new Alert(Alert.AlertType.INFORMATION,
+                        "AntennaPod Desktop is already running.");
+                alert.setTitle("AntennaPod Desktop");
+                alert.setHeaderText(null);
+                alert.showAndWait();
+                Platform.exit();
+            });
+            return;
+        }
         database = new DesktopDatabase(DesktopPreferences.getDatabaseFile());
         feedUpdater = new FeedUpdater(database);
         downloader = new EpisodeDownloader(database);
@@ -193,7 +207,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         stage.setScene(scene);
         mainStage = stage;
         stage.setOnCloseRequest(event -> {
-            if (trayActive) {
+            if (trayActive && DesktopPreferences.getCloseToTray()) {
                 event.consume();
                 stage.hide();
             } else {
@@ -201,7 +215,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         });
         stage.show();
-        trayActive = trayManager.init(new TrayManager.Callbacks() {
+        boolean trayEnabled = !"false".equalsIgnoreCase(
+                System.getProperty("antennapod.desktop.tray", "true"));
+        trayActive = trayEnabled && trayManager.init(new TrayManager.Callbacks() {
             @Override
             public void onPlayPause() {
                 playback.togglePlayPause();
@@ -521,6 +537,25 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         overlay.getStyleClass().add("modal-overlay");
         closeButton.setOnAction(event -> appShell.getChildren().remove(overlay));
         appShell.getChildren().add(overlay);
+    }
+
+    private boolean acquireInstanceLock() {
+        try {
+            java.nio.channels.FileChannel channel = java.nio.channels.FileChannel.open(
+                    new File(DesktopPreferences.getDataDir(), "antennapod.lock").toPath(),
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.WRITE);
+            java.nio.channels.FileLock lock = channel.tryLock();
+            if (lock == null) {
+                channel.close();
+                return false;
+            }
+            instanceLockChannel = channel;
+            instanceLock = lock;
+            return true;
+        } catch (Exception e) {
+            return true;
+        }
     }
 
     private boolean hasModal() {
@@ -1816,6 +1851,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         javafx.scene.control.PasswordField proxyPass = new javafx.scene.control.PasswordField();
         proxyPass.setText(DesktopPreferences.getProxyPassword());
         grid.add(proxyPass, 1, row++);
+        grid.add(sectionLabel("Window"), 0, row++, 2, 1);
+        javafx.scene.control.CheckBox closeToTrayBox = new javafx.scene.control.CheckBox(
+                "Keep running in the system tray when the window is closed");
+        closeToTrayBox.setSelected(DesktopPreferences.getCloseToTray());
+        grid.add(closeToTrayBox, 0, row++, 2, 1);
         Button saveButton = new Button("Save");
         Label savedLabel = new Label("");
         saveButton.setOnAction(event -> {
@@ -1841,6 +1881,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 DesktopPreferences.setProxyUser(proxyUser.getText().trim());
                 DesktopPreferences.setProxyPassword(proxyPass.getText());
                 DesktopPreferences.setThemeMode(themeModeValue(themeBox.getValue()));
+                DesktopPreferences.setCloseToTray(closeToTrayBox.isSelected());
                 applyProxy();
                 scheduleAutoRefresh();
                 ThemeManager.applySavedMode();
