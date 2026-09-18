@@ -834,7 +834,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         skipBackButton = iconButton(Icons.replay10(), "");
         skipBackButton.setOnAction(event ->
                 playback.skip(-DesktopPreferences.getSkipBackSec() * 1000));
-        playPauseButton = iconButton(Icons.play(26), "Play / pause");
+        playPauseButton = iconButton(Icons.accent(Icons.play(26)), "Play / pause");
         playPauseButton.setOnAction(event -> handlePlayPauseAction());
         skipForwardButton = iconButton(Icons.forward30(), "");
         skipForwardButton.setOnAction(event ->
@@ -2931,8 +2931,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private void updatePlayPauseButton() {
         if (playPauseButton != null) {
-            playPauseButton.setGraphic(playback != null && playback.isPlaying()
-                    ? Icons.pause(26) : Icons.play(26));
+            playPauseButton.setGraphic(Icons.accent(playback != null && playback.isPlaying()
+                    ? Icons.pause(26) : Icons.play(26)));
         }
     }
 

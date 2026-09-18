@@ -1,13 +1,27 @@
 package de.danoeh.antennapod.desktop;
 
+import java.util.Locale;
 import javafx.scene.Node;
 import javafx.scene.layout.Region;
 import javafx.scene.shape.SVGPath;
 
-// Icon artwork from Phosphor Icons (https://phosphoricons.com), MIT License.
+/**
+ * The in-app icon set: flat, solid shapes drawn on a 256 unit grid.
+ *
+ * <p>The glyphs are built from the primitives below rather than pasted path data, so the whole
+ * set shares one geometry — the same 24 unit bar, the same 26 unit diagonal, the same corner
+ * radius — and a change to a primitive carries across every icon that uses it.
+ *
+ * <p>Every additive primitive winds clockwise on screen and every cut-out winds counter-clockwise,
+ * so overlapping parts merge under the non-zero fill rule instead of cancelling each other out.
+ */
 public final class Icons {
     private static final double SIZE = 15;
     private static final double VIEW_BOX = 256;
+    /** Line weight for bars and strokes. */
+    private static final double BAR = 24;
+    /** Slightly heavier weight for diagonals, which read thinner than straight bars. */
+    private static final double DIAGONAL = 26;
 
     private Icons() {
     }
@@ -35,14 +49,20 @@ public final class Icons {
         return holder;
     }
 
+    /** Tints an icon with the theme accent, marking it as the primary action. */
+    public static Node accent(Node icon) {
+        icon.setStyle("-fx-background-color: -fx-accent;");
+        return icon;
+    }
+
+    // ---------------------------------------------------------------- transport
+
     public static Node play() {
         return play(SIZE);
     }
 
     public static Node play(double size) {
-        return icon(
-            "M240,128a15.74,15.74,0,0,1-7.6,13.51L88.32,229.65a16,16,0,0,1-16.2.3A15.86,15.86,0,0,1,64,216.13"
-            + "V39.87a15.86,15.86,0,0,1,8.12-13.82,16,16,0,0,1,16.2.3L232.4,114.49A15.74,15.74,0,0,1,240,128Z", size);
+        return icon(polygon(true, 84, 50, 206, 128, 84, 206), size);
     }
 
     public static Node pause() {
@@ -50,215 +70,187 @@ public final class Icons {
     }
 
     public static Node pause(double size) {
-        return icon(
-            "M216,48V208a16,16,0,0,1-16,16H160a16,16,0,0,1-16-16V48a16,16,0,0,1,16-16h40A16,16,0,0,1,216,48ZM"
-            + "96,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16H96a16,16,0,0,0,16-16V48A16,16,0,0,0,96,32Z", size);
-    }
-
-    public static Node replay10() {
-        return icon(
-            "M224,128a96,96,0,0,1-94.71,96H128A95.38,95.38,0,0,1,62.1,197.8a8,8,0,0,1,11-11.63A80,80,0,1,0,71"
-            + ".43,71.39a3.07,3.07,0,0,1-.26.25L60.63,81.29l17,17A8,8,0,0,1,72,112H24a8,8,0,0,1-8-8V56A8,8,0,0,"
-            + "1,29.66,50.3L49.31,70,60.25,60A96,96,0,0,1,224,128Z");
-    }
-
-    public static Node forward30() {
-        return icon(
-            "M240,56v48a8,8,0,0,1-8,8H184a8,8,0,0,1-5.66-13.66l17-17-10.55-9.65-.25-.24a80,80,0,1,0-1.67,114."
-            + "78,8,8,0,1,1,11,11.63A95.44,95.44,0,0,1,128,224h-1.32A96,96,0,1,1,195.75,60l10.93,10L226.34,50.3"
-            + "A8,8,0,0,1,240,56Z");
-    }
-
-    public static Node volumeUp() {
-        return icon(
-            "M160,32.25V223.69a8.29,8.29,0,0,1-3.91,7.18,8,8,0,0,1-9-.56l-65.57-51A4,4,0,0,1,80,176.16V79.84a"
-            + "4,4,0,0,1,1.55-3.15l65.57-51a8,8,0,0,1,10,.16A8.27,8.27,0,0,1,160,32.25ZM60,80H32A16,16,0,0,0,16"
-            + ",96v64a16,16,0,0,0,16,16H60a4,4,0,0,0,4-4V84A4,4,0,0,0,60,80Zm126.77,20.84a8,8,0,0,0-.72,11.3,24"
-            + ",24,0,0,1,0,31.72,8,8,0,1,0,12,10.58,40,40,0,0,0,0-52.88A8,8,0,0,0,186.74,100.84Zm40.89-26.17a8,"
-            + "8,0,1,0-11.92,10.66,64,64,0,0,1,0,85.34,8,8,0,1,0,11.92,10.66,80,80,0,0,0,0-106.66Z");
-    }
-
-    public static Node volumeOff() {
-        return icon(
-            "M213.92,210.62a8,8,0,1,1-11.84,10.76L160,175.09v48.6a8.29,8.29,0,0,1-3.91,7.18,8,8,0,0,1-9-.56l-"
-            + "65.55-51A4,4,0,0,1,80,176.18V87.09L42.08,45.38A8,8,0,1,1,53.92,34.62Zm-27.21-55.46a8,8,0,0,0,11."
-            + "29-.7,40,40,0,0,0,0-52.88,8,8,0,1,0-12,10.57,24,24,0,0,1,0,31.72A8,8,0,0,0,186.71,155.16Zm40.92-"
-            + "80.49a8,8,0,1,0-11.92,10.66,64,64,0,0,1,0,85.34,8,8,0,1,0,11.92,10.66,80,80,0,0,0,0-106.66ZM153,"
-            + "119.87a4,4,0,0,0,7-2.7V32.25a8.27,8.27,0,0,0-2.88-6.4,8,8,0,0,0-10-.16L103.83,59.33a4,4,0,0,0-.5"
-            + ",5.85ZM60,80H32A16,16,0,0,0,16,96v64a16,16,0,0,0,16,16H60a4,4,0,0,0,4-4V84A4,4,0,0,0,60,80Z");
-    }
-
-    public static Node navigateBefore() {
-        return icon(
-            "M168,48V208a8,8,0,0,1-13.66,5.66l-80-80a8,8,0,0,1,0-11.32l80-80A8,8,0,0,1,168,48Z");
-    }
-
-    public static Node navigateAfter() {
-        return icon(
-            "M181.66,133.66l-80,80A8,8,0,0,1,88,208V48a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,181.66,133.66Z");
+        return icon(rect(80, 56, 34, 144, 14) + rect(142, 56, 34, 144, 14), size);
     }
 
     public static Node stop() {
-        return icon(
-            "M216,56V200a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16V56A16,16,0,0,1,56,40H200A16,16,0,0,1,216,56Z");
+        return icon(rect(66, 66, 124, 124, 18));
     }
 
     public static Node previous() {
-        return icon(
-            "M208,47.88V208.12a16,16,0,0,1-24.43,13.43L64,146.77V216a8,8,0,0,1-16,0V40a8,8,0,0,1,16,0v69.23L1"
-            + "83.57,34.45A15.95,15.95,0,0,1,208,47.88Z");
+        return icon(rect(56, 56, 28, 144, 12) + polygon(true, 200, 50, 96, 128, 200, 206));
     }
 
     public static Node next() {
-        return icon(
-            "M208,40V216a8,8,0,0,1-16,0V146.77L72.43,221.55A15.95,15.95,0,0,1,48,208.12V47.88A15.95,15.95,0,0"
-            + ",1,72.43,34.45L192,109.23V40a8,8,0,0,1,16,0Z");
+        return icon(polygon(true, 56, 50, 160, 128, 56, 206) + rect(172, 56, 28, 144, 12));
     }
 
-    public static Node download() {
-        return icon(
-            "M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66"
-            + ",5.66a8,8,0,0,0,11.32,0l40-40A8,8,0,0,0,168,96H136V32a8,8,0,0,0-16,0V96H88a8,8,0,0,0-5.66,13.66Z");
+    /** Circular arrow running anti-clockwise, head at the top. */
+    public static Node replay10() {
+        return icon(arcArrow(128, 128, 80, BAR, 250, 530, true));
     }
 
-    public static Node upload() {
-        return icon(
-            "M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0ZM88,80h3"
-            + "2v64a8,8,0,0,0,16,0V80h32a8,8,0,0,0,5.66-13.66l-40-40a8,8,0,0,0-11.32,0l-40,40A8,8,0,0,0,88,80Z");
-    }
-
-    public static Node queueAdd() {
-        return icon(
-            "M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM"
-            + "64,72H192a8,8,0,0,1,0,16H64a8,8,0,0,1,0-16Zm56,112H64a8,8,0,0,1,0-16h56a8,8,0,0,1,0,16Zm16-48H64"
-            + "a8,8,0,0,1,0-16h72a8,8,0,0,1,0,16Zm64,32H184v16a8,8,0,0,1-16,0V168H152a8,8,0,0,1,0-16h16V136a8,8"
-            + ",0,0,1,16,0v16h16a8,8,0,0,1,0,16Z");
-    }
-
-    public static Node info() {
-        return icon(
-            "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm-4,48a12,12,0,1,1-12,12A12,12,0,0,1,12"
-            + "4,72Zm12,112a16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40a8,8,0,0,1,0,16Z");
-    }
-
-    public static Node check() {
-        return icon(
-            "M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM"
-            + "205.66,85.66l-96,96a8,8,0,0,1-11.32,0l-40-40a8,8,0,0,1,11.32-11.32L104,164.69l90.34-90.35a8,8,0,"
-            + "0,1,11.32,11.32Z");
+    /** Circular arrow running clockwise, head at the top. */
+    public static Node forward30() {
+        return icon(arcArrow(128, 128, 80, BAR, 10, 290, false));
     }
 
     public static Node replay() {
-        return icon(
-            "M232,144a64.07,64.07,0,0,1-64,64H80a8,8,0,0,1,0-16h88a48,48,0,0,0,0-96H88v40a8,8,0,0,1-13.66,5.6"
-            + "6l-48-48a8,8,0,0,1,0-11.32l48-48A8,8,0,0,1,88,40V80h80A64.07,64.07,0,0,1,232,144Z");
+        return replay10();
+    }
+
+    // ---------------------------------------------------------------- volume
+
+    private static String speaker(double right) {
+        double cone = right - 56;
+        return polygon(true, 36, 104, cone, 104, right, 50, right, 206, cone, 152, 36, 152);
+    }
+
+    public static Node volumeUp() {
+        return icon(speaker(134)
+                + band(130, 128, 58, 20, -46, 46)
+                + band(130, 128, 92, 20, -50, 50));
+    }
+
+    public static Node volumeOff() {
+        return icon(speaker(112)
+                + capsule(152, 100, 214, 162, 22)
+                + capsule(214, 100, 152, 162, 22));
+    }
+
+    // ---------------------------------------------------------------- chevrons
+
+    public static Node navigateBefore() {
+        return icon(capsule(158, 58, 98, 128, DIAGONAL) + capsule(98, 128, 158, 198, DIAGONAL));
+    }
+
+    public static Node navigateAfter() {
+        return icon(capsule(98, 58, 158, 128, DIAGONAL) + capsule(158, 128, 98, 198, DIAGONAL));
     }
 
     public static Node up() {
-        return icon(
-            "M215.39,163.06A8,8,0,0,1,208,168H48a8,8,0,0,1-5.66-13.66l80-80a8,8,0,0,1,11.32,0l80,80A8,8,0,0,1"
-            + ",215.39,163.06Z");
+        return icon(capsule(56, 158, 128, 90, DIAGONAL) + capsule(128, 90, 200, 158, DIAGONAL));
     }
 
     public static Node down() {
-        return icon(
-            "M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,48,88H208a8,8,0,0,1,5.66,13.66Z");
+        return icon(capsule(56, 98, 128, 166, DIAGONAL) + capsule(128, 166, 200, 98, DIAGONAL));
     }
 
-    public static Node clock() {
-        return icon(
-            "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm56,112H128a8,8,0,0,1-8-8V72a8,8,0,0,1,"
-            + "16,0v48h48a8,8,0,0,1,0,16Z");
+    // ---------------------------------------------------------------- transfers
+
+    public static Node download() {
+        return icon(capsule(128, 40, 128, 118, BAR)
+                + arrowHead(128, 116, 0, 1, 52, 42)
+                + capsule(52, 206, 204, 206, BAR));
     }
 
-    public static Node remove() {
-        return icon(
-            "M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM"
-            + "181.66,170.34a8,8,0,0,1-11.32,11.32L128,139.31,85.66,181.66a8,8,0,0,1-11.32-11.32L116.69,128,74."
-            + "34,85.66A8,8,0,0,1,85.66,74.34L128,116.69l42.34-42.35a8,8,0,0,1,11.32,11.32L139.31,128Z");
-    }
-
-    public static Node refresh() {
-        return icon(
-            "M224,48V96a8,8,0,0,1-8,8H168a8,8,0,0,1-5.66-13.66L180.65,72a79.48,79.48,0,0,0-54.72-22.09h-.45A7"
-            + "9.52,79.52,0,0,0,69.59,72.71,8,8,0,0,1,58.41,61.27,96,96,0,0,1,192,60.7l18.36-18.36A8,8,0,0,1,22"
-            + "4,48ZM186.41,183.29A80,80,0,0,1,75.35,184l18.31-18.31A8,8,0,0,0,88,152H40a8,8,0,0,0-8,8v48a8,8,0"
-            + ",0,0,13.66,5.66L64,195.3a95.42,95.42,0,0,0,66,26.76h.53a95.36,95.36,0,0,0,67.07-27.33,8,8,0,0,0-"
-            + "11.18-11.44Z");
-    }
-
-    public static Node search() {
-        return icon(
-            "M168,112a56,56,0,1,1-56-56A56,56,0,0,1,168,112Zm61.66,117.66a8,8,0,0,1-11.32,0l-50.06-50.07a88,8"
-            + "8,0,1,1,11.32-11.31l50.06,50.06A8,8,0,0,1,229.66,229.66ZM112,184a72,72,0,1,0-72-72A72.08,72.08,0"
-            + ",0,0,112,184Z");
-    }
-
-    public static Node settings() {
-        return icon(
-            "M237.94,107.21a8,8,0,0,0-3.89-5.4l-29.83-17-.12-33.62a8,8,0,0,0-2.83-6.08,111.91,111.91,0,0,0-36"
-            + ".72-20.67,8,8,0,0,0-6.46.59L128,41.85,97.88,25a8,8,0,0,0-6.47-.6A111.92,111.92,0,0,0,54.73,45.15"
-            + "a8,8,0,0,0-2.83,6.07l-.15,33.65-29.83,17a8,8,0,0,0-3.89,5.4,106.47,106.47,0,0,0,0,41.56,8,8,0,0,"
-            + "0,3.89,5.4l29.83,17,.12,33.63a8,8,0,0,0,2.83,6.08,111.91,111.91,0,0,0,36.72,20.67,8,8,0,0,0,6.46"
-            + "-.59L128,214.15,158.12,231a7.91,7.91,0,0,0,3.9,1,8.09,8.09,0,0,0,2.57-.42,112.1,112.1,0,0,0,36.6"
-            + "8-20.73,8,8,0,0,0,2.83-6.07l.15-33.65,29.83-17a8,8,0,0,0,3.89-5.4A106.47,106.47,0,0,0,237.94,107"
-            + ".21ZM128,168a40,40,0,1,1,40-40A40,40,0,0,1,128,168Z");
+    public static Node upload() {
+        return icon(arrowHead(128, 96, 0, -1, 52, 42)
+                + capsule(128, 94, 128, 168, BAR)
+                + capsule(52, 206, 204, 206, BAR));
     }
 
     public static Node sync() {
-        return icon(
-            "M42.34,85.66a8,8,0,0,1,0-11.32l32-32A8,8,0,0,1,88,48V72H208a8,8,0,0,1,0,16H88v24a8,8,0,0,1-13.66"
-            + ",5.66Zm171.32,84.68-32-32A8,8,0,0,0,168,144v24H48a8,8,0,0,0,0,16H168v24a8,8,0,0,0,13.66,5.66l32-"
-            + "32A8,8,0,0,0,213.66,170.34Z");
+        return icon(capsule(46, 96, 178, 96, 22)
+                + arrowHead(176, 96, 1, 0, 44, 36)
+                + capsule(78, 160, 210, 160, 22)
+                + arrowHead(80, 160, -1, 0, 44, 36));
     }
 
-    public static Node history() {
-        return icon(
-            "M224,128A96,96,0,0,1,62.11,197.82a8,8,0,1,1,11-11.64A80,80,0,1,0,71.43,71.43C67.9,75,64.58,78.51"
-            + ",61.35,82L77.66,98.34A8,8,0,0,1,72,112H32a8,8,0,0,1-8-8V64a8,8,0,0,1,13.66-5.66L50,70.7c3.22-3.4"
-            + "9,6.54-7,10.06-10.55A96,96,0,0,1,224,128ZM128,72a8,8,0,0,0-8,8v48a8,8,0,0,0,3.88,6.86l40,24a8,8,"
-            + "0,1,0,8.24-13.72L136,123.47V80A8,8,0,0,0,128,72Z");
+    public static Node refresh() {
+        return icon(arcArrow(128, 128, 78, BAR, 200, 340, false)
+                + arcArrow(128, 128, 78, BAR, 20, 160, false));
     }
 
-    public static Node stats() {
-        return icon(
-            "M232,208a8,8,0,0,1-8,8H32a8,8,0,0,1,0-16h8V136a8,8,0,0,1,8-8H72a8,8,0,0,1,8,8v64H96V88a8,8,0,0,1"
-            + ",8-8h32a8,8,0,0,1,8,8V200h16V40a8,8,0,0,1,8-8h40a8,8,0,0,1,8,8V200h8A8,8,0,0,1,232,208Z");
+    // ---------------------------------------------------------------- lists
+
+    private static String listLines() {
+        return capsule(48, 72, 200, 72, 22)
+                + capsule(48, 128, 140, 128, 22)
+                + capsule(48, 184, 140, 184, 22);
     }
 
     public static Node queue() {
-        return icon(
-            "M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM"
-            + "64,72H192a8,8,0,0,1,0,16H64a8,8,0,0,1,0-16Zm40,112H64a8,8,0,0,1,0-16h40a8,8,0,0,1,0,16Zm0-48H64a"
-            + "8,8,0,0,1,0-16h40a8,8,0,0,1,0,16Zm92.44,22.66-48,32A8,8,0,0,1,144,192a8,8,0,0,1-8-8V120a8,8,0,0,"
-            + "1,12.44-6.66l48,32a8,8,0,0,1,0,13.32Z");
+        return icon(listLines() + polygon(true, 170, 108, 222, 150, 170, 192));
     }
 
+    public static Node queueAdd() {
+        return icon(listLines()
+                + capsule(184, 126, 184, 194, 22)
+                + capsule(150, 160, 218, 160, 22));
+    }
+
+    public static Node stats() {
+        return icon(rect(40, 136, 46, 80, 14) + rect(105, 88, 46, 128, 14) + rect(170, 44, 46, 172, 14));
+    }
+
+    // ---------------------------------------------------------------- marks
+
     public static Node add() {
-        return icon(
-            "M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM"
-            + "184,136H136v48a8,8,0,0,1-16,0V136H72a8,8,0,0,1,0-16h48V72a8,8,0,0,1,16,0v48h48a8,8,0,0,1,0,16Z");
+        return icon(capsule(128, 58, 128, 198, 28) + capsule(58, 128, 198, 128, 28));
+    }
+
+    public static Node remove() {
+        return icon(capsule(74, 74, 182, 182, DIAGONAL) + capsule(182, 74, 74, 182, DIAGONAL));
+    }
+
+    public static Node check() {
+        return icon(capsule(58, 134, 104, 180, DIAGONAL) + capsule(104, 180, 198, 74, DIAGONAL));
+    }
+
+    public static Node info() {
+        return icon(ring(128, 128, 96, 20) + circle(128, 74, 14) + capsule(128, 110, 128, 186, 22));
+    }
+
+    public static Node clock() {
+        return icon(ring(128, 128, 92, 22)
+                + capsule(128, 128, 128, 74, 20)
+                + capsule(128, 128, 170, 128, 20));
+    }
+
+    /** A clock face whose rim is an anti-clockwise arrow. */
+    public static Node history() {
+        return icon(arcArrow(128, 128, 88, 22, 250, 530, true)
+                + capsule(128, 128, 128, 84, 20)
+                + capsule(128, 128, 164, 144, 20));
+    }
+
+    public static Node search() {
+        return icon(ring(110, 110, 64, BAR) + capsule(156, 156, 212, 212, 28));
+    }
+
+    /** Eight-tooth gear: a solid body, radial teeth and a punched centre. */
+    public static Node settings() {
+        StringBuilder teeth = new StringBuilder();
+        for (int i = 0; i < 8; i++) {
+            double angle = Math.toRadians(i * 45);
+            double cos = Math.cos(angle);
+            double sin = Math.sin(angle);
+            teeth.append(capsule(128 + 50 * cos, 128 + 50 * sin, 128 + 96 * cos, 128 + 96 * sin, 38));
+        }
+        return icon(circle(128, 128, 76) + teeth + hole(128, 128, 30));
     }
 
     public static Node star(boolean filled) {
-        return filled
-                ? icon(
-                        "M234.29,114.85l-45,38.83L203,211.75a16.4,16.4,0,0,1-24.5,17.82L128,198.49,77.47,229.57A16.4,16.4"
-                        + ",0,0,1,53,211.75l13.76-58.07-45-38.83A16.46,16.46,0,0,1,31.08,86l59-4.76,22.76-55.08a16.36,16.36"
-                        + ",0,0,1,30.27,0l22.75,55.08,59,4.76a16.46,16.46,0,0,1,9.37,28.86Z")
-                : icon(
-                        "M239.18,97.26A16.38,16.38,0,0,0,224.92,86l-59-4.76L143.14,26.15a16.36,16.36,0,0,0-30.27,0L90.11,"
-                        + "81.23,31.08,86a16.46,16.46,0,0,0-9.37,28.86l45,38.83L53,211.75a16.38,16.38,0,0,0,24.5,17.82L128,"
-                        + "198.49l50.53,31.08A16.4,16.4,0,0,0,203,211.75l-13.76-58.07,45-38.83A16.43,16.43,0,0,0,239.18,97."
-                        + "26Zm-15.34,5.47-48.7,42a8,8,0,0,0-2.56,7.91l14.88,62.8a.37.37,0,0,1-.17.48c-.18.14-.23.11-.38,0l"
-                        + "-54.72-33.65a8,8,0,0,0-8.38,0L69.09,215.94c-.15.09-.19.12-.38,0a.37.37,0,0,1-.17-.48l14.88-62.8a"
-                        + "8,8,0,0,0-2.56-7.91l-48.7-42c-.12-.1-.23-.19-.13-.5s.18-.27.33-.29l63.92-5.16A8,8,0,0,0,103,91.8"
-                        + "6l24.62-59.61c.08-.17.11-.25.35-.25s.27.08.35.25L153,91.86a8,8,0,0,0,6.75,4.92l63.92,5.16c.15,0,"
-                        + ".24,0,.33.29S224,102.63,223.84,102.73Z");
+        String outline = star(128, 132, 100, 44, true);
+        return icon(filled ? outline : outline + star(128, 132, 72, 31, false));
     }
 
     public static Node favorite() {
         return star(true);
+    }
+
+    /** Five bars rising and falling, used for the waveform and skip-silence controls. */
+    public static Node wave() {
+        return wave(SIZE);
+    }
+
+    public static Node wave(double size) {
+        return icon(rect(28, 96, 24, 64, 12)
+                + rect(70, 74, 24, 108, 12)
+                + rect(112, 48, 24, 160, 12)
+                + rect(154, 74, 24, 108, 12)
+                + rect(196, 96, 24, 64, 12), size);
     }
 
     // GitHub mark, drawn on a 16 unit grid (from GitHub's own octicon, MIT licensed)
@@ -278,16 +270,140 @@ public final class Icons {
         return icon(GITHUB, size, 16);
     }
 
-    public static Node wave() {
-        return wave(SIZE);
+    // ---------------------------------------------------------------- primitives
+
+    /** Rounded rectangle, wound clockwise. */
+    private static String rect(double x, double y, double w, double h, double r) {
+        double radius = Math.min(r, Math.min(w, h) / 2);
+        return "M" + n(x + radius) + "," + n(y)
+                + "H" + n(x + w - radius) + arcTo(radius, x + w, y + radius, 1)
+                + "V" + n(y + h - radius) + arcTo(radius, x + w - radius, y + h, 1)
+                + "H" + n(x + radius) + arcTo(radius, x, y + h - radius, 1)
+                + "V" + n(y + radius) + arcTo(radius, x + radius, y, 1) + "Z";
     }
 
-    public static Node wave(double size) {
-        return icon(
-            "M40,176a8,8,0,0,1-8-8V104a8,8,0,0,1,16,0v40A8,8,0,0,1,40,176Zm32-16a8,8,0,0,1-8-8V96"
-            + "a8,8,0,0,1,16,0v40A8,8,0,0,1,72,160Zm40,24a8,8,0,0,1-8-8V80a8,8,0,0,1,16,0v96A8,8,0,0,"
-            + "1,112,184Zm40-16a8,8,0,0,1-8-8V96a8,8,0,0,1,16,0v64A8,8,0,0,1,152,168Zm40,16a8,8,0,0,"
-            + "1-8-8V80a8,8,0,0,1,16,0v96A8,8,0,0,1,192,184Zm40-24a8,8,0,0,1-8-8V104a8,8,0,0,1,16,0v40A8,8,0,0,1,232,160Z",
-            size);
+    /** Filled circle, wound clockwise so it adds to whatever it overlaps. */
+    private static String circle(double cx, double cy, double r) {
+        return disc(cx, cy, r, 1);
+    }
+
+    /** Filled circle wound anti-clockwise, punching a hole in the shape underneath. */
+    private static String hole(double cx, double cy, double r) {
+        return disc(cx, cy, r, 0);
+    }
+
+    private static String disc(double cx, double cy, double r, int sweep) {
+        return "M" + n(cx + r) + "," + n(cy)
+                + "A" + n(r) + "," + n(r) + " 0 1 " + sweep + " " + n(cx - r) + "," + n(cy)
+                + "A" + n(r) + "," + n(r) + " 0 1 " + sweep + " " + n(cx + r) + "," + n(cy) + "Z";
+    }
+
+    private static String ring(double cx, double cy, double r, double thickness) {
+        return circle(cx, cy, r + thickness / 2) + hole(cx, cy, r - thickness / 2);
+    }
+
+    /** A bar of the given thickness between two points, with semicircular caps. */
+    private static String capsule(double x1, double y1, double x2, double y2, double thickness) {
+        double dx = x2 - x1;
+        double dy = y2 - y1;
+        double length = Math.hypot(dx, dy);
+        double half = thickness / 2;
+        if (length < 0.0001) {
+            return circle(x1, y1, half);
+        }
+        double nx = -dy / length * half;
+        double ny = dx / length * half;
+        return "M" + n(x1 + nx) + "," + n(y1 + ny)
+                + arcTo(half, x1 - nx, y1 - ny, 1)
+                + "L" + n(x2 - nx) + "," + n(y2 - ny)
+                + arcTo(half, x2 + nx, y2 + ny, 1)
+                + "Z";
+    }
+
+    /** A thick arc band sweeping clockwise from one angle to the next. */
+    private static String band(double cx, double cy, double r, double thickness,
+            double startDeg, double endDeg) {
+        double outer = r + thickness / 2;
+        double inner = r - thickness / 2;
+        int large = Math.abs(endDeg - startDeg) > 180 ? 1 : 0;
+        return "M" + point(cx, cy, outer, startDeg)
+                + "A" + n(outer) + "," + n(outer) + " 0 " + large + " 1 " + point(cx, cy, outer, endDeg)
+                + "L" + point(cx, cy, inner, endDeg)
+                + "A" + n(inner) + "," + n(inner) + " 0 " + large + " 0 " + point(cx, cy, inner, startDeg)
+                + "Z";
+    }
+
+    /** An arc band with a triangular head at one end, pointing the way the arc travels. */
+    private static String arcArrow(double cx, double cy, double r, double thickness,
+            double startDeg, double endDeg, boolean headAtStart) {
+        double headDeg = headAtStart ? startDeg : endDeg;
+        double angle = Math.toRadians(headDeg);
+        double cos = Math.cos(angle);
+        double sin = Math.sin(angle);
+        // Tangent of a clockwise sweep; the head faces backwards when it sits at the start.
+        double dirX = headAtStart ? sin : -sin;
+        double dirY = headAtStart ? -cos : cos;
+        return band(cx, cy, r, thickness, startDeg, endDeg)
+                + arrowHead(cx + r * cos, cy + r * sin, dirX, dirY, 44, 40);
+    }
+
+    /** Triangular arrow head whose tip sits {@code length} beyond the given point. */
+    private static String arrowHead(double x, double y, double dirX, double dirY,
+            double length, double half) {
+        double norm = Math.hypot(dirX, dirY);
+        double ux = dirX / norm;
+        double uy = dirY / norm;
+        return polygon(true,
+                x + ux * length, y + uy * length,
+                x - uy * half, y + ux * half,
+                x + uy * half, y - ux * half);
+    }
+
+    private static String star(double cx, double cy, double outer, double inner, boolean clockwise) {
+        double[] points = new double[20];
+        for (int i = 0; i < 10; i++) {
+            double r = i % 2 == 0 ? outer : inner;
+            double angle = Math.toRadians(-90 + i * 36);
+            points[i * 2] = cx + r * Math.cos(angle);
+            points[i * 2 + 1] = cy + r * Math.sin(angle);
+        }
+        return polygon(clockwise, points);
+    }
+
+    /**
+     * Straight-edged shape through the given x,y pairs, wound clockwise on screen when
+     * {@code clockwise} is set and anti-clockwise (a cut-out) when it is not.
+     */
+    private static String polygon(boolean clockwise, double... points) {
+        double area = 0;
+        for (int i = 0; i < points.length; i += 2) {
+            int next = (i + 2) % points.length;
+            area += (points[next] - points[i]) * (points[next + 1] + points[i + 1]);
+        }
+        // On a y-down canvas the shoelace sum is negative for a clockwise loop.
+        boolean reverse = clockwise != (area < 0);
+        StringBuilder path = new StringBuilder();
+        for (int step = 0; step < points.length / 2; step++) {
+            int i = reverse ? points.length / 2 - 1 - step : step;
+            path.append(step == 0 ? "M" : "L").append(n(points[i * 2])).append(',').append(n(points[i * 2 + 1]));
+        }
+        return path.append('Z').toString();
+    }
+
+    private static String arcTo(double r, double x, double y, int sweep) {
+        return "A" + n(r) + "," + n(r) + " 0 0 " + sweep + " " + n(x) + "," + n(y);
+    }
+
+    private static String point(double cx, double cy, double r, double deg) {
+        double angle = Math.toRadians(deg);
+        return n(cx + r * Math.cos(angle)) + "," + n(cy + r * Math.sin(angle));
+    }
+
+    private static String n(double value) {
+        String text = String.format(Locale.US, "%.2f", value);
+        if (text.contains(".")) {
+            text = text.replaceAll("0+$", "").replaceAll("\\.$", "");
+        }
+        return "-0".equals(text) ? "0" : text;
     }
 }
