@@ -15,9 +15,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import javafx.animation.PauseTransition;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -55,6 +57,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 
 public class DesktopApp extends Application implements PlaybackManager.Listener,
         EpisodeDownloader.ProgressListener {
@@ -1610,8 +1613,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 "Longest first", "Title A-Z");
         sortBox.setValue(sortLabel(prefs.sortCode));
         grid.add(sortBox, 1, row++);
-        Button saveButton = new Button("Save");
-        saveButton.setOnAction(event -> background.submit(() -> {
+        Runnable save = () -> background.submit(() -> {
             try {
                 prefs.speed = (float) Math.round(speedSlider.getValue() * 20) / 20f;
                 prefs.autoDownload = triStateValue(downloadBox.getValue());
@@ -1628,14 +1630,24 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 database.saveFeedPrefs(prefs);
                 setStatus("Feed settings saved");
                 Platform.runLater(() -> {
-                    hideSidebar();
-                    loadEpisodes(feed);
+                    if (selectedFeed != null && selectedFeed.getId() == feed.getId()) {
+                        loadEpisodes(feed);
+                    }
                 });
             } catch (Exception e) {
                 setStatus("Could not save feed settings: " + e.getMessage());
             }
-        }));
-        grid.add(saveButton, 0, row, 2, 1);
+        });
+        autoSave(speedSlider, save);
+        autoSave(downloadBox.valueProperty(), save);
+        autoSave(deleteBox.valueProperty(), save);
+        autoSave(includeField, save);
+        autoSave(excludeField, save);
+        autoSave(minDurationField, save);
+        autoSave(sortBox.valueProperty(), save);
+        Label savedHint = new Label("Changes are saved automatically.");
+        savedHint.setWrapText(true);
+        grid.add(savedHint, 0, row, 2, 1);
         showSidebar("Feed settings: " + feed.getTitle(), new VBox(grid));
     }
 
@@ -1849,8 +1861,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         ComboBox<String> themeBox = new ComboBox<>();
         themeBox.getItems().addAll(THEME_OPTIONS);
         themeBox.setValue(themeModeLabel(DesktopPreferences.getThemeMode()));
-        themeBox.valueProperty().addListener((obs, oldValue, newValue) ->
-                ThemeManager.previewMode(themeModeValue(newValue)));
         grid.add(themeBox, 1, row++);
         grid.add(sectionLabel("Playback"), 0, row++, 2, 1);
         grid.add(new Label("Default speed:"), 0, row);
@@ -1917,9 +1927,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 "Keep running in the system tray when the window is closed");
         closeToTrayBox.setSelected(DesktopPreferences.getCloseToTray());
         grid.add(closeToTrayBox, 0, row++, 2, 1);
-        Button saveButton = new Button("Save");
-        Label savedLabel = new Label("");
-        saveButton.setOnAction(event -> {
+        Label savedLabel = new Label("Changes are saved automatically.");
+        savedLabel.setWrapText(true);
+        Runnable save = () -> {
             try {
                 DesktopPreferences.setPlaybackSpeed(
                         Float.parseFloat(settingsSpeedBox.getValue().replace("x", "")));
@@ -1952,9 +1962,24 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             } catch (Exception e) {
                 savedLabel.setText("Could not save: " + e.getMessage());
             }
-        });
-        grid.add(saveButton, 0, row);
-        grid.add(savedLabel, 1, row++);
+        };
+        autoSave(themeBox.valueProperty(), save);
+        autoSave(settingsSpeedBox.valueProperty(), save);
+        autoSave(introField, save);
+        autoSave(endingField, save);
+        autoSave(skipBackField, save);
+        autoSave(skipForwardField, save);
+        autoSave(boostSlider, save);
+        autoSave(downloadBox.selectedProperty(), save);
+        autoSave(deleteBox.selectedProperty(), save);
+        autoSave(startupBox.selectedProperty(), save);
+        autoSave(intervalField, save);
+        autoSave(proxyHost, save);
+        autoSave(proxyPort, save);
+        autoSave(proxyUser, save);
+        autoSave(proxyPass, save);
+        autoSave(closeToTrayBox.selectedProperty(), save);
+        grid.add(savedLabel, 0, row++, 2, 1);
         javafx.scene.control.ScrollPane scroll = new javafx.scene.control.ScrollPane(grid);
         scroll.setFitToWidth(true);
         showSidebar("Settings", scroll);
@@ -1964,6 +1989,53 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         Label label = new Label(text);
         label.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
         return label;
+    }
+
+    /** Saves as soon as the control changes — combo boxes, check boxes and the like. */
+    private static void autoSave(javafx.beans.value.ObservableValue<?> value, Runnable save) {
+        value.addListener((obs, oldValue, newValue) -> save.run());
+    }
+
+    /**
+     * Text fields save a moment after typing stops, and immediately on Enter or
+     * focus loss, so half-typed values never reach the preferences and no edit is
+     * lost when the panel is closed.
+     */
+    private static void autoSave(TextField field, Runnable save) {
+        String[] committed = {field.getText()};
+        Runnable commit = () -> {
+            if (!Objects.equals(committed[0], field.getText())) {
+                committed[0] = field.getText();
+                save.run();
+            }
+        };
+        PauseTransition idle = new PauseTransition(Duration.millis(600));
+        idle.setOnFinished(event -> commit.run());
+        field.textProperty().addListener((obs, oldText, newText) -> idle.playFromStart());
+        field.focusedProperty().addListener((obs, was, focused) -> {
+            if (!focused) {
+                idle.stop();
+                commit.run();
+            }
+        });
+        field.setOnAction(event -> {
+            idle.stop();
+            commit.run();
+        });
+    }
+
+    /** Sliders save once the drag ends, not on every intermediate value. */
+    private static void autoSave(Slider slider, Runnable save) {
+        slider.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (!slider.isValueChanging()) {
+                save.run();
+            }
+        });
+        slider.valueChangingProperty().addListener((obs, was, changing) -> {
+            if (!changing) {
+                save.run();
+            }
+        });
     }
 
     private static int parseNonNegative(String text) {
@@ -2120,13 +2192,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         passField.setText(DesktopPreferences.getSyncPassword());
         passField.setPromptText("Password (Nextcloud: app password)");
         TextField deviceField = new TextField(DesktopPreferences.getSyncDeviceCaption());
-        Label syncStatus = new Label(syncStatusText());
+        Label syncStatus = new Label(syncStatusText() + " — changes are saved automatically.");
         syncStatus.setWrapText(true);
         javafx.scene.control.CheckBox autoSyncBox = new javafx.scene.control.CheckBox(
                 "Sync automatically (at startup and after playback)");
         autoSyncBox.setSelected(DesktopPreferences.getAutoSyncPlayback());
-        Button saveButton = new Button("Save");
-        saveButton.setOnAction(event -> {
+        Runnable save = () -> {
             String selected = providerBox.getValue();
             DesktopPreferences.setSyncProvider("Nextcloud".equals(selected) ? "nextcloud"
                     : ("gPodder.net".equals(selected) ? "gpodder" : "none"));
@@ -2137,10 +2208,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             DesktopPreferences.setAutoSyncPlayback(autoSyncBox.isSelected());
             syncStatus.setText(syncStatusText());
             setStatus("Sync settings saved");
-        });
+        };
+        autoSave(providerBox.valueProperty(), save);
+        autoSave(hostField, save);
+        autoSave(userField, save);
+        autoSave(passField, save);
+        autoSave(deviceField, save);
+        autoSave(autoSyncBox.selectedProperty(), save);
         Button testButton = new Button("Test login");
         testButton.setOnAction(event -> {
-            saveButton.fire();
+            save.run();
             syncStatus.setText("Testing login…");
             background.submit(() -> {
                 try {
@@ -2153,7 +2230,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         Button syncNowButton = new Button("Sync now");
         syncNowButton.setOnAction(event -> {
-            saveButton.fire();
+            save.run();
             runSync(
                     () -> {
                         syncNowButton.setDisable(true);
@@ -2167,7 +2244,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         Button devicesButton = new Button("Import from another device…");
         devicesButton.setOnAction(event -> {
-            saveButton.fire();
+            save.run();
             showDevicesDialog();
         });
         javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
@@ -2184,7 +2261,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         grid.add(passField, 1, 3);
         grid.add(new Label("Device name:"), 0, 4);
         grid.add(deviceField, 1, 4);
-        grid.add(new HBox(8, saveButton, testButton, syncNowButton), 0, 5, 2, 1);
+        grid.add(new HBox(8, testButton, syncNowButton), 0, 5, 2, 1);
         grid.add(devicesButton, 0, 6, 2, 1);
         grid.add(autoSyncBox, 0, 7, 2, 1);
         grid.add(syncStatus, 0, 8, 2, 1);
