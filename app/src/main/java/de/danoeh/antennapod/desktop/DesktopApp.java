@@ -998,6 +998,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
         VBox controlsColumn = new VBox(6, titleRow, scrubRow, controlArea);
         controlsColumn.setAlignment(Pos.BOTTOM_LEFT);
+        controlsColumn.setMaxHeight(Region.USE_PREF_SIZE);
         HBox.setHgrow(controlsColumn, Priority.ALWAYS);
         artColumn = new VBox(4, artBox, statusLabel);
         artColumn.setAlignment(Pos.TOP_LEFT);
@@ -1005,7 +1006,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         setArtColumnWidth(ART_COLUMN_WIDTH);
 
         HBox main = new HBox(12, artColumn, controlsColumn);
-        main.setAlignment(Pos.BOTTOM_LEFT);
+        main.setAlignment(Pos.CENTER_LEFT);
         main.setPadding(new Insets(8, 8, 6, 8));
         return new VBox(main);
     }
