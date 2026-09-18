@@ -198,6 +198,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
         appShell = new StackPane(root);
         stage.setTitle("AntennaPod Desktop " + appVersion());
+        stage.setMinWidth(1000);
+        stage.setMinHeight(640);
         stage.getIcons().addAll(appIcons());
         scene = new Scene(appShell, 1100, 700);
         ThemeManager.init();
