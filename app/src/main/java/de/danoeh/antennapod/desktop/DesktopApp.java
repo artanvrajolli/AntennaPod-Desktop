@@ -996,7 +996,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         statusLabel.setMinWidth(Region.USE_PREF_SIZE);
         statusLabel.setMaxWidth(220);
 
-        VBox controlsColumn = new VBox(6, scrubRow, controlArea, titleRow);
+        VBox controlsColumn = new VBox(6, titleRow, scrubRow, controlArea);
         controlsColumn.setAlignment(Pos.BOTTOM_LEFT);
         HBox.setHgrow(controlsColumn, Priority.ALWAYS);
         artColumn = new VBox(4, artBox, statusLabel);
