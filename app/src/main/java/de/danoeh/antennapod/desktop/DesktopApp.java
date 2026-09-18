@@ -997,8 +997,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         HBox.setHgrow(controlsColumn, Priority.ALWAYS);
         artColumn = new VBox(4, artBox, statusLabel);
         artColumn.setAlignment(Pos.TOP_LEFT);
-        artPlaceholder.setVisible(false);
-        setArtColumnWidth(0);
+        artPlaceholder.setVisible(true);
+        setArtColumnWidth(ART_COLUMN_WIDTH);
 
         HBox main = new HBox(12, artColumn, controlsColumn);
         main.setAlignment(Pos.BOTTOM_LEFT);
@@ -2801,13 +2801,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 artUrl = feedImageUrl(current.getItem().getFeedId());
             }
         }
-        setArtColumnWidth(hasMedia ? ART_COLUMN_WIDTH : 0);
+        setArtColumnWidth(ART_COLUMN_WIDTH);
         if (artUrl == null || artUrl.isEmpty()) {
             nowPlayingArt.setUserData(null);
             nowPlayingArt.setImage(null);
             nowPlayingArt.setVisible(false);
             if (artPlaceholder != null) {
-                artPlaceholder.setVisible(hasMedia);
+                artPlaceholder.setVisible(true);
             }
             return;
         }
