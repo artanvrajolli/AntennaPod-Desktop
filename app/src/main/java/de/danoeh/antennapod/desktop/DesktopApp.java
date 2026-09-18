@@ -848,22 +848,25 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         transportRow.setAlignment(Pos.CENTER);
         HBox extrasRow = new HBox(8, speedBox, silenceButton, muteButton, volumeSlider, sleepButton);
         extrasRow.setAlignment(Pos.CENTER_RIGHT);
-        BorderPane controlRow = new BorderPane(transportRow);
-        controlRow.setRight(extrasRow);
 
         nowPlayingLabel.setAlignment(Pos.CENTER);
         HBox titleRow = new HBox(nowPlayingLabel);
         titleRow.setAlignment(Pos.CENTER);
 
-        VBox controlsColumn = new VBox(6, scrubRow, controlRow, titleRow);
-        HBox.setHgrow(controlsColumn, Priority.ALWAYS);
+        VBox centerColumn = new VBox(6, transportRow, titleRow);
+        BorderPane controlArea = new BorderPane(centerColumn);
+        controlArea.setRight(extrasRow);
 
         statusLabel = new Label("Ready");
-        statusLabel.setMinWidth(200);
-        statusLabel.setPrefWidth(200);
-        statusLabel.setMaxWidth(200);
+        statusLabel.setMinWidth(150);
+        statusLabel.setPrefWidth(150);
+        statusLabel.setMaxWidth(150);
         VBox artColumn = new VBox(6, nowPlayingArt, statusLabel);
         artColumn.setAlignment(Pos.TOP_LEFT);
+
+        VBox controlsColumn = new VBox(6, scrubRow, controlArea);
+        VBox.setVgrow(controlArea, Priority.ALWAYS);
+        HBox.setHgrow(controlsColumn, Priority.ALWAYS);
 
         HBox main = new HBox(12, artColumn, controlsColumn);
         main.setAlignment(Pos.CENTER_LEFT);
