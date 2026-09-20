@@ -5,6 +5,8 @@ the open-source podcast manager. Same core engine (feed parser, search, sync),
 rebuilt as a Windows desktop app with its own Java runtime bundled — no
 installation of Java or anything else required.
 
+![AntennaPod Desktop with subscriptions, episode list and player bar](docs/screenshots/main.png)
+
 ## Download
 
 From the [**Releases page**](https://github.com/artanvrajolli/AntennaPod-Desktop/releases)
@@ -37,6 +39,18 @@ Your data (subscriptions, downloads, playback positions) lives in
   (follows the Windows app theme by default)
 - **Sync** with gPodder.net and Nextcloud (two-way subscriptions, positions,
   played state), including import from another device
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Episode details with shownotes and chapters](docs/screenshots/episode-details.png) | ![Playback queue](docs/screenshots/queue.png) |
+| ![Podcast search with cover art](docs/screenshots/search.png) | ![Listening statistics](docs/screenshots/statistics.png) |
+| ![Playback history](docs/screenshots/history.png) | ![Sync with gPodder.net and Nextcloud](docs/screenshots/sync.png) |
+
+More: [favorites](docs/screenshots/favorites.png) ·
+[settings](docs/screenshots/settings.png) ·
+[per-feed settings](docs/screenshots/feed-settings.png)
 
 ## Sync setup
 
