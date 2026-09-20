@@ -6,6 +6,7 @@ public final class SilenceSkipper {
     private static final long EXIT_SILENCE_MS = 200;
 
     private boolean silent;
+    private boolean loud;
     private long quietSinceMs = -1;
     private long loudSinceMs = -1;
 
@@ -19,6 +20,7 @@ public final class SilenceSkipper {
                 loudest = magnitude;
             }
         }
+        loud = loudest >= SILENCE_THRESHOLD_DB;
         if (loudest < SILENCE_THRESHOLD_DB) {
             loudSinceMs = -1;
             if (quietSinceMs < 0) {
@@ -41,7 +43,17 @@ public final class SilenceSkipper {
 
     public void reset() {
         silent = false;
+        loud = false;
         quietSinceMs = -1;
         loudSinceMs = -1;
+    }
+
+    /**
+     * Whether the most recent spectrum update contained audible sound, without the
+     * hysteresis {@link #update} applies to its silence verdict. Lets callers stop
+     * fast-forwarding the moment sound returns instead of after the exit delay.
+     */
+    public boolean isAudioLoud() {
+        return loud;
     }
 }

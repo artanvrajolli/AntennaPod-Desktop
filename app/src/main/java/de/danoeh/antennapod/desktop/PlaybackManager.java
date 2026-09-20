@@ -56,6 +56,16 @@ public final class PlaybackManager {
 
     private static final double SILENCE_RATE_BOOST = 4.0;
     private static final double MAX_RATE = 8.0;
+    /** Audio plays this fraction of the normal volume while fast-forwarding through silence. */
+    private static final double SILENCE_DUCK_FACTOR = 0.15;
+    /** How much of the duck is applied per spectrum update (~0.1 s apart). */
+    private static final double DUCK_DOWN_STEP = 0.3;
+    /** Raising the volume back happens slower, so returning speech never pops. */
+    private static final double DUCK_UP_STEP = 0.25;
+    /** User volume (0..1). Kept separate from the player, which gets the ducked value. */
+    private volatile double userVolume = clampVolume(DesktopPreferences.getDefaultVolume());
+    /** 1.0 = normal volume, SILENCE_DUCK_FACTOR = ducked for silence skipping. */
+    private volatile double duck = 1.0;
     /** How long a stream may take to become ready before playback is given up. */
     private static final long LOAD_TIMEOUT_MS = 30_000;
     /** How long a running stream may stay stalled before playback is given up. */
@@ -136,8 +146,9 @@ public final class PlaybackManager {
             return;
         }
         startHealthWatch();
+        duck = 1.0;
         player.setRate(effectiveSpeed());
-        player.setVolume(DesktopPreferences.getDefaultVolume());
+        player.setVolume(userVolume);
         player.statusProperty().addListener((obs, oldStatus, newStatus) -> {
             if (newStatus == MediaPlayer.Status.PLAYING || newStatus == MediaPlayer.Status.PAUSED
                     || newStatus == MediaPlayer.Status.STOPPED) {
@@ -228,7 +239,10 @@ public final class PlaybackManager {
         }
         if (!enabled) {
             player.setAudioSpectrumListener(null);
-            applySilenceRate(false);
+            // no spectrum updates will arrive to ramp back, so restore immediately
+            duck = 1.0;
+            player.setVolume(userVolume);
+            player.setRate(effectiveSpeed());
             return;
         }
         configureSilenceSkipping();
@@ -245,20 +259,49 @@ public final class PlaybackManager {
         }
         player.setAudioSpectrumListener((timestamp, duration, magnitudes, phases) -> {
             boolean silent = silenceSkipper.update(magnitudes, System.currentTimeMillis());
-            applySilenceRate(silent);
+            // a loud frame ends the fast-forward immediately instead of after the exit
+            // delay, so returning speech is never played at the boosted rate
+            applySilenceRate(silent && !silenceSkipper.isAudioLoud());
         });
     }
 
     private void applySilenceRate(boolean silent) {
-        if (player == null) {
+        MediaPlayer activePlayer = player;
+        if (activePlayer == null) {
             return;
         }
-        float target = silent
-                ? (float) Math.min(effectiveSpeed() * SILENCE_RATE_BOOST, MAX_RATE)
-                : effectiveSpeed();
-        if (Math.abs(player.getRate() - target) > 0.01f) {
-            player.setRate(target);
+        if (silent) {
+            // fade the volume out first and only speed up once it is already quiet:
+            // speeding up full-volume audio is what produces the loud pitch sound
+            if (duck > SILENCE_DUCK_FACTOR) {
+                duck = Math.max(SILENCE_DUCK_FACTOR, duck - DUCK_DOWN_STEP);
+                activePlayer.setVolume(effectiveVolume());
+            }
+            if (duck <= SILENCE_DUCK_FACTOR + 0.001) {
+                float boosted = (float) Math.min(effectiveSpeed() * SILENCE_RATE_BOOST, MAX_RATE);
+                if (Math.abs(activePlayer.getRate() - boosted) > 0.01f) {
+                    activePlayer.setRate(boosted);
+                }
+            }
+        } else {
+            // back to normal speed immediately, then raise the volume again slowly
+            float normal = effectiveSpeed();
+            if (Math.abs(activePlayer.getRate() - normal) > 0.01f) {
+                activePlayer.setRate(normal);
+            }
+            if (duck < 1.0) {
+                duck = Math.min(1.0, duck + DUCK_UP_STEP);
+                activePlayer.setVolume(effectiveVolume());
+            }
         }
+    }
+
+    private double effectiveVolume() {
+        return clampVolume(userVolume * duck);
+    }
+
+    private static double clampVolume(double volume) {
+        return Math.max(0, Math.min(1, volume));
     }
 
     public synchronized void setPlayActionRecorder(java.util.function.Consumer<FeedMedia> recorder) {
@@ -354,8 +397,9 @@ public final class PlaybackManager {
     }
 
     public synchronized void setVolume(double volume) {
+        userVolume = clampVolume(volume);
         if (player != null) {
-            player.setVolume(volume);
+            player.setVolume(effectiveVolume());
         }
     }
 

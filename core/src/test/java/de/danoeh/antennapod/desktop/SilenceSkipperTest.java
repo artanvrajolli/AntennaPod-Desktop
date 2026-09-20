@@ -55,4 +55,17 @@ public class SilenceSkipperTest {
         skipper.reset();
         assertFalse(skipper.update(QUIET, 700));
     }
+
+    @Test
+    public void loudnessReflectsLatestFrameWithoutHysteresis() {
+        SilenceSkipper skipper = new SilenceSkipper();
+        skipper.update(QUIET, 0);
+        assertFalse(skipper.isAudioLoud());
+        // a single loud frame is reported immediately, even though the silence verdict
+        // waits for the exit delay before flipping
+        assertFalse(skipper.update(LOUD, 100));
+        assertTrue(skipper.isAudioLoud());
+        assertFalse(skipper.update(QUIET, 200));
+        assertFalse(skipper.isAudioLoud());
+    }
 }
