@@ -643,19 +643,28 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         private final HBox row;
 
         FeedCell() {
+            setPrefWidth(0);
             art.setFitWidth(40);
             art.setFitHeight(40);
             titleLabel.setWrapText(true);
+            titleLabel.setMinWidth(0);
+            titleLabel.setMaxWidth(Double.MAX_VALUE);
             countLabel.getStyleClass().add("muted-label");
+            countLabel.setMinWidth(0);
+            countLabel.setMaxWidth(Double.MAX_VALUE);
+            countLabel.setWrapText(false);
             newCountBadge.getStyleClass().add("badge-new");
             newCountBadge.setMinWidth(Region.USE_PREF_SIZE);
             newCountBadge.setTooltip(newCountTooltip);
             newCountBadge.setVisible(false);
             newCountBadge.setManaged(false);
             VBox texts = new VBox(2, titleLabel, countLabel);
+            texts.setMinWidth(0);
+            texts.setMaxWidth(Double.MAX_VALUE);
             HBox.setHgrow(texts, Priority.ALWAYS);
             row = new HBox(8, art, texts, newCountBadge);
             row.setAlignment(Pos.CENTER_LEFT);
+            row.setMaxWidth(Double.MAX_VALUE);
         }
 
         @Override
