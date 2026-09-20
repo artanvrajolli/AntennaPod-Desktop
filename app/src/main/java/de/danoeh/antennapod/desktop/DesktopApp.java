@@ -260,8 +260,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
             @Override
             public void onShow() {
-                mainStage.show();
-                mainStage.toFront();
+                showMainWindow();
             }
 
             @Override
@@ -550,6 +549,31 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         overlay.getStyleClass().add("modal-overlay");
         closeButton.setOnAction(event -> appShell.getChildren().remove(overlay));
         appShell.getChildren().add(overlay);
+    }
+
+    /** Brings the main window back from the tray, restored and in the foreground. */
+    private void showMainWindow() {
+        if (mainStage == null || shuttingDown) {
+            return;
+        }
+        mainStage.setIconified(false);
+        if (!mainStage.isShowing()) {
+            mainStage.show();
+        }
+        // A tray click belongs to the shell, so Windows will not hand this process the foreground
+        // on its own; going on top briefly raises the window without pinning it there.
+        mainStage.setAlwaysOnTop(true);
+        mainStage.toFront();
+        mainStage.requestFocus();
+        PauseTransition unpin = new PauseTransition(Duration.millis(300));
+        unpin.setOnFinished(event -> {
+            if (mainStage.isShowing() && !mainStage.isIconified()) {
+                mainStage.setAlwaysOnTop(false);
+                mainStage.toFront();
+                mainStage.requestFocus();
+            }
+        });
+        unpin.play();
     }
 
     private void openProjectPage() {
@@ -2978,6 +3002,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         loadingMediaId = loading && current != null ? current.getId() : -1;
         episodeList.refresh();
         updateLoadingIndicator();
+    }
+
+    @Override
+    public void onError(String message) {
+        loadingMediaId = -1;
+        setStatus(message);
+        updateLoadingIndicator();
+        episodeList.refresh();
+        feedList.refresh();
     }
 
     @Override
