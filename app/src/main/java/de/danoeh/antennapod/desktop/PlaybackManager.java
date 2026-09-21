@@ -53,8 +53,18 @@ public final class PlaybackManager {
     private volatile boolean mediaReady;
     private volatile long loadStartedAt;
     private long stalledSince;
+    private long stoppedSince;
     private boolean stallNotified;
     private volatile FeedMedia abortedMedia;
+    private volatile boolean everPlayed;
+    private volatile int lastKnownPositionMs;
+    /** True while the player reads a local file, false while it reads a network stream. */
+    private volatile boolean playingFromFile;
+    /** Duration the feed claims, kept before the player overwrites it with its own estimate. */
+    private int declaredDurationMs;
+    /** Consecutive restarts that did not get playback any further. */
+    private int resumeAttempts;
+    private int resumeFromPositionMs;
 
     private static final double SILENCE_RATE_BOOST = 4.0;
     private static final double MAX_RATE = 8.0;
@@ -73,6 +83,13 @@ public final class PlaybackManager {
     /** How long a running stream may stay stalled before playback is given up. */
     private static final long STALL_TIMEOUT_MS = 60_000;
     private static final long HEALTH_CHECK_INTERVAL_MS = 1_000;
+    /** Time allowed between end-of-media and the queue advancing before a STOPPED player is a fault. */
+    private static final long UNEXPECTED_STOP_GRACE_MS = 3_000;
+    /** Playback that ends further than this from the end of the episode did not end on its own. */
+    static final int PREMATURE_END_TOLERANCE_MS = 10_000;
+    /** A restart has to get at least this much further, or the episode really was over. */
+    static final int MIN_RESUME_PROGRESS_MS = 3_000;
+    static final int MAX_RESUME_ATTEMPTS = 3;
 
     private float effectiveSpeed() {
         float rate = DesktopPreferences.getPlaybackSpeed();
@@ -152,8 +169,20 @@ public final class PlaybackManager {
     private void startPlayback(FeedMedia media) {
         saveAndRecordCurrent();
         stopPlayer();
+        int mediaDurationMs = FeedMedia.isValidDuration(media.getDuration()) ? media.getDuration() : 0;
+        if (media != currentMedia) {
+            resumeAttempts = 0;
+            resumeFromPositionMs = 0;
+            declaredDurationMs = mediaDurationMs;
+        } else {
+            // a restart of the same episode: the player has already overwritten the stored
+            // duration with its own estimate, so keep the longest value we ever saw
+            declaredDurationMs = Math.max(declaredDurationMs, mediaDurationMs);
+        }
+        lastKnownPositionMs = 0;
         currentMedia = media;
         String playableFile = media.playableFileUrl();
+        playingFromFile = playableFile != null;
         String source = playableFile != null
                 ? new java.io.File(playableFile).toURI().toString()
                 : media.getStreamUrl();
@@ -173,6 +202,9 @@ public final class PlaybackManager {
         player.setRate(effectiveSpeed());
         player.setVolume(userVolume);
         player.statusProperty().addListener((obs, oldStatus, newStatus) -> {
+            if (newStatus == MediaPlayer.Status.PLAYING) {
+                everPlayed = true;
+            }
             if (newStatus == MediaPlayer.Status.PLAYING || newStatus == MediaPlayer.Status.PAUSED
                     || newStatus == MediaPlayer.Status.STOPPED) {
                 mediaReady = true;
@@ -190,8 +222,17 @@ public final class PlaybackManager {
                 saveMedia();
             }
             if (pendingSeekMs >= 0) {
-                player.seek(new Duration(Math.min(pendingSeekMs, Math.max(duration - 1000, 0))));
+                int target = pendingSeekMs;
                 pendingSeekMs = -1;
+                if (duration > 0 && target >= duration - 1000) {
+                    // the player thinks the episode ends before where we wanted to resume; seeking
+                    // there would drop us straight back at the end, so treat it as finished
+                    player.play();
+                    notifyLoading(false);
+                    notifyState();
+                    return;
+                }
+                player.seek(new Duration(Math.max(target, 0)));
             } else if (startPosition > 0 && startPosition < duration - 5000) {
                 player.seek(new Duration(startPosition));
             }
@@ -200,8 +241,12 @@ public final class PlaybackManager {
             notifyState();
         });
         player.currentTimeProperty().addListener((obs, oldTime, newTime) -> {
-            listener.onPositionChanged((int) newTime.toMillis(), getDuration());
-            checkSkipEnding((int) newTime.toMillis());
+            int positionMs = (int) newTime.toMillis();
+            if (positionMs > 0) {
+                lastKnownPositionMs = positionMs;
+            }
+            listener.onPositionChanged(positionMs, getDuration());
+            checkSkipEnding(positionMs);
         });
         player.setOnEndOfMedia(this::finishPlayback);
         player.setOnError(() -> abortPlayback(describeError()));
@@ -214,6 +259,11 @@ public final class PlaybackManager {
 
     private synchronized void finishPlayback() {
         if (currentMedia == null) {
+            return;
+        }
+        int positionMs = Math.max(lastKnownPositionMs, currentMedia.getPosition());
+        if (shouldResume(positionMs, true)) {
+            resumeAt(positionMs, "stopped early");
             return;
         }
         recordFinishedAction();
@@ -523,7 +573,9 @@ public final class PlaybackManager {
             player = null;
             currentFxMedia = null;
             mediaReady = false;
+            everPlayed = false;
             stalledSince = 0;
+            stoppedSince = 0;
             stallNotified = false;
         }
         disposeLater(previous);
@@ -567,7 +619,9 @@ public final class PlaybackManager {
     private void startHealthWatch() {
         loadStartedAt = System.currentTimeMillis();
         mediaReady = false;
+        everPlayed = false;
         stalledSince = 0;
+        stoppedSince = 0;
         stallNotified = false;
         abortedMedia = null;
         if (loadWatchTask != null) {
@@ -621,6 +675,7 @@ public final class PlaybackManager {
             if (status == MediaPlayer.Status.HALTED || status == MediaPlayer.Status.DISPOSED) {
                 failure = describeError();
             } else if (status == MediaPlayer.Status.STALLED) {
+                stoppedSince = 0;
                 if (stalledSince == 0) {
                     stalledSince = now;
                 }
@@ -628,8 +683,20 @@ public final class PlaybackManager {
                 if (now - stalledSince >= STALL_TIMEOUT_MS) {
                     failure = "the stream stalled and did not recover";
                 }
+            } else if (status == MediaPlayer.Status.STOPPED && everPlayed) {
+                // nothing here ever stops a player it still owns. Wait out the moment between
+                // end-of-media and the queue advancing, then treat it as a silent drop-out - but
+                // only when restarting would actually read a better source than the one that quit.
+                stalledSince = 0;
+                if (stoppedSince == 0) {
+                    stoppedSince = now;
+                } else if (now - stoppedSince >= UNEXPECTED_STOP_GRACE_MS
+                        && canResumeFromNewSource(lastKnownPositionMs)) {
+                    failure = "playback stopped unexpectedly";
+                }
             } else {
                 stalledSince = 0;
+                stoppedSince = 0;
                 if (status == MediaPlayer.Status.PLAYING || status == MediaPlayer.Status.PAUSED) {
                     mediaReady = true;
                 }
@@ -646,27 +713,105 @@ public final class PlaybackManager {
         }
     }
 
-    /** Stops the player and reports why, so the UI never keeps showing a loading state. */
+    /**
+     * Picks playback back up where it dropped out, or stops and reports why so the UI never keeps
+     * showing a loading state. Everything runs on its own thread: the callers include the health
+     * watchdogs, which must not take the lock or touch the player in case native code is wedged.
+     */
     private void abortPlayback(String reason) {
         FeedMedia failed = currentMedia;
         if (failed == null || failed == abortedMedia) {
             return;
         }
         abortedMedia = failed;
-        notifyLoading(false);
-        notifyState();
-        notifyError("Stopped \"" + titleOf(failed) + "\": " + reason);
-        // tearing the player down can block in native code, so keep it off the calling thread
         Thread stopper = new Thread(() -> {
             synchronized (PlaybackManager.this) {
-                if (currentMedia == failed) {
-                    currentMedia = null;
+                if (currentMedia != failed) {
+                    return;
                 }
+                if (shouldResume(lastKnownPositionMs, false)) {
+                    resumeAt(lastKnownPositionMs, reason);
+                    return;
+                }
+                currentMedia = null;
                 stopPlayer();
             }
+            notifyLoading(false);
+            notifyState();
+            notifyError("Stopped \"" + titleOf(failed) + "\": " + reason);
         }, "playback-abort");
         stopper.setDaemon(true);
         stopper.start();
+    }
+
+    /** The longest duration we have any reason to believe in: the feed's or the player's. */
+    private int trustedDurationMs() {
+        return Math.max(getDuration(), declaredDurationMs);
+    }
+
+    /**
+     * Whether playback that just ended really ended, or stopped short of the episode. JavaFX
+     * reports a too-short total duration for some variable-bitrate streams and then fires
+     * end-of-media there, which looks to the listener like playback stopping for no reason.
+     */
+    private boolean shouldResume(int positionMs, boolean requireNewSource) {
+        if (currentMedia == null) {
+            return false;
+        }
+        int durationMs = trustedDurationMs();
+        if (!isPrematureStop(positionMs, durationMs)) {
+            return false;
+        }
+        if (requireNewSource && (playingFromFile || currentMedia.playableFileUrl() == null)) {
+            // the player decided the stream is over. Reading the same stream again would decide
+            // the same thing, so only restart when a complete local copy has since appeared.
+            return false;
+        }
+        if (positionMs - resumeFromPositionMs >= MIN_RESUME_PROGRESS_MS) {
+            // the last restart did get further, so this is a new stop rather than a retry loop
+            resumeAttempts = 0;
+        } else if (resumeAttempts > 0) {
+            // restarting bought us nothing: the episode is shorter than its duration claims
+            return false;
+        }
+        return resumeAttempts < MAX_RESUME_ATTEMPTS;
+    }
+
+    /**
+     * Whether playback stopped short of the end AND a complete local copy has appeared since it
+     * started streaming, so a restart would read something the failing source could not give us.
+     */
+    private boolean canResumeFromNewSource(int positionMs) {
+        return currentMedia != null && !playingFromFile && currentMedia.playableFileUrl() != null
+                && isPrematureStop(positionMs, trustedDurationMs())
+                && resumeAttempts < MAX_RESUME_ATTEMPTS;
+    }
+
+    static boolean isPrematureStop(int positionMs, int durationMs) {
+        return positionMs > 0 && durationMs > 0 && positionMs < durationMs - PREMATURE_END_TOLERANCE_MS;
+    }
+
+    /** Rebuilds the player on the same episode and picks playback back up where it dropped out. */
+    private void resumeAt(int positionMs, String reason) {
+        FeedMedia media = currentMedia;
+        resumeAttempts++;
+        resumeFromPositionMs = positionMs;
+        abortedMedia = null;
+        pendingSeekMs = positionMs;
+        // a restart is not the user pausing, so it must not turn into a sync play action
+        suppressNextPlayAction = true;
+        notifyError("\"" + titleOf(media) + "\" " + reason + " at " + formatPosition(positionMs)
+                + ", resuming");
+        notifyLoading(true);
+        startPlayback(media);
+        // after the restart, so the save on the way out of the old player cannot overwrite it
+        media.setPosition(positionMs);
+    }
+
+    private static String formatPosition(int positionMs) {
+        int totalSeconds = Math.max(positionMs, 0) / 1000;
+        return String.format("%d:%02d:%02d", totalSeconds / 3600, (totalSeconds / 60) % 60,
+                totalSeconds % 60);
     }
 
     private String describeError() {
