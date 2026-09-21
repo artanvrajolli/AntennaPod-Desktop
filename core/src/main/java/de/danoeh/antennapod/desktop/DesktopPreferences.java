@@ -174,6 +174,23 @@ public final class DesktopPreferences {
         PREFS.putInt("episodeCachePrefetchCount", Math.max(0, Math.min(count, 10)));
     }
 
+    /** A release the user chose to pass over, so it is not offered again. */
+    public static String getSkippedUpdateVersion() {
+        return PREFS.get("skippedUpdateVersion", "");
+    }
+
+    public static void setSkippedUpdateVersion(String version) {
+        PREFS.put("skippedUpdateVersion", version == null ? "" : version);
+    }
+
+    public static boolean getUpdateCheckEnabled() {
+        return PREFS.getBoolean("updateCheckEnabled", true);
+    }
+
+    public static void setUpdateCheckEnabled(boolean enabled) {
+        PREFS.putBoolean("updateCheckEnabled", enabled);
+    }
+
     public static boolean getCloseToTray() {
         return PREFS.getBoolean("closeToTray", false);
     }

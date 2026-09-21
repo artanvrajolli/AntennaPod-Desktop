@@ -14,19 +14,21 @@ inside `core`.
 
 - `core/` — Java library: ported AntennaPod engine
   (`de.danoeh.antennapod.*` under `core/src/main/java`)
+  - `UpdateChecker` / `UpdateDownloader` — finds and fetches a newer release from
+    the project's own GitHub releases; the app then runs the installer and exits
   - `model/` (feed, playback, download), `parser/` (feed, transcript),
     `net/` (discovery: Apple/fyyd/PodcastIndex, sync: gPodder/Nextcloud, ssl),
     `storage/` (SQLite-backed desktop storage, import/export OPML, preferences)
   - `android/` + `androidx/` — hand-written compatibility shims the ported
     engine depends on (Log, XML, media, collections). Keep them minimal.
-  - 18 test classes (JUnit 4) in `core/src/test`.
+  - 20 test classes (JUnit 4) in `core/src/test`.
 - `app/` — JavaFX UI (11 classes under
   `app/src/main/java/de/danoeh/antennapod/desktop`): `DesktopApp` (scenes),
   `PlaybackManager` (JavaFX media playback), `TrayManager` (system tray),
   `WindowChrome` (the app-drawn title bar; the stage is undecorated),
   `WindowsTaskbar` + `ThumbBar` (ITaskbarList3 via JNA: taskbar progress and
   the media buttons under the taskbar thumbnail), `ThemeManager`/`SystemTheme`,
-  `ImageCache`, `Icons`, `Launcher` (entry point / main class). 9 test classes
+  `ImageCache`, `Icons`, `Launcher` (entry point / main class). 11 test classes
   in `app/src/test`.
 
 ## Build, test, run

@@ -36,6 +36,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.Slider;
@@ -324,6 +325,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
         reloadFeeds(null);
         applyProxy();
+        if (DesktopPreferences.getUpdateCheckEnabled()) {
+            // quietly: nothing is said unless there is something newer to say it about
+            background.submit(() -> checkForUpdates(false));
+        }
         scheduleAutoRefresh();
         if (DesktopPreferences.getAutoRefreshStartup()) {
             refreshAll();
@@ -624,6 +629,177 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         });
         unpin.play();
+    }
+
+    /**
+     * Looks for a newer release. A check the user asked for reports whatever it finds, including
+     * that there is nothing; the one on startup only speaks up when there is an update, and stays
+     * quiet about a release the user chose to skip.
+     */
+    private void checkForUpdates(boolean requestedByUser) {
+        String current = appVersion();
+        if (!UpdateChecker.isComparable(current)) {
+            if (requestedByUser) {
+                setStatus("This is a development build, so there is nothing to compare against");
+            }
+            return;
+        }
+        if (requestedByUser) {
+            setStatus("Checking for updates\u2026");
+        }
+        try {
+            UpdateChecker.Release release = UpdateChecker.fetchLatest();
+            if (release == null || !UpdateChecker.isNewer(release.version, current)) {
+                if (requestedByUser) {
+                    setStatus("AntennaPod Desktop " + current + " is the latest version");
+                }
+                return;
+            }
+            if (!requestedByUser
+                    && release.version.equals(DesktopPreferences.getSkippedUpdateVersion())) {
+                return;
+            }
+            Platform.runLater(() -> showUpdateModal(release, current));
+        } catch (Exception e) {
+            if (requestedByUser) {
+                setStatus("Could not check for updates: " + e.getMessage());
+            }
+        }
+    }
+
+    private void showUpdateModal(UpdateChecker.Release release, String current) {
+        Label heading = new Label("AntennaPod Desktop " + release.version);
+        heading.setStyle("-fx-font-size: 15px; -fx-font-weight: bold;");
+        Label installed = new Label("You have " + current);
+        installed.getStyleClass().add("muted-label");
+
+        javafx.scene.web.WebView notes = new javafx.scene.web.WebView();
+        notes.setPrefHeight(240);
+        notes.getEngine().loadContent(Shownotes.toPage(null,
+                releaseNotesHtml(release.notes), ThemeManager.isDark()));
+
+        Label status = new Label();
+        status.setWrapText(true);
+        ProgressBar progress = new ProgressBar(0);
+        progress.setMaxWidth(Double.MAX_VALUE);
+        progress.setVisible(false);
+        progress.setManaged(false);
+
+        Button install = new Button(release.hasInstaller() ? "Install" : "Open release page");
+        install.setDefaultButton(true);
+        Button later = new Button("Later");
+        Button skip = new Button("Skip this version");
+        HBox buttons = new HBox(8, install, later, skip);
+
+        VBox pane = new VBox(12, heading, installed, notes, progress, status, buttons);
+        pane.setPadding(new Insets(8));
+        VBox.setVgrow(notes, Priority.ALWAYS);
+        showModal("Update available", pane);
+
+        later.setOnAction(event -> closeTopModal());
+        skip.setOnAction(event -> {
+            DesktopPreferences.setSkippedUpdateVersion(release.version);
+            closeTopModal();
+            setStatus("Skipped " + release.version + "; it will not be offered again");
+        });
+        install.setOnAction(event -> {
+            if (!release.hasInstaller()) {
+                getHostServices().showDocument(release.pageUrl);
+                closeTopModal();
+                return;
+            }
+            install.setDisable(true);
+            later.setDisable(true);
+            skip.setDisable(true);
+            progress.setVisible(true);
+            progress.setManaged(true);
+            status.setText("Downloading " + release.installerName + "\u2026");
+            downloadAndInstall(release, progress, status, install, later, skip);
+        });
+    }
+
+    private void downloadAndInstall(UpdateChecker.Release release, ProgressBar progress,
+            Label status, Button install, Button later, Button skip) {
+        background.submit(() -> {
+            try {
+                File installer = UpdateDownloader.download(release, (read, total) -> {
+                    double fraction = total > 0 ? read / (double) total : -1;
+                    Platform.runLater(() -> progress.setProgress(fraction));
+                });
+                Platform.runLater(() -> {
+                    status.setText("Starting the installer. AntennaPod Desktop will close.");
+                    launchInstaller(installer);
+                });
+            } catch (Exception e) {
+                Platform.runLater(() -> {
+                    progress.setVisible(false);
+                    progress.setManaged(false);
+                    status.setText("Update failed: " + e.getMessage()
+                            + ". You can download it from the release page instead.");
+                    install.setDisable(false);
+                    later.setDisable(false);
+                    skip.setDisable(false);
+                    install.setText("Open release page");
+                    install.setOnAction(open -> {
+                        getHostServices().showDocument(release.pageUrl);
+                        closeTopModal();
+                    });
+                });
+            }
+        });
+    }
+
+    /**
+     * Hands over to the installer and quits. The installer replaces the files this app is running
+     * from, so it cannot do its job while the app is still holding them.
+     */
+    private void launchInstaller(File installer) {
+        try {
+            new ProcessBuilder(installer.getAbsolutePath())
+                    .directory(installer.getParentFile())
+                    .start();
+        } catch (Exception e) {
+            setStatus("Could not start the installer: " + e.getMessage());
+            return;
+        }
+        trayManager.remove();
+        trayActive = false;
+        shutdown();
+    }
+
+    /** GitHub release bodies are Markdown; only the bits the notes actually use are converted. */
+    static String releaseNotesHtml(String notes) {
+        if (notes == null || notes.isBlank()) {
+            return "<p><i>No release notes.</i></p>";
+        }
+        StringBuilder html = new StringBuilder();
+        boolean inList = false;
+        for (String rawLine : notes.replace("\r\n", "\n").split("\n")) {
+            String line = rawLine.trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            boolean bullet = line.startsWith("- ") || line.startsWith("* ");
+            if (bullet && !inList) {
+                html.append("<ul>");
+                inList = true;
+            } else if (!bullet && inList) {
+                html.append("</ul>");
+                inList = false;
+            }
+            String text = escapeHtml(bullet ? line.substring(2).trim() : line);
+            // **bold** is the only inline mark the project's own notes use
+            text = text.replaceAll("\\*\\*(.+?)\\*\\*", "<b>$1</b>");
+            html.append(bullet ? "<li>" + text + "</li>" : "<p>" + text + "</p>");
+        }
+        if (inList) {
+            html.append("</ul>");
+        }
+        return html.toString();
+    }
+
+    private static String escapeHtml(String text) {
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private void openProjectPage() {
@@ -2020,6 +2196,24 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         openCacheButton.setOnAction(event ->
                 getHostServices().showDocument(DesktopPreferences.getEpisodeCacheDir().toURI().toString()));
         grid.add(openCacheButton, 0, row++, 2, 1);
+
+        grid.add(sectionLabel("Updates"), 0, row++, 2, 1);
+        Label versionLabel = new Label("Version " + appVersion());
+        versionLabel.getStyleClass().add("muted-label");
+        grid.add(versionLabel, 0, row++, 2, 1);
+        javafx.scene.control.CheckBox updateCheckBox =
+                new javafx.scene.control.CheckBox("Check for updates on startup");
+        updateCheckBox.setSelected(DesktopPreferences.getUpdateCheckEnabled());
+        grid.add(updateCheckBox, 0, row++, 2, 1);
+        Button checkUpdatesButton = new Button("Check for updates");
+        checkUpdatesButton.setOnAction(event -> {
+            // a check the user asked for reports whatever it finds, and offers a skipped release
+            // again, because asking for it is the point
+            DesktopPreferences.setSkippedUpdateVersion("");
+            background.submit(() -> checkForUpdates(true));
+        });
+        grid.add(checkUpdatesButton, 0, row++, 2, 1);
+
         grid.add(sectionLabel("Refresh"), 0, row++, 2, 1);
         javafx.scene.control.CheckBox startupBox =
                 new javafx.scene.control.CheckBox("Refresh all on startup");
@@ -2065,6 +2259,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 DesktopPreferences.setEpisodeCacheRemoveAfterFinish(cacheFinishBox.isSelected());
                 DesktopPreferences.setEpisodeCacheLimitMb(parseNonNegative(cacheLimitField.getText()));
                 DesktopPreferences.setEpisodeCachePrefetchCount(parseNonNegative(cachePrefetchField.getText()));
+                DesktopPreferences.setUpdateCheckEnabled(updateCheckBox.isSelected());
                 background.submit(episodeCache::trim);
                 DesktopPreferences.setAutoRefreshStartup(startupBox.isSelected());
                 DesktopPreferences.setAutoRefreshMinutes(parseNonNegative(intervalField.getText()));
@@ -2101,6 +2296,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         autoSave(cacheFinishBox.selectedProperty(), save);
         autoSave(cacheLimitField, save);
         autoSave(cachePrefetchField, save);
+        autoSave(updateCheckBox.selectedProperty(), save);
         autoSave(startupBox.selectedProperty(), save);
         autoSave(intervalField, save);
         autoSave(proxyHost, save);
