@@ -47,6 +47,7 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -2626,6 +2627,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                         subscribe(result.feedUrl);
                     }
                 });
+                // a Button fires on release, so swallowing the click here only stops the row
+                // underneath from also opening the details modal
+                subscribeButton.addEventFilter(MouseEvent.MOUSE_CLICKED, MouseEvent::consume);
                 boolean hasImage = result.imageUrl != null && !result.imageUrl.isEmpty();
                 art.setImage(hasImage ? ImageCache.get(result.imageUrl, 48, 48) : null);
                 art.setVisible(hasImage);
@@ -2644,10 +2648,157 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 setText(null);
             }
         }));
+        list.setOnMouseClicked(event -> {
+            PodcastSearchResult selected = list.getSelectionModel().getSelectedItem();
+            if (event.getButton() == MouseButton.PRIMARY && selected != null) {
+                showPodcastDetails(selected);
+            }
+        });
         VBox pane = new VBox(8, list);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(list, Priority.ALWAYS);
         showSidebar("Search results: " + query, pane);
+    }
+
+    /**
+     * The podcast behind a search result: what the directory gave us straight away, and the
+     * description, website and episode count once the feed itself has been fetched. Nothing is
+     * stored - the feed is only read so the user can decide whether to subscribe.
+     */
+    private void showPodcastDetails(PodcastSearchResult result) {
+        Label author = new Label(result.author == null || result.author.isEmpty()
+                ? "Unknown author" : result.author);
+        author.getStyleClass().add("muted-label");
+        Label meta = new Label("Loading details\u2026");
+        meta.getStyleClass().add("muted-label");
+        meta.setWrapText(true);
+
+        ImageView art = new ImageView();
+        art.setFitWidth(96);
+        art.setFitHeight(96);
+        art.setPreserveRatio(true);
+        art.setSmooth(true);
+        if (result.imageUrl != null && !result.imageUrl.isEmpty()) {
+            art.setImage(ImageCache.get(result.imageUrl, 96, 96));
+        }
+
+        Label heading = new Label(result.title);
+        heading.setWrapText(true);
+        heading.setStyle("-fx-font-size: 15px; -fx-font-weight: bold;");
+        VBox headingBlock = new VBox(4, heading, author, meta);
+        HBox.setHgrow(headingBlock, Priority.ALWAYS);
+        HBox header = new HBox(12, art, headingBlock);
+
+        Button subscribeButton = new Button("Subscribe");
+        subscribeButton.setDefaultButton(true);
+        subscribeButton.setDisable(result.feedUrl == null || result.feedUrl.isEmpty());
+        subscribeButton.setOnAction(event -> {
+            closeTopModal();
+            hideSidebar();
+            subscribe(result.feedUrl);
+        });
+        markSubscribed(subscribeButton, result.feedUrl);
+        Button websiteButton = new Button("Open website");
+        websiteButton.setDisable(true);
+        Button copyButton = new Button("Copy feed URL");
+        copyButton.setDisable(result.feedUrl == null || result.feedUrl.isEmpty());
+        copyButton.setOnAction(event -> {
+            javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+            content.putString(result.feedUrl);
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+            setStatus("Feed URL copied");
+        });
+        HBox buttons = new HBox(8, subscribeButton, websiteButton, copyButton);
+
+        javafx.scene.web.WebView description = new javafx.scene.web.WebView();
+        description.setPrefHeight(260);
+        javafx.scene.web.WebEngine engine = description.getEngine();
+        engine.loadContent(Shownotes.toPage(null, "<p>Loading description\u2026</p>",
+                ThemeManager.isDark()));
+
+        Label feedUrlLabel = new Label(result.feedUrl);
+        feedUrlLabel.getStyleClass().add("muted-label");
+        feedUrlLabel.setWrapText(true);
+
+        VBox pane = new VBox(12, header, buttons, description, feedUrlLabel);
+        pane.setPadding(new Insets(8));
+        VBox.setVgrow(description, Priority.ALWAYS);
+        showModal(result.title, pane);
+
+        if (result.feedUrl == null || result.feedUrl.isEmpty()) {
+            meta.setText("This result has no feed address.");
+            engine.loadContent(Shownotes.toPage(null, "", ThemeManager.isDark()));
+            return;
+        }
+        background.submit(() -> {
+            try {
+                Feed feed = feedUpdater.preview(result.feedUrl);
+                Platform.runLater(() -> {
+                    meta.setText(describePodcast(feed));
+                    String html = feed.getDescription() == null || feed.getDescription().isEmpty()
+                            ? "<p><i>This podcast has no description.</i></p>" : feed.getDescription();
+                    engine.loadContent(Shownotes.toPage(null, html, ThemeManager.isDark()));
+                    String link = feed.getLink();
+                    websiteButton.setDisable(link == null || link.isEmpty());
+                    websiteButton.setOnAction(event -> getHostServices().showDocument(link));
+                    // the feed may redirect, so re-check against the address actually fetched
+                    markSubscribed(subscribeButton, feed.getDownloadUrl());
+                });
+            } catch (Exception e) {
+                Platform.runLater(() -> {
+                    meta.setText("Could not load details: " + e.getMessage());
+                    engine.loadContent(Shownotes.toPage(null, "", ThemeManager.isDark()));
+                });
+            }
+        });
+    }
+
+    /** Episode count, language and the newest episode, as far as the feed says. */
+    static String describePodcast(Feed feed) {
+        List<String> parts = new ArrayList<>();
+        int episodes = feed.getItems() == null ? 0 : feed.getItems().size();
+        parts.add(episodes + (episodes == 1 ? " episode" : " episodes"));
+        if (feed.getLanguage() != null && !feed.getLanguage().isEmpty()) {
+            parts.add(feed.getLanguage());
+        }
+        Date latest = newestPubDate(feed);
+        if (latest != null) {
+            parts.add("latest " + new SimpleDateFormat("d MMM yyyy", Locale.US).format(latest));
+        }
+        return String.join(" \u00b7 ", parts);
+    }
+
+    static Date newestPubDate(Feed feed) {
+        Date newest = null;
+        if (feed.getItems() == null) {
+            return null;
+        }
+        for (FeedItem item : feed.getItems()) {
+            Date pubDate = item.getPubDate();
+            if (pubDate != null && (newest == null || pubDate.after(newest))) {
+                newest = pubDate;
+            }
+        }
+        return newest;
+    }
+
+    /** Turns the subscribe button into a disabled marker when this feed is already subscribed. */
+    private void markSubscribed(Button subscribeButton, String feedUrl) {
+        if (feedUrl == null || feedUrl.isEmpty() || !isSubscribed(feedUrl)) {
+            return;
+        }
+        subscribeButton.setText("Subscribed");
+        subscribeButton.setDisable(true);
+        subscribeButton.setDefaultButton(false);
+    }
+
+    private boolean isSubscribed(String feedUrl) {
+        for (Feed feed : feeds) {
+            if (feedUrl.equalsIgnoreCase(feed.getDownloadUrl())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void togglePlayed(FeedItem item) {

@@ -29,11 +29,28 @@ public final class FeedUpdater {
         DesktopHttp.init();
     }
 
-    public Feed subscribe(String url) throws Exception {
+    /**
+     * Downloads and parses a feed without storing any of it, so a podcast's details can be shown
+     * before the user decides whether to subscribe.
+     */
+    public Feed preview(String url) throws Exception {
+        String finalUrl = RedirectChecker.getFinalUrl(prepareAndLookup(url));
+        Feed feed = downloadAndParse(finalUrl);
+        feed.setDownloadUrl(finalUrl);
+        return feed;
+    }
+
+    /** Turns what the user typed, or a directory handed us, into the URL of an actual feed. */
+    private String prepareAndLookup(String url) throws Exception {
         String prepared = UrlChecker.prepareUrl(url);
         if (PodcastSearcherRegistry.urlNeedsLookup(prepared)) {
             prepared = PodcastSearcherRegistry.lookupUrl(prepared).blockingGet();
         }
+        return prepared;
+    }
+
+    public Feed subscribe(String url) throws Exception {
+        String prepared = prepareAndLookup(url);
         String finalUrl = RedirectChecker.getFinalUrl(prepared);
         Feed existing = database.getFeedByDownloadUrl(prepared);
         if (existing == null && !finalUrl.equals(prepared)) {
