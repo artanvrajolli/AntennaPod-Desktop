@@ -43,6 +43,7 @@ public final class PlaybackManager {
     private java.util.function.Consumer<FeedMedia> autoDeleteHandler;
     private java.util.function.Consumer<FeedMedia> cacheStartedHandler;
     private java.util.function.Consumer<FeedMedia> cacheFinishedHandler;
+    private Runnable resumeLastHandler;
     private boolean stopAfterCurrent;
     private int pendingSeekMs = -1;
     private boolean suppressNextPlayAction;
@@ -405,18 +406,39 @@ public final class PlaybackManager {
         return stopAfterCurrent;
     }
 
-    public synchronized void togglePlayPause() {
-        if (player == null) {
-            return;
+    /**
+     * What every play button in the app calls. With nothing loaded it hands over to the resume
+     * handler instead of doing nothing, so the tray, the player bar and the space bar all behave
+     * the same way and a new play button cannot forget to.
+     */
+    public void togglePlayPause() {
+        Runnable resume;
+        synchronized (this) {
+            if (player != null) {
+                if (player.getStatus() == MediaPlayer.Status.PLAYING) {
+                    player.pause();
+                    saveMedia();
+                    recordPlayAction();
+                } else {
+                    player.play();
+                }
+                notifyState();
+                return;
+            }
+            resume = resumeLastHandler;
         }
-        if (player.getStatus() == MediaPlayer.Status.PLAYING) {
-            player.pause();
-            saveMedia();
-            recordPlayAction();
-        } else {
-            player.play();
+        // outside the lock: resuming loads an episode, which comes straight back into this manager
+        if (resume != null) {
+            resume.run();
         }
-        notifyState();
+    }
+
+    /**
+     * What to do when play is pressed with nothing loaded. Set by the app to pick the last episode
+     * back up where it was left off.
+     */
+    public synchronized void setResumeLastHandler(Runnable handler) {
+        this.resumeLastHandler = handler;
     }
 
     public synchronized void stop() {

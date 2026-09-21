@@ -181,6 +181,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         episodeCache.setProtectedIdsSupplier(this::protectedMediaIds);
         episodeCache.setStatusReporter(this::setStatus);
         playback.setCacheHandlers(this::cachePlaybackStarted, this::cachePlaybackFinished);
+        playback.setResumeLastHandler(this::resumeLastPlayed);
         background.submit(() -> {
             int swept = episodeCache.sweepFinished();
             if (swept > 0) {
@@ -891,7 +892,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         skipBackButton.setOnAction(event ->
                 playback.skip(-DesktopPreferences.getSkipBackSec() * 1000));
         playPauseButton = iconButton(Icons.accent(Icons.play(26)), "Play / pause");
-        playPauseButton.setOnAction(event -> handlePlayPauseAction());
+        playPauseButton.setOnAction(event -> playback.togglePlayPause());
         skipForwardButton = iconButton(Icons.forward30(), "");
         skipForwardButton.setOnAction(event ->
                 playback.skip(DesktopPreferences.getSkipForwardSec() * 1000));
@@ -1083,14 +1084,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         return label;
     }
 
-    private void handlePlayPauseAction() {
-        if (playback.getCurrentMedia() == null) {
-            resumeLastPlayed();
-        } else {
-            playback.togglePlayPause();
-        }
-    }
-
     private void resumeLastPlayed() {
         long mediaId = DesktopPreferences.getLastPlayedMediaId();
         if (mediaId < 0) {
@@ -1200,7 +1193,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         switch (event.getCode()) {
             case SPACE:
-                handlePlayPauseAction();
+                playback.togglePlayPause();
                 event.consume();
                 break;
             case LEFT:
