@@ -100,18 +100,35 @@ public final class PlaybackManager {
     static final int MIN_RESUME_PROGRESS_MS = 3_000;
     static final int MAX_RESUME_ATTEMPTS = 3;
 
+    /**
+     * The speed this episode plays at, worked out once rather than on demand.
+     *
+     * <p>Silence skipping asks for it from the audio spectrum callback, which JavaFX delivers ten
+     * times a second while playing. Resolving it reads the preferences store and queries the
+     * database, and that query takes the lock every other database operation takes — feed
+     * refreshes, sync, the episode cache. Doing that from the media thread put a contended lock
+     * directly in the audio path, where a refresh writing a few hundred episodes could block the
+     * callback. It is read once per episode now and kept here.
+     */
+    private volatile float effectiveSpeed = 1.0f;
+
     private float effectiveSpeed() {
+        return effectiveSpeed;
+    }
+
+    /** Re-reads the speed from preferences and the feed's own override. Never call from audio. */
+    private void refreshEffectiveSpeed() {
         float rate = DesktopPreferences.getPlaybackSpeed();
         try {
-            if (currentMedia != null && currentMedia.getItem() != null
-                    && currentMedia.getItem().getFeedId() != 0) {
-                FeedPrefs prefs = database.getFeedPrefs(currentMedia.getItem().getFeedId());
+            FeedMedia media = currentMedia;
+            if (media != null && media.getItem() != null && media.getItem().getFeedId() != 0) {
+                FeedPrefs prefs = database.getFeedPrefs(media.getItem().getFeedId());
                 rate = prefs.effectiveSpeed(rate);
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return rate;
+        effectiveSpeed = rate;
     }
 
     private void notifyAutoDelete(FeedMedia media) {
@@ -209,6 +226,7 @@ public final class PlaybackManager {
         }
         startHealthWatch();
         duck = 1.0;
+        refreshEffectiveSpeed();
         player.setRate(effectiveSpeed());
         player.setVolume(userVolume);
         player.statusProperty().addListener((obs, oldStatus, newStatus) -> {
@@ -529,6 +547,7 @@ public final class PlaybackManager {
 
     public synchronized void setRate(float rate) {
         DesktopPreferences.setPlaybackSpeed(rate);
+        effectiveSpeed = rate;
         if (player != null) {
             player.setRate(rate);
         }

@@ -95,6 +95,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Button muteButton;
     private Button chapterPrevButton;
     private Button chapterNextButton;
+    /**
+     * The synced position behind the ghost marker, looked up once per episode. It used to be read
+     * from the database on every position tick, which put a lock shared with feed refreshes and
+     * sync on the JavaFX thread several times a second for the whole of playback.
+     */
+    private long syncedMarkerItemId = -1;
+    private volatile int syncedMarkerPositionMs = -1;
     private Slider seekSlider;
     /** The slider's track node, looked up once the skin exists, so the buffer can be drawn on it. */
     private Node seekTrack;
@@ -3393,17 +3400,36 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         chapterLabel.setManaged(false);
     }
 
+    /** Reads the synced position off the JavaFX thread, once, when the episode changes. */
+    private void loadSyncedMarker(long itemId) {
+        syncedMarkerItemId = itemId;
+        syncedMarkerPositionMs = -1;
+        background.submit(() -> {
+            try {
+                int position = database.getSyncedPosition(itemId);
+                if (syncedMarkerItemId == itemId) {
+                    syncedMarkerPositionMs = position;
+                }
+            } catch (Exception e) {
+                // no marker for this episode then
+            }
+        });
+    }
+
     private void updateGhostMarker(int positionMs, int durationMs) {
         if (ghostMarker == null) {
             return;
         }
         FeedMedia current = playback.getCurrentMedia();
-        if (current == null || durationMs <= 0) {
+        if (current == null || durationMs <= 0 || current.getItem() == null) {
             ghostMarker.setVisible(false);
             return;
         }
+        if (current.getItem().getId() != syncedMarkerItemId) {
+            loadSyncedMarker(current.getItem().getId());
+        }
         try {
-            int syncedPosition = database.getSyncedPosition(current.getItem().getId());
+            int syncedPosition = syncedMarkerPositionMs;
             if (syncedPosition < 0 || syncedPosition > durationMs) {
                 ghostMarker.setVisible(false);
                 return;
