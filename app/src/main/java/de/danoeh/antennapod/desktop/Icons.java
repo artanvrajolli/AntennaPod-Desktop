@@ -22,6 +22,10 @@ public final class Icons {
     private static final double BAR = 24;
     /** Slightly heavier weight for diagonals, which read thinner than straight bars. */
     private static final double DIAGONAL = 26;
+    /** Window caption glyphs sit at a smaller size than the toolbar set and need a lighter bar. */
+    private static final double CAPTION = 14;
+    /** Caption glyphs are drawn smaller than the toolbar set, as Windows draws its own. */
+    private static final double CAPTION_SIZE = 11;
 
     private Icons() {
     }
@@ -270,6 +274,52 @@ public final class Icons {
         return icon(GITHUB, size, 16);
     }
 
+    // ---------------------------------------------------------------- window caption
+
+    /**
+     * A caption glyph, sized to the shape's own proportions rather than squashed into a square.
+     * {@link #icon} lets the region stretch its shape, which is right for the toolbar set because
+     * those glyphs all but fill their 256 unit grid — but a minimise bar is 10 times wider than it
+     * is tall, and stretching it to a square turns it into a solid block.
+     */
+    private static Node captionIcon(String content) {
+        SVGPath path = new SVGPath();
+        path.setContent(content);
+        javafx.geometry.Bounds bounds = path.getBoundsInLocal();
+        // fit the glyph's own extent, not the 256 unit grid: these shapes deliberately sit well
+        // inside it, and scaling by the grid would leave them at half the size they should be
+        double extent = Math.max(bounds.getWidth(), bounds.getHeight());
+        double scale = extent > 0 ? CAPTION_SIZE / extent : 1;
+        double width = Math.max(bounds.getWidth() * scale, 1);
+        double height = Math.max(bounds.getHeight() * scale, 1);
+        Region holder = new Region();
+        holder.setShape(path);
+        holder.setMinSize(width, height);
+        holder.setPrefSize(width, height);
+        holder.setMaxSize(width, height);
+        holder.setStyle("-fx-background-color: -fx-text-background-color;");
+        return holder;
+    }
+
+    public static Node windowMinimize() {
+        return captionIcon(capsule(64, 128, 192, 128, CAPTION));
+    }
+
+    public static Node windowMaximize() {
+        return captionIcon(frame(64, 64, 128, 128, CAPTION, 12));
+    }
+
+    /** The front square with the corner of the one behind it peeking out, clear of the frame. */
+    public static Node windowRestore() {
+        return captionIcon(frame(60, 96, 110, 100, CAPTION, 10)
+                + capsule(96, 70, 186, 70, CAPTION)
+                + capsule(186, 70, 186, 160, CAPTION));
+    }
+
+    public static Node windowClose() {
+        return captionIcon(capsule(72, 72, 184, 184, CAPTION) + capsule(184, 72, 72, 184, CAPTION));
+    }
+
     // ---------------------------------------------------------------- primitives
 
     /** Rounded rectangle, wound clockwise. */
@@ -280,6 +330,23 @@ public final class Icons {
                 + "V" + n(y + h - radius) + arcTo(radius, x + w - radius, y + h, 1)
                 + "H" + n(x + radius) + arcTo(radius, x, y + h - radius, 1)
                 + "V" + n(y + radius) + arcTo(radius, x + radius, y, 1) + "Z";
+    }
+
+    /** Rounded rectangle wound anti-clockwise, punching a hole in the shape underneath. */
+    private static String rectHole(double x, double y, double w, double h, double r) {
+        double radius = Math.min(r, Math.min(w, h) / 2);
+        return "M" + n(x + radius) + "," + n(y)
+                + arcTo(radius, x, y + radius, 0)
+                + "V" + n(y + h - radius) + arcTo(radius, x + radius, y + h, 0)
+                + "H" + n(x + w - radius) + arcTo(radius, x + w, y + h - radius, 0)
+                + "V" + n(y + radius) + arcTo(radius, x + w - radius, y, 0) + "Z";
+    }
+
+    /** Rounded rectangle outline: an outer rect with a smaller one punched out of the middle. */
+    private static String frame(double x, double y, double w, double h, double thickness, double r) {
+        return rect(x, y, w, h, r)
+                + rectHole(x + thickness, y + thickness, w - 2 * thickness, h - 2 * thickness,
+                        Math.max(r - thickness, 0));
     }
 
     /** Filled circle, wound clockwise so it adds to whatever it overlaps. */

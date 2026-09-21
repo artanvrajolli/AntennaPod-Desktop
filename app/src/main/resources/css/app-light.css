@@ -138,3 +138,125 @@
 .icon-button.flat:pressed {
     -fx-background-color: -fx-selection-bar-non-focused;
 }
+
+/* ---------------------------------------------------------------- window chrome */
+
+.window-shell {
+    -fx-background-color: -fx-background;
+    -fx-border-width: 1;
+}
+
+.window-shell-maximized {
+    -fx-border-width: 0;
+}
+
+.window-bar {
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 0 0 0 12;
+}
+
+.window-drag-area {
+    -fx-padding: 0 12 0 0;
+}
+
+.window-title {
+    -fx-font-size: 12px;
+}
+
+.window-version {
+    -fx-font-size: 11px;
+}
+
+.window-button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-background-insets: 0;
+    -fx-border-width: 0;
+    -fx-min-width: 46;
+    -fx-pref-width: 46;
+    -fx-max-width: 46;
+    -fx-min-height: 34;
+    -fx-pref-height: 34;
+    -fx-max-height: 34;
+    -fx-padding: 0;
+}
+
+.window-shell {
+    -fx-border-color: #cfcfcf;
+}
+
+.window-bar {
+    -fx-background-color: #f3f3f3;
+    -fx-border-color: #e2e2e2;
+}
+
+.window-title {
+    -fx-text-fill: #464646;
+}
+
+.window-button:hover {
+    -fx-background-color: #e3e3e3;
+}
+
+.window-button:pressed {
+    -fx-background-color: #d2d2d2;
+}
+
+.window-button-close:hover {
+    -fx-background-color: #c42b1c;
+}
+
+.window-button-close:pressed {
+    -fx-background-color: #b2251a;
+}
+
+.window-version {
+    -fx-text-fill: #8a8a8a;
+}
+
+/* ---------------------------------------------------------------- cursors */
+
+/* Anything that reacts to a click gets the hand. Text entry keeps its caret, and a control that
+   cannot be clicked keeps the arrow, so the cursor never promises something that will not happen. */
+.button,
+.toggle-button,
+.menu-button,
+.split-menu-button,
+.tool-bar-overflow-button,
+.choice-box,
+.combo-box-base,
+.check-box,
+.radio-button,
+.hyperlink,
+.menu-item,
+.tab,
+.window-button,
+.slider .thumb,
+.slider .track,
+.list-cell:filled,
+.scroll-bar .thumb,
+.scroll-bar .increment-button,
+.scroll-bar .decrement-button {
+    -fx-cursor: hand;
+}
+
+.button:disabled,
+.toggle-button:disabled,
+.menu-button:disabled,
+.split-menu-button:disabled,
+.choice-box:disabled,
+.combo-box-base:disabled,
+.check-box:disabled,
+.radio-button:disabled,
+.hyperlink:disabled,
+.list-cell:disabled,
+.slider:disabled .thumb,
+.slider:disabled .track {
+    -fx-cursor: default;
+}
+
+/* An editable combo box is still a text field where you type. */
+.combo-box-base .text-field,
+.combo-box-base .text-input {
+    -fx-cursor: text;
+}

@@ -212,11 +212,19 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         root.setBottom(buildPlayerBar());
 
         appShell = new StackPane(root);
-        stage.setTitle("AntennaPod Desktop " + appVersion());
+        stage.setTitle(APP_NAME + " " + appVersion());
         stage.setMinWidth(1000);
         stage.setMinHeight(640);
         stage.getIcons().addAll(appIcons());
-        scene = new Scene(appShell, 1100, 700);
+        javafx.scene.Parent sceneRoot = appShell;
+        if (WindowChrome.isEnabled()) {
+            // the style has to be set before the stage is shown, and it cannot be changed after
+            stage.initStyle(javafx.stage.StageStyle.UNDECORATED);
+            // the bar shows the version beside the name, so the title itself carries only the name
+            stage.setTitle(APP_NAME);
+            sceneRoot = WindowChrome.install(stage, appShell, appVersion());
+        }
+        scene = new Scene(sceneRoot, 1100, 700);
         ThemeManager.init();
         ThemeManager.style(scene);
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handleGlobalKey);
@@ -596,6 +604,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             setStatus("Could not open the browser: " + e.getMessage());
         }
     }
+
+    private static final String APP_NAME = "AntennaPod Desktop";
 
     private static String appVersion() {
         Package appPackage = DesktopApp.class.getPackage();

@@ -79,6 +79,89 @@ public class ThemeSceneTest {
         manager.remove();
     }
 
+    private static Label labelWithClass(javafx.scene.Parent parent, String styleClass) {
+        for (javafx.scene.Node node : parent.getChildrenUnmodifiable()) {
+            if (node instanceof Label && node.getStyleClass().contains(styleClass)) {
+                return (Label) node;
+            }
+        }
+        throw new AssertionError("no label with style class " + styleClass);
+    }
+
+    /**
+     * The custom title bar, checked in this class because it needs the same toolkit session: the
+     * JavaFX toolkit can only be started once per JVM.
+     */
+    private static void verifyWindowChrome() {
+        Stage stage = new Stage();
+        try {
+            stage.setTitle("Chrome test");
+            stage.setMinWidth(400);
+            stage.setMinHeight(300);
+            stage.getIcons().add(new javafx.scene.image.WritableImage(32, 32));
+            javafx.scene.layout.Region root =
+                    WindowChrome.install(stage, new StackPane(new Label("content")), "9.9.9");
+            assertTrue(root.getStyleClass().contains("window-shell"));
+
+            javafx.scene.layout.HBox bar =
+                    (javafx.scene.layout.HBox) ((javafx.scene.layout.VBox) root).getChildren().get(0);
+            assertTrue(bar.getStyleClass().contains("window-bar"));
+            org.junit.Assert.assertEquals(WindowChrome.BAR_HEIGHT, bar.getPrefHeight(), 0.01);
+
+            javafx.scene.layout.HBox dragArea = (javafx.scene.layout.HBox) bar.getChildren().get(0);
+            // the window's own icon leads the bar, so the name is not simply the first child
+            assertTrue(dragArea.getChildren().get(0) instanceof javafx.scene.image.ImageView);
+            Label title = labelWithClass(dragArea, "window-title");
+            org.junit.Assert.assertEquals("Chrome test", title.getText());
+            stage.setTitle("Renamed");
+            org.junit.Assert.assertEquals("Renamed", title.getText());
+            org.junit.Assert.assertEquals("9.9.9",
+                    labelWithClass(dragArea, "window-version").getText());
+
+            javafx.scene.layout.HBox buttons = (javafx.scene.layout.HBox) bar.getChildren().get(1);
+            org.junit.Assert.assertEquals(3, buttons.getChildren().size());
+            for (javafx.scene.Node node : buttons.getChildren()) {
+                javafx.scene.control.Button button = (javafx.scene.control.Button) node;
+                assertTrue(button.getStyleClass().contains("window-button"));
+                org.junit.Assert.assertNotNull(button.getGraphic());
+                org.junit.Assert.assertNotNull(button.getTooltip());
+                assertFalse(button.isFocusTraversable());
+            }
+
+            javafx.scene.control.Button minimize =
+                    (javafx.scene.control.Button) buttons.getChildren().get(0);
+            javafx.scene.control.Button maximize =
+                    (javafx.scene.control.Button) buttons.getChildren().get(1);
+            javafx.scene.control.Button close =
+                    (javafx.scene.control.Button) buttons.getChildren().get(2);
+
+            javafx.scene.Node restoredIcon = maximize.getGraphic();
+            maximize.fire();
+            assertTrue(stage.isMaximized());
+            assertTrue("the glyph should switch to restore", maximize.getGraphic() != restoredIcon);
+            assertTrue(root.getStyleClass().contains("window-shell-maximized"));
+            maximize.fire();
+            assertFalse(stage.isMaximized());
+            assertFalse(root.getStyleClass().contains("window-shell-maximized"));
+
+            minimize.fire();
+            assertTrue(stage.isIconified());
+            stage.setIconified(false);
+
+            java.util.concurrent.atomic.AtomicInteger closeRequests =
+                    new java.util.concurrent.atomic.AtomicInteger();
+            // close must go through the stage, so close-to-tray keeps its say
+            stage.setOnCloseRequest(event -> {
+                closeRequests.incrementAndGet();
+                event.consume();
+            });
+            close.fire();
+            org.junit.Assert.assertEquals(1, closeRequests.get());
+        } finally {
+            stage.hide();
+        }
+    }
+
     @Test
     public void testNewWindowsReceiveActiveTheme() throws Exception {
         String previousMode = DesktopPreferences.getThemeMode();
@@ -88,6 +171,7 @@ public class ThemeSceneTest {
             Stage stage = null;
             try {
                 verifyTrayControls();
+                verifyWindowChrome();
                 DesktopPreferences.setThemeMode(ThemeManager.MODE_DARK);
                 ThemeManager.init();
                 stage = new Stage();
