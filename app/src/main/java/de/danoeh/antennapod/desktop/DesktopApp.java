@@ -254,6 +254,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             if (trayActive && DesktopPreferences.getCloseToTray()) {
                 event.consume();
                 stage.hide();
+                if (!DesktopPreferences.getTrayHintShown()) {
+                    // closing the window keeps playing by default, so say so once rather than
+                    // leaving someone to think the app vanished
+                    DesktopPreferences.setTrayHintShown(true);
+                    trayManager.notify(APP_NAME + " is still running",
+                            "It stays in the tray so playback keeps going. "
+                                    + "Right-click the tray icon for controls, or to exit.");
+                }
             } else {
                 shutdown();
             }

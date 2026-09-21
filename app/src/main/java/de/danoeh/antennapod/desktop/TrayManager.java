@@ -103,6 +103,22 @@ public final class TrayManager {
         }
     }
 
+    /**
+     * A balloon from the tray icon. Used once, to say where the window went the first time
+     * closing it leaves the app running rather than quitting it.
+     */
+    public void notify(String caption, String text) {
+        TrayIcon icon = trayIcon;
+        if (icon == null) {
+            return;
+        }
+        try {
+            icon.displayMessage(caption, text, TrayIcon.MessageType.INFO);
+        } catch (Exception e) {
+            // a notification is a nicety; the tray icon itself is the signpost that matters
+        }
+    }
+
     VBox buildControls(Callbacks callbacks) {
         nowPlayingLabel = new Label("Nothing playing");
         nowPlayingLabel.setWrapText(true);

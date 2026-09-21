@@ -191,12 +191,22 @@ public final class DesktopPreferences {
         PREFS.putBoolean("updateCheckEnabled", enabled);
     }
 
+    /** On by default: closing the window during an episode should not end it. */
     public static boolean getCloseToTray() {
-        return PREFS.getBoolean("closeToTray", false);
+        return PREFS.getBoolean("closeToTray", true);
     }
 
     public static void setCloseToTray(boolean enabled) {
         PREFS.putBoolean("closeToTray", enabled);
+    }
+
+    /** Whether the listener has already been told once that closing leaves the app in the tray. */
+    public static boolean getTrayHintShown() {
+        return PREFS.getBoolean("trayHintShown", false);
+    }
+
+    public static void setTrayHintShown(boolean shown) {
+        PREFS.putBoolean("trayHintShown", shown);
     }
 
     public static String getThemeMode() {
