@@ -96,6 +96,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Button chapterPrevButton;
     private Button chapterNextButton;
     private Slider seekSlider;
+    /** The slider's track node, looked up once the skin exists, so the buffer can be drawn on it. */
+    private Node seekTrack;
     private StackPane ghostMarker;
     private Slider volumeSlider;
     private ComboBox<String> speedBox;
@@ -183,6 +185,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         episodeCache.setStatusReporter(this::setStatus);
         playback.setCacheHandlers(this::cachePlaybackStarted, this::cachePlaybackFinished);
         playback.setResumeLastHandler(this::resumeLastPlayed);
+        episodeCache.setProgressReporter(this::onCacheProgress);
         background.submit(() -> {
             int swept = episodeCache.sweepFinished();
             if (swept > 0) {
@@ -3264,6 +3267,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         updateTransportEnabled();
         FeedMedia current = playback.getCurrentMedia();
         windowsTaskbar.setPlaybackState(current != null, playback.isPlaying());
+        if (current == null) {
+            updateBufferBar(0, 0);
+        } else if (playback.isPlayingFromFile()) {
+            // already on disk, so all of it can be played without the network
+            int durationMs = playback.getDuration();
+            updateBufferBar(durationMs, durationMs);
+        }
         if (current != null && current.getItem() != null && current.getItem().getFeedId() != 0) {
             markFeedPlayed(current.getItem().getFeedId());
         }
@@ -3301,6 +3311,52 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         updateLoadingIndicator();
         episodeList.refresh();
         feedList.refresh();
+    }
+
+    /**
+     * How much of the playing episode is on disk, reported by the cache as it downloads. JavaFX's
+     * own {@code bufferProgressTime} is no use here: for these streams it reports zero once and
+     * then never changes, so what the media engine has buffered simply is not observable. What the
+     * cache has fetched is, and it answers the same question — how much will play without the
+     * network.
+     */
+    private void onCacheProgress(long mediaId, long bytesRead, long totalBytes) {
+        FeedMedia current = playback.getCurrentMedia();
+        if (current == null || current.getId() != mediaId || totalBytes <= 0) {
+            return;
+        }
+        double fraction = Math.max(0, Math.min(1, bytesRead / (double) totalBytes));
+        int durationMs = playback.getDuration();
+        Platform.runLater(() -> updateBufferBar((int) (fraction * durationMs), durationMs));
+    }
+
+    /**
+     * Draws the fetched part of the episode into the seek bar's own track, the way a video player
+     * does: the lighter run is what can be played without waiting for the network.
+     */
+    private void updateBufferBar(int bufferedMs, int durationMs) {
+        if (seekSlider == null) {
+            return;
+        }
+        if (seekTrack == null) {
+            seekTrack = seekSlider.lookup(".track");
+        }
+        if (seekTrack == null) {
+            return;
+        }
+        if (durationMs <= 0 || bufferedMs <= 0) {
+            // back to whatever the stylesheet says
+            seekTrack.setStyle(null);
+            return;
+        }
+        double percent = Math.max(0, Math.min(100, bufferedMs * 100.0 / durationMs));
+        boolean dark = ThemeManager.isDark();
+        String buffered = dark ? "#8d8d8d" : "#9e9e9e";
+        String rest = dark ? "#5f5f5f" : "#c9c9c9";
+        seekTrack.setStyle(String.format(Locale.US,
+                "-fx-background-color: linear-gradient(to right, %s 0%%, %s %.2f%%, %s %.2f%%,"
+                        + " %s 100%%);",
+                buffered, buffered, percent, rest, percent, rest));
     }
 
     @Override

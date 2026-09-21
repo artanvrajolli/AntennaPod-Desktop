@@ -226,11 +226,10 @@ public final class PlaybackManager {
                 int target = pendingSeekMs;
                 pendingSeekMs = -1;
                 if (duration > 0 && target >= duration - 1000) {
-                    // the player thinks the episode ends before where we wanted to resume; seeking
-                    // there would drop us straight back at the end, so treat it as finished
-                    player.play();
+                    // the player thinks the episode ends before where we wanted to resume. Playing
+                    // on would start it again from the beginning, so accept that it is over.
                     notifyLoading(false);
-                    notifyState();
+                    completeEpisode();
                     return;
                 }
                 player.seek(new Duration(Math.max(target, 0)));
@@ -263,8 +262,16 @@ public final class PlaybackManager {
             return;
         }
         int positionMs = Math.max(lastKnownPositionMs, currentMedia.getPosition());
-        if (shouldResume(positionMs, true)) {
+        if (shouldResume(positionMs)) {
             resumeAt(positionMs, "stopped early");
+            return;
+        }
+        completeEpisode();
+    }
+
+    /** Marks the episode played and moves on. Only called once playback really is over. */
+    private synchronized void completeEpisode() {
+        if (currentMedia == null) {
             return;
         }
         recordFinishedAction();
@@ -561,6 +568,11 @@ public final class PlaybackManager {
         return player != null && player.getStatus() == MediaPlayer.Status.PLAYING;
     }
 
+    /** Whether the player is reading a file on disk rather than pulling from the network. */
+    public synchronized boolean isPlayingFromFile() {
+        return player != null && playingFromFile;
+    }
+
     public synchronized int getPosition() {
         return player != null ? (int) player.getCurrentTime().toMillis()
                 : (currentMedia != null ? currentMedia.getPosition() : 0);
@@ -751,7 +763,7 @@ public final class PlaybackManager {
                 if (currentMedia != failed) {
                     return;
                 }
-                if (shouldResume(lastKnownPositionMs, false)) {
+                if (shouldResume(lastKnownPositionMs)) {
                     resumeAt(lastKnownPositionMs, reason);
                     return;
                 }
@@ -776,7 +788,7 @@ public final class PlaybackManager {
      * reports a too-short total duration for some variable-bitrate streams and then fires
      * end-of-media there, which looks to the listener like playback stopping for no reason.
      */
-    private boolean shouldResume(int positionMs, boolean requireNewSource) {
+    private boolean shouldResume(int positionMs) {
         if (currentMedia == null) {
             return false;
         }
@@ -784,16 +796,12 @@ public final class PlaybackManager {
         if (!isPrematureStop(positionMs, durationMs)) {
             return false;
         }
-        if (requireNewSource && (playingFromFile || currentMedia.playableFileUrl() == null)) {
-            // the player decided the stream is over. Reading the same stream again would decide
-            // the same thing, so only restart when a complete local copy has since appeared.
-            return false;
-        }
         if (positionMs - resumeFromPositionMs >= MIN_RESUME_PROGRESS_MS) {
             // the last restart did get further, so this is a new stop rather than a retry loop
             resumeAttempts = 0;
         } else if (resumeAttempts > 0) {
-            // restarting bought us nothing: the episode is shorter than its duration claims
+            // the restart got nowhere, so the episode really is shorter than its duration claims
+            // and reading it again would only decide the same thing
             return false;
         }
         return resumeAttempts < MAX_RESUME_ATTEMPTS;

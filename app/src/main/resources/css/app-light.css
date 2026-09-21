@@ -260,3 +260,14 @@
 .combo-box-base .text-input {
     -fx-cursor: text;
 }
+
+.slider .track {
+    -fx-background-color: #c9c9c9;
+    -fx-background-insets: 0;
+    -fx-background-radius: 3;
+    -fx-pref-height: 6;
+}
+
+.slider:disabled .track {
+    -fx-background-color: #d8d8d8;
+}

@@ -24,7 +24,13 @@ import java.util.function.Supplier;
  */
 public final class EpisodeCache {
     private final DesktopDatabase database;
-    private final ExecutorService executor = Executors.newFixedThreadPool(2, runnable -> {
+    /**
+     * One download at a time. Caching used to run two in parallel on top of the episode the player
+     * was streaming, so pressing play started three transfers at once and the stream was left
+     * fighting its own prefetch for bandwidth. Queued this way, the episode being listened to is
+     * fetched first and the prefetch of later ones waits its turn.
+     */
+    private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "episode-cache");
         thread.setDaemon(true);
         return thread;
@@ -42,6 +48,7 @@ public final class EpisodeCache {
             new java.util.concurrent.atomic.AtomicBoolean();
     private volatile Supplier<Set<Long>> protectedIdsSupplier = Set::of;
     private volatile Consumer<String> statusReporter;
+    private volatile ProgressReporter progressReporter;
 
     private static final long RETRY_DELAY_MS = 10_000;
 
@@ -57,6 +64,15 @@ public final class EpisodeCache {
 
     public void setStatusReporter(Consumer<String> reporter) {
         this.statusReporter = reporter;
+    }
+
+    /** Told how much of an episode is on disk, so the player can show what it can play already. */
+    public interface ProgressReporter {
+        void onCacheProgress(long mediaId, long bytesRead, long totalBytes);
+    }
+
+    public void setProgressReporter(ProgressReporter reporter) {
+        this.progressReporter = reporter;
     }
 
     public static File cacheFileFor(FeedMedia media) {
@@ -113,10 +129,26 @@ public final class EpisodeCache {
             EpisodeDownloader.fetchToFile(media, target, new EpisodeDownloader.ProgressListener() {
                 @Override
                 public void onProgress(long mediaId, long bytesRead, long totalBytes) {
+                    ProgressReporter reporter = progressReporter;
+                    if (reporter != null) {
+                        try {
+                            reporter.onCacheProgress(mediaId, bytesRead, totalBytes);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
                 }
 
                 @Override
                 public void onFinished(long mediaId, File file) {
+                    ProgressReporter reporter = progressReporter;
+                    if (reporter != null) {
+                        try {
+                            reporter.onCacheProgress(mediaId, 1, 1);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
                 }
 
                 @Override
