@@ -57,6 +57,7 @@ public final class WindowsTaskbar {
     /** Last percentage pushed to the shell, so a position update every frame is not a COM call. */
     private volatile int lastPercent = -1;
     private volatile int lastState = -1;
+    private volatile ThumbBar thumbBar;
 
     public static boolean isEnabled() {
         return System.getProperty("os.name", "").toLowerCase(java.util.Locale.US).contains("win")
@@ -67,7 +68,7 @@ public final class WindowsTaskbar {
      * Finds the window and hooks it up to the shell. Call once the stage is showing: the window
      * has to exist before it can be found.
      */
-    public void attach(Stage stage) {
+    public void attach(Stage stage, ThumbBar.Callbacks controls) {
         if (!isEnabled()) {
             return;
         }
@@ -95,6 +96,10 @@ public final class WindowsTaskbar {
                 }
                 hwnd = window;
                 taskbarList = list;
+                // the window procedure belongs to the thread that created the window, so the
+                // subclassing is done there; the COM half of it comes back to this thread
+                javafx.application.Platform.runLater(
+                        () -> thumbBar = ThumbBar.install(window, list, controls, this::submit));
             } catch (Throwable t) {
                 // an unavailable shell interface is not worth breaking playback over
                 t.printStackTrace();
@@ -140,11 +145,20 @@ public final class WindowsTaskbar {
         if (state == TBPF_NOPROGRESS) {
             lastPercent = -1;
         }
+        ThumbBar bar = thumbBar;
+        if (bar != null) {
+            bar.setPlaying(loaded && playing);
+        }
         run(list -> list.setProgressState(hwnd, state));
     }
 
     public void shutdown() {
         submit(() -> {
+            ThumbBar bar = thumbBar;
+            thumbBar = null;
+            if (bar != null) {
+                bar.dispose();
+            }
             TaskbarList3 list = taskbarList;
             taskbarList = null;
             if (list != null) {
@@ -241,10 +255,12 @@ public final class WindowsTaskbar {
      * are fixed by the interface: 0-2 are IUnknown, 3-7 ITaskbarList, 8 ITaskbarList2, 9 onwards
      * ITaskbarList3.
      */
-    private static final class TaskbarList3 extends Unknown {
+    static final class TaskbarList3 extends Unknown {
         private static final int VTBL_HR_INIT = 3;
         private static final int VTBL_SET_PROGRESS_VALUE = 9;
         private static final int VTBL_SET_PROGRESS_STATE = 10;
+        private static final int VTBL_THUMB_BAR_ADD_BUTTONS = 15;
+        private static final int VTBL_THUMB_BAR_UPDATE_BUTTONS = 16;
 
         TaskbarList3(Pointer instance) {
             super(instance);
@@ -263,6 +279,17 @@ public final class WindowsTaskbar {
         HRESULT setProgressState(HWND window, int flags) {
             return (HRESULT) _invokeNativeObject(VTBL_SET_PROGRESS_STATE,
                     new Object[]{getPointer(), window, flags}, HRESULT.class);
+        }
+
+        /** Only ever succeeds once per window; every later change goes through update. */
+        HRESULT thumbBarAddButtons(HWND window, int count, Pointer buttons) {
+            return (HRESULT) _invokeNativeObject(VTBL_THUMB_BAR_ADD_BUTTONS,
+                    new Object[]{getPointer(), window, count, buttons}, HRESULT.class);
+        }
+
+        HRESULT thumbBarUpdateButtons(HWND window, int count, Pointer buttons) {
+            return (HRESULT) _invokeNativeObject(VTBL_THUMB_BAR_UPDATE_BUTTONS,
+                    new Object[]{getPointer(), window, count, buttons}, HRESULT.class);
         }
     }
 }

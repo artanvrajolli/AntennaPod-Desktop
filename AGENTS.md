@@ -19,12 +19,15 @@ inside `core`.
     `storage/` (SQLite-backed desktop storage, import/export OPML, preferences)
   - `android/` + `androidx/` — hand-written compatibility shims the ported
     engine depends on (Log, XML, media, collections). Keep them minimal.
-  - 17 test classes (JUnit 4) in `core/src/test`.
-- `app/` — JavaFX UI (8 classes under
+  - 18 test classes (JUnit 4) in `core/src/test`.
+- `app/` — JavaFX UI (11 classes under
   `app/src/main/java/de/danoeh/antennapod/desktop`): `DesktopApp` (scenes),
   `PlaybackManager` (JavaFX media playback), `TrayManager` (system tray),
-  `ThemeManager`/`SystemTheme`, `ImageCache`, `Icons`, `Launcher` (entry
-  point / main class). 3 test classes in `app/src/test`.
+  `WindowChrome` (the app-drawn title bar; the stage is undecorated),
+  `WindowsTaskbar` + `ThumbBar` (ITaskbarList3 via JNA: taskbar progress and
+  the media buttons under the taskbar thumbnail), `ThemeManager`/`SystemTheme`,
+  `ImageCache`, `Icons`, `Launcher` (entry point / main class). 9 test classes
+  in `app/src/test`.
 
 ## Build, test, run
 
@@ -47,12 +50,20 @@ app\build\install\app\bin\app.bat     :: run the installed distribution
 
 ## Conventions
 
-- Windows-first: paths, packaging (jpackage), and tray integration assume
-  Windows 10/11. User data lives in `%APPDATA%\AntennaPod`.
+- Windows-first: paths, packaging (jpackage), tray and taskbar integration
+  assume Windows 10/11. User data lives in `%APPDATA%\AntennaPod`.
+- Native integration degrades to doing nothing rather than failing, and each
+  piece has an escape hatch: `-Dantennapod.desktop.customchrome=false` restores
+  the system title bar, `-Dantennapod.desktop.taskbar=false` drops the taskbar
+  progress, `-Dantennapod.desktop.thumbbar=false` leaves the window procedure
+  unsubclassed, `-Dantennapod.desktop.tray=false` disables the tray. Use these
+  to isolate a fault before changing the native code.
 - `core` must not depend on JavaFX; UI code lives in `app`.
-- Dependencies are declared in `core/build.gradle` (OkHttp, RxJava3, org.json,
-  commons-lang3/io, jsoup, xpp3, sqlite-jdbc, slf4j) and shared via `api`,
-  so `app` inherits them.
+- Shared dependencies are declared in `core/build.gradle` (OkHttp, RxJava3,
+  org.json, commons-lang3/io, jsoup, xpp3, sqlite-jdbc, slf4j) and exposed via
+  `api`, so `app` inherits them. `app` adds only what is desktop-specific: JNA
+  (`jna`, `jna-platform`) for the Windows shell calls, which must not leak into
+  `core`.
 - UTF-8 encoding is forced on all compile tasks; keep sources ASCII-safe or
   encoded UTF-8.
 

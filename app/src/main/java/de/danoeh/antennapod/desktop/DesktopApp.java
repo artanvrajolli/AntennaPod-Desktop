@@ -249,7 +249,22 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         stage.show();
         // the taskbar button only exists once the window is showing
-        windowsTaskbar.attach(stage);
+        windowsTaskbar.attach(stage, new ThumbBar.Callbacks() {
+            @Override
+            public void onPrevious() {
+                playback.playPrevious();
+            }
+
+            @Override
+            public void onPlayPause() {
+                playback.togglePlayPause();
+            }
+
+            @Override
+            public void onNext() {
+                playback.playNext();
+            }
+        });
         boolean trayEnabled = !"false".equalsIgnoreCase(
                 System.getProperty("antennapod.desktop.tray", "true"));
         trayActive = trayEnabled && trayManager.init(new TrayManager.Callbacks() {
