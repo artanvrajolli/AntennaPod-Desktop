@@ -28,7 +28,7 @@ public final class PlaybackManager {
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     /** Separate pool for health checks: player work on {@link #scheduler} may block in native code. */
     private final ScheduledExecutorService healthScheduler =
-            Executors.newScheduledThreadPool(2, runnable -> {
+            Executors.newScheduledThreadPool(3, runnable -> {
                 Thread thread = new Thread(runnable, "playback-health");
                 thread.setDaemon(true);
                 return thread;
@@ -48,9 +48,15 @@ public final class PlaybackManager {
     private int pendingSeekMs = -1;
     private boolean suppressNextPlayAction;
     private final SilenceSkipper silenceSkipper = new SilenceSkipper();
+    private final SilenceBoost silenceBoost = new SilenceBoost();
+    /** What the audio last sounded like: true while it is silence worth fast-forwarding through. */
+    private volatile boolean silenceDetected;
+    /** True while the audio spectrum is being watched, so the applier knows to do anything at all. */
+    private volatile boolean silenceWatchActive;
     private Media currentFxMedia;
     private ScheduledFuture<?> loadWatchTask;
     private ScheduledFuture<?> stallWatchTask;
+    private ScheduledFuture<?> silenceTask;
     private volatile boolean mediaReady;
     private volatile long loadStartedAt;
     private long stalledSince;
@@ -73,8 +79,8 @@ public final class PlaybackManager {
     private int resumeAttempts;
     private int resumeFromPositionMs;
 
-    private static final double SILENCE_RATE_BOOST = 4.0;
-    private static final double MAX_RATE = 8.0;
+    /** How often what the audio sounded like is turned into a rate and a volume on the player. */
+    private static final long SILENCE_APPLY_INTERVAL_MS = 100;
     /** Audio plays this fraction of the normal volume while fast-forwarding through silence. */
     private static final double SILENCE_DUCK_FACTOR = 0.15;
     /** How much of the duck is applied per spectrum update (~0.1 s apart). */
@@ -201,6 +207,9 @@ public final class PlaybackManager {
             resumeFromPositionMs = 0;
             loadRetries = 0;
             declaredDurationMs = mediaDurationMs;
+            // a different episode has its own source and its own bitrate, so what the last one
+            // could not keep up with says nothing about this one
+            silenceBoost.reset();
         } else {
             // a restart of the same episode: the player has already overwritten the stored
             // duration with its own estimate, so keep the longest value we ever saw
@@ -363,6 +372,8 @@ public final class PlaybackManager {
             return;
         }
         if (!enabled) {
+            silenceWatchActive = false;
+            silenceDetected = false;
             player.setAudioSpectrumListener(null);
             // no spectrum updates will arrive to ramp back, so restore immediately
             duck = 1.0;
@@ -379,45 +390,100 @@ public final class PlaybackManager {
 
     private void configureSilenceSkipping() {
         silenceSkipper.reset();
+        silenceDetected = false;
         if (!DesktopPreferences.getSkipSilence()) {
+            silenceWatchActive = false;
             return;
         }
+        silenceWatchActive = true;
         player.setAudioSpectrumListener((timestamp, duration, magnitudes, phases) -> {
             boolean silent = silenceSkipper.update(magnitudes, System.currentTimeMillis());
             // a loud frame ends the fast-forward immediately instead of after the exit
             // delay, so returning speech is never played at the boosted rate
-            applySilenceRate(silent && !silenceSkipper.isAudioLoud());
+            silenceDetected = silent && !silenceSkipper.isAudioLoud();
         });
     }
 
-    private void applySilenceRate(boolean silent) {
-        MediaPlayer activePlayer = player;
+    /**
+     * Turns what the audio last sounded like into a rate and a volume on the player.
+     *
+     * <p>This used to happen inside the audio spectrum callback, which is JavaFX's own media
+     * thread calling back into the player it is decoding on. Two things went wrong there. The
+     * callback only fires while the player is playing, so once a boosted stream drained its
+     * buffer and stalled there was nothing left to lower the rate again — it resumed at the
+     * boosted rate, drained the buffer once more, and the episode eventually gave up without ever
+     * continuing. And the rate change went back into native media code from within its own
+     * callback. Reading the state on a timer instead means the player is always brought back to
+     * its normal rate when it is not playing, whatever the audio last said.
+     */
+    private void applySilenceRate() {
+        MediaPlayer activePlayer;
+        synchronized (this) {
+            activePlayer = silenceWatchActive ? player : null;
+        }
         if (activePlayer == null) {
             return;
         }
+        MediaPlayer.Status status;
+        try {
+            status = activePlayer.getStatus();
+        } catch (Exception e) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (status == MediaPlayer.Status.STALLED) {
+            // the fast-forward is the first suspect for a dry buffer, so it goes before the
+            // stall does rather than after the stream has been given up on
+            silenceBoost.onStalled(now);
+        } else if (status == MediaPlayer.Status.PLAYING) {
+            silenceBoost.onPlaying();
+        }
+        boolean silent = silenceDetected && status == MediaPlayer.Status.PLAYING
+                && silenceBoost.isAllowed(now);
         if (silent) {
             // fade the volume out first and only speed up once it is already quiet:
             // speeding up full-volume audio is what produces the loud pitch sound
             if (duck > SILENCE_DUCK_FACTOR) {
                 duck = Math.max(SILENCE_DUCK_FACTOR, duck - DUCK_DOWN_STEP);
-                activePlayer.setVolume(effectiveVolume());
+                setPlayerVolume(activePlayer, effectiveVolume());
             }
             if (duck <= SILENCE_DUCK_FACTOR + 0.001) {
-                float boosted = (float) Math.min(effectiveSpeed() * SILENCE_RATE_BOOST, MAX_RATE);
-                if (Math.abs(activePlayer.getRate() - boosted) > 0.01f) {
-                    activePlayer.setRate(boosted);
-                }
+                setPlayerRate(activePlayer, SilenceBoost.rateFor(effectiveSpeed(), playingFromFile));
             }
         } else {
             // back to normal speed immediately, then raise the volume again slowly
-            float normal = effectiveSpeed();
-            if (Math.abs(activePlayer.getRate() - normal) > 0.01f) {
-                activePlayer.setRate(normal);
-            }
+            setPlayerRate(activePlayer, effectiveSpeed());
             if (duck < 1.0) {
                 duck = Math.min(1.0, duck + DUCK_UP_STEP);
-                activePlayer.setVolume(effectiveVolume());
+                setPlayerVolume(activePlayer, effectiveVolume());
             }
+        }
+    }
+
+    private void tickSilenceRate() {
+        try {
+            applySilenceRate();
+        } catch (Throwable t) {
+            // a scheduled task that throws is cancelled silently, which would strand the rate
+            t.printStackTrace();
+        }
+    }
+
+    private static void setPlayerRate(MediaPlayer target, float rate) {
+        try {
+            if (Math.abs(target.getRate() - rate) > 0.01f) {
+                target.setRate(rate);
+            }
+        } catch (Exception e) {
+            // the player is on its way out; whatever replaces it starts at its own rate
+        }
+    }
+
+    private static void setPlayerVolume(MediaPlayer target, double volume) {
+        try {
+            target.setVolume(volume);
+        } catch (Exception e) {
+            // as above
         }
     }
 
@@ -648,6 +714,8 @@ public final class PlaybackManager {
             cancelPlaybackTasks();
             previous = player;
             player = null;
+            silenceWatchActive = false;
+            silenceDetected = false;
             currentFxMedia = null;
             mediaReady = false;
             everPlayed = false;
@@ -670,6 +738,10 @@ public final class PlaybackManager {
         if (stallWatchTask != null) {
             stallWatchTask.cancel(false);
             stallWatchTask = null;
+        }
+        if (silenceTask != null) {
+            silenceTask.cancel(false);
+            silenceTask = null;
         }
     }
 
@@ -708,10 +780,15 @@ public final class PlaybackManager {
         if (stallWatchTask != null) {
             stallWatchTask.cancel(false);
         }
+        if (silenceTask != null) {
+            silenceTask.cancel(false);
+        }
         loadWatchTask = healthScheduler.scheduleWithFixedDelay(this::checkLoadTimeout,
                 HEALTH_CHECK_INTERVAL_MS, HEALTH_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
         stallWatchTask = healthScheduler.scheduleWithFixedDelay(this::checkPlaybackHealth,
                 HEALTH_CHECK_INTERVAL_MS, HEALTH_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
+        silenceTask = healthScheduler.scheduleWithFixedDelay(this::tickSilenceRate,
+                SILENCE_APPLY_INTERVAL_MS, SILENCE_APPLY_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
     /**
