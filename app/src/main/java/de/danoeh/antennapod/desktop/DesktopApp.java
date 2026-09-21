@@ -66,6 +66,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private FeedUpdater feedUpdater;
     private EpisodeDownloader downloader;
     private EpisodeCache episodeCache;
+    private final WindowsTaskbar windowsTaskbar = new WindowsTaskbar();
     private PlaybackManager playback;
     private ExecutorService background;
 
@@ -247,6 +248,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         });
         stage.show();
+        // the taskbar button only exists once the window is showing
+        windowsTaskbar.attach(stage);
         boolean trayEnabled = !"false".equalsIgnoreCase(
                 System.getProperty("antennapod.desktop.tray", "true"));
         trayActive = trayEnabled && trayManager.init(new TrayManager.Callbacks() {
@@ -3245,6 +3248,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         updatePlayPauseButton();
         updateTransportEnabled();
         FeedMedia current = playback.getCurrentMedia();
+        windowsTaskbar.setPlaybackState(current != null, playback.isPlaying());
         if (current != null && current.getItem() != null && current.getItem().getFeedId() != 0) {
             markFeedPlayed(current.getItem().getFeedId());
         }
@@ -3286,6 +3290,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     @Override
     public void onPositionChanged(int positionMs, int durationMs) {
+        windowsTaskbar.setProgress(positionMs, durationMs);
         if (sliderDragging) {
             return;
         }
@@ -3395,6 +3400,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         try {
             trayManager.remove();
+        } catch (Exception e) {
+            // ignore
+        }
+        try {
+            windowsTaskbar.shutdown();
         } catch (Exception e) {
             // ignore
         }
