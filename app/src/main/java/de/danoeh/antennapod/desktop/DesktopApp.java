@@ -68,6 +68,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private EpisodeDownloader downloader;
     private EpisodeCache episodeCache;
     private final WindowsTaskbar windowsTaskbar = new WindowsTaskbar();
+    private MediaKeys mediaKeys;
     private PlaybackManager playback;
     private ExecutorService background;
 
@@ -284,6 +285,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 playback.playNext();
             }
         });
+        startMediaKeys();
         boolean trayEnabled = !"false".equalsIgnoreCase(
                 System.getProperty("antennapod.desktop.tray", "true"));
         trayActive = trayEnabled && trayManager.init(new TrayManager.Callbacks() {
@@ -1442,8 +1444,78 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     event.consume();
                 }
                 break;
+            // the media keys normally never get this far: whoever registered them system-wide
+            // takes them first, and while that is this app they arrive as hotkeys instead. This
+            // is what is left when another player holds them and this window has the focus
+            case PLAY:
+            case PAUSE:
+                playback.togglePlayPause();
+                event.consume();
+                break;
+            case TRACK_NEXT:
+                playback.playNext();
+                event.consume();
+                break;
+            case TRACK_PREV:
+                playback.playPrevious();
+                event.consume();
+                break;
+            case STOP:
+                playback.stop();
+                event.consume();
+                break;
             default:
                 break;
+        }
+    }
+
+    /**
+     * Claims the keyboard's media keys so they reach this app while another window has the focus.
+     *
+     * <p>Windows hands a media key to whichever process registered it and to no other, so without
+     * this the keys only ever reached whatever player claimed them first. A key another player
+     * already holds is left with them rather than fought over.
+     */
+    private void startMediaKeys() {
+        if (!MediaKeys.isEnabled() || !DesktopPreferences.getMediaKeysEnabled()) {
+            return;
+        }
+        mediaKeys = new MediaKeys(new MediaKeys.Callbacks() {
+            @Override
+            public void onPlayPause() {
+                playback.togglePlayPause();
+            }
+
+            @Override
+            public void onNext() {
+                playback.playNext();
+            }
+
+            @Override
+            public void onPrevious() {
+                playback.playPrevious();
+            }
+
+            @Override
+            public void onStop() {
+                playback.stop();
+            }
+        });
+        mediaKeys.start();
+    }
+
+    /** Turns the media keys on or off from the settings, without a restart. */
+    private void setMediaKeysEnabled(boolean enabled) {
+        DesktopPreferences.setMediaKeysEnabled(enabled);
+        if (enabled) {
+            if (mediaKeys == null) {
+                startMediaKeys();
+            }
+            return;
+        }
+        if (mediaKeys != null) {
+            mediaKeys.stop();
+            mediaKeys = null;
         }
     }
 
@@ -2249,6 +2321,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 "Keep running in the system tray when the window is closed");
         closeToTrayBox.setSelected(DesktopPreferences.getCloseToTray());
         grid.add(closeToTrayBox, 0, row++, 2, 1);
+        javafx.scene.control.CheckBox mediaKeysBox = new javafx.scene.control.CheckBox(
+                "Let the keyboard's media keys control playback from any window");
+        mediaKeysBox.setSelected(DesktopPreferences.getMediaKeysEnabled());
+        mediaKeysBox.setDisable(!MediaKeys.isEnabled());
+        mediaKeysBox.setTooltip(new Tooltip("Play/pause, next, previous and stop. Windows gives "
+                + "each of these keys to one app at a time, so turning this off hands them back "
+                + "to another player."));
+        grid.add(mediaKeysBox, 0, row++, 2, 1);
         Label savedLabel = new Label("Changes are saved automatically.");
         savedLabel.setWrapText(true);
         Runnable save = () -> {
@@ -2281,6 +2361,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 DesktopPreferences.setProxyPassword(proxyPass.getText());
                 DesktopPreferences.setThemeMode(themeModeValue(themeBox.getValue()));
                 DesktopPreferences.setCloseToTray(closeToTrayBox.isSelected());
+                setMediaKeysEnabled(mediaKeysBox.isSelected());
                 applyProxy();
                 scheduleAutoRefresh();
                 ThemeManager.applySavedMode();
@@ -2312,6 +2393,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         autoSave(proxyUser, save);
         autoSave(proxyPass, save);
         autoSave(closeToTrayBox.selectedProperty(), save);
+        autoSave(mediaKeysBox.selectedProperty(), save);
         grid.add(savedLabel, 0, row++, 2, 1);
         javafx.scene.control.ScrollPane scroll = new javafx.scene.control.ScrollPane(grid);
         scroll.setFitToWidth(true);
@@ -3706,6 +3788,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         try {
             windowsTaskbar.shutdown();
+        } catch (Exception e) {
+            // ignore
+        }
+        try {
+            if (mediaKeys != null) {
+                mediaKeys.stop();
+            }
         } catch (Exception e) {
             // ignore
         }

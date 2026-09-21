@@ -200,6 +200,15 @@ public final class DesktopPreferences {
         PREFS.putBoolean("closeToTray", enabled);
     }
 
+    /** Whether the keyboard's media keys control this app even when another window has focus. */
+    public static boolean getMediaKeysEnabled() {
+        return PREFS.getBoolean("mediaKeysEnabled", true);
+    }
+
+    public static void setMediaKeysEnabled(boolean enabled) {
+        PREFS.putBoolean("mediaKeysEnabled", enabled);
+    }
+
     /** Whether the listener has already been told once that closing leaves the app in the tray. */
     public static boolean getTrayHintShown() {
         return PREFS.getBoolean("trayHintShown", false);
