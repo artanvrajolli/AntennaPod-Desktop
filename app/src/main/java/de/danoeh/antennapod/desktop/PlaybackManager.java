@@ -57,6 +57,12 @@ public final class PlaybackManager {
     private long stoppedSince;
     private boolean stallNotified;
     private volatile FeedMedia abortedMedia;
+    /** The episode whose load timeout has already been acted on, so it is handled once. */
+    private volatile FeedMedia loadTimeoutMedia;
+    /** Consecutive load timeouts for the episode being started. */
+    private int loadRetries;
+    /** The episode we have already asked the cache to fetch, so it is asked once. */
+    private FeedMedia cacheNotifiedFor;
     private volatile boolean everPlayed;
     private volatile int lastKnownPositionMs;
     /** True while the player reads a local file, false while it reads a network stream. */
@@ -81,6 +87,8 @@ public final class PlaybackManager {
     private volatile double duck = 1.0;
     /** How long a stream may take to become ready before playback is given up. */
     private static final long LOAD_TIMEOUT_MS = 30_000;
+    /** A stream that will not start is tried again this many times before it is reported. */
+    static final int MAX_LOAD_RETRIES = 1;
     /** How long a running stream may stay stalled before playback is given up. */
     private static final long STALL_TIMEOUT_MS = 60_000;
     private static final long HEALTH_CHECK_INTERVAL_MS = 1_000;
@@ -174,6 +182,7 @@ public final class PlaybackManager {
         if (media != currentMedia) {
             resumeAttempts = 0;
             resumeFromPositionMs = 0;
+            loadRetries = 0;
             declaredDurationMs = mediaDurationMs;
         } else {
             // a restart of the same episode: the player has already overwritten the stored
@@ -205,6 +214,7 @@ public final class PlaybackManager {
         player.statusProperty().addListener((obs, oldStatus, newStatus) -> {
             if (newStatus == MediaPlayer.Status.PLAYING) {
                 everPlayed = true;
+                startCaching();
             }
             if (newStatus == MediaPlayer.Status.PLAYING || newStatus == MediaPlayer.Status.PAUSED
                     || newStatus == MediaPlayer.Status.STOPPED) {
@@ -251,10 +261,24 @@ public final class PlaybackManager {
         player.setOnEndOfMedia(this::finishPlayback);
         player.setOnError(() -> abortPlayback(describeError()));
         markStarted(currentMedia);
-        notifyCacheStarted(currentMedia);
         saveTask = scheduler.scheduleWithFixedDelay(this::saveMedia, 5, 5, TimeUnit.SECONDS);
         notifyState();
         notifyLoading(true);
+    }
+
+    /**
+     * Asks the cache to fetch this episode, once playback is actually running. Starting it any
+     * earlier put a second full-speed download of the very same episode, plus the prefetch of the
+     * next ones, against the stream during the window it needs to connect — which is what made
+     * streams time out before they had begun.
+     */
+    private synchronized void startCaching() {
+        FeedMedia media = currentMedia;
+        if (media == null || media == cacheNotifiedFor) {
+            return;
+        }
+        cacheNotifiedFor = media;
+        notifyCacheStarted(media);
     }
 
     private synchronized void finishPlayback() {
@@ -658,6 +682,7 @@ public final class PlaybackManager {
         stoppedSince = 0;
         stallNotified = false;
         abortedMedia = null;
+        loadTimeoutMedia = null;
         if (loadWatchTask != null) {
             loadWatchTask.cancel(false);
         }
@@ -675,12 +700,41 @@ public final class PlaybackManager {
      * to keep working even when native media code is wedged.
      */
     private void checkLoadTimeout() {
-        if (currentMedia == null || mediaReady) {
+        FeedMedia stuck = currentMedia;
+        if (stuck == null || mediaReady || stuck == loadTimeoutMedia) {
             return;
         }
-        if (System.currentTimeMillis() - loadStartedAt >= LOAD_TIMEOUT_MS) {
-            abortPlayback("timed out while loading the stream");
+        if (System.currentTimeMillis() - loadStartedAt < LOAD_TIMEOUT_MS) {
+            return;
         }
+        // claim it before doing anything, so the once-a-second watchdog does not fire again
+        loadTimeoutMedia = stuck;
+        Thread worker = new Thread(() -> handleLoadTimeout(stuck), "playback-load-timeout");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /**
+     * A stream that has not started yet is given another go before it is reported: these are
+     * usually slow rather than broken, and a second attempt costs the listener nothing but the
+     * wait they were already having.
+     */
+    private void handleLoadTimeout(FeedMedia stuck) {
+        synchronized (this) {
+            if (currentMedia != stuck) {
+                return;
+            }
+            if (loadRetries < MAX_LOAD_RETRIES) {
+                loadRetries++;
+                notifyError("\"" + titleOf(stuck) + "\" is slow to start, trying again");
+                pendingSeekMs = Math.max(lastKnownPositionMs, stuck.getPosition());
+                suppressNextPlayAction = true;
+                notifyLoading(true);
+                startPlayback(stuck);
+                return;
+            }
+        }
+        abortPlayback("timed out while loading the stream");
     }
 
     /**
