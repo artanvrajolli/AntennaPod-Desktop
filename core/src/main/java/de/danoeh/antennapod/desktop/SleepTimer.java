@@ -80,7 +80,7 @@ public final class SleepTimer {
         String savedMode = DesktopPreferences.getSleepTimerMode();
         if ("end".equals(savedMode)) {
             startEndOfEpisode();
-        } else if (savedMode.startsWith("minutes:")) {
+        } else if (savedMode.startsWith("minutes")) {
             long savedDeadline = DesktopPreferences.getSleepTimerDeadline();
             long remaining = savedDeadline - System.currentTimeMillis();
             if (remaining > 0) {

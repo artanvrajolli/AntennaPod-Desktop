@@ -37,6 +37,42 @@ public class DesktopSleepTimerTest {
     }
 
     @Test
+    public void testRestoresARunningMinutesTimer() throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        SleepTimer timer = new SleepTimer(() -> {
+        });
+        SleepTimer restored = null;
+        try {
+            timer.startMillis(2_000);
+            restored = new SleepTimer(latch::countDown);
+            restored.restore();
+            assertEquals(SleepTimer.Mode.AFTER_MINUTES, restored.getMode());
+            assertTrue(restored.getRemainingMs() > 0);
+            assertTrue(latch.await(10, TimeUnit.SECONDS));
+        } finally {
+            timer.shutdown();
+            if (restored != null) {
+                restored.cancel();
+                restored.shutdown();
+            }
+        }
+    }
+
+    @Test
+    public void testDoesNotRestoreAnExpiredMinutesTimer() {
+        DesktopPreferences.setSleepTimerMode("minutes");
+        DesktopPreferences.setSleepTimerDeadline(System.currentTimeMillis() - 1000);
+        SleepTimer restored = new SleepTimer(() -> {
+        });
+        try {
+            restored.restore();
+            assertEquals(SleepTimer.Mode.OFF, restored.getMode());
+        } finally {
+            restored.shutdown();
+        }
+    }
+
+    @Test
     public void testEndOfEpisodeMode() {
         SleepTimer timer = new SleepTimer(() -> {
         });
