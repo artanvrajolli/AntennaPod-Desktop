@@ -33,6 +33,8 @@ public class FeedMedia implements Playable {
 
     private long id;
     private String localFileUrl;
+    /** Transient playback copy managed by the episode cache; never a pinned download. */
+    private String cacheFileUrl;
     private String downloadUrl;
     private long downloadDate;
     private int duration;
@@ -350,6 +352,26 @@ public class FeedMedia implements Playable {
     @Override
     public String getLocalFileUrl() {
         return localFileUrl;
+    }
+
+    public String getCacheFileUrl() {
+        return cacheFileUrl;
+    }
+
+    public void setCacheFileUrl(String cacheFileUrl) {
+        this.cacheFileUrl = cacheFileUrl;
+    }
+
+    public boolean cacheFileAvailable() {
+        return cacheFileUrl != null && new File(cacheFileUrl).exists();
+    }
+
+    /** The local copy playback should use: a pinned download first, then the playback cache. */
+    public String playableFileUrl() {
+        if (localFileAvailable() && localFileUrl != null) {
+            return localFileUrl;
+        }
+        return cacheFileAvailable() ? cacheFileUrl : null;
     }
 
     @Override

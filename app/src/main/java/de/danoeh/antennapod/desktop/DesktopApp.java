@@ -64,6 +64,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private DesktopDatabase database;
     private FeedUpdater feedUpdater;
     private EpisodeDownloader downloader;
+    private EpisodeCache episodeCache;
     private PlaybackManager playback;
     private ExecutorService background;
 
@@ -148,6 +149,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         DesktopPreferences.getDataDir().mkdirs();
         DesktopPreferences.getMediaDir().mkdirs();
         DesktopPreferences.getCacheDir().mkdirs();
+        DesktopPreferences.getEpisodeCacheDir().mkdirs();
         if (!acquireInstanceLock()) {
             Platform.runLater(() -> {
                 Alert alert = new Alert(Alert.AlertType.INFORMATION,
@@ -174,6 +176,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             scheduleAutoSync();
         });
         playback.setAutoDeleteHandler(this::autoDeleteFinished);
+        episodeCache = new EpisodeCache(database);
+        episodeCache.setProtectedIdsSupplier(this::protectedMediaIds);
+        episodeCache.setStatusReporter(this::setStatus);
+        playback.setCacheHandlers(this::cachePlaybackStarted, this::cachePlaybackFinished);
+        background.submit(() -> {
+            int swept = episodeCache.sweepFinished();
+            if (swept > 0) {
+                Platform.runLater(episodeList::refresh);
+            }
+        });
         this.syncManager = syncManager;
         scheduleAutoSync();
         sleepTimer = new SleepTimer(() -> {
@@ -1467,6 +1479,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     if (item.getMedia() != null && item.getMedia().getLocalFileUrl() != null) {
                         new File(item.getMedia().getLocalFileUrl()).delete();
                     }
+                    if (item.getMedia() != null) {
+                        deleteCachedCopy(item.getMedia());
+                    }
                 }
                 database.deleteFeed(feed.getId());
                 setStatus("Unsubscribed from " + feed.getTitle());
@@ -1933,6 +1948,46 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         openMediaButton.setOnAction(event ->
                 getHostServices().showDocument(DesktopPreferences.getMediaDir().toURI().toString()));
         grid.add(openMediaButton, 0, row++, 2, 1);
+        grid.add(sectionLabel("Episode cache"), 0, row++, 2, 1);
+        javafx.scene.control.CheckBox cacheBox =
+                new javafx.scene.control.CheckBox("Cache episodes while they play");
+        cacheBox.setSelected(DesktopPreferences.getEpisodeCacheEnabled());
+        grid.add(cacheBox, 0, row++, 2, 1);
+        javafx.scene.control.CheckBox cacheFinishBox =
+                new javafx.scene.control.CheckBox("Remove episodes from the cache when finished");
+        cacheFinishBox.setSelected(DesktopPreferences.getEpisodeCacheRemoveAfterFinish());
+        grid.add(cacheFinishBox, 0, row++, 2, 1);
+        grid.add(new Label("Cache limit (MB, 0 = no limit):"), 0, row);
+        TextField cacheLimitField = new TextField(String.valueOf(DesktopPreferences.getEpisodeCacheLimitMb()));
+        grid.add(cacheLimitField, 1, row++);
+        grid.add(new Label("Prefetch episodes ahead (0 = off):"), 0, row);
+        TextField cachePrefetchField =
+                new TextField(String.valueOf(DesktopPreferences.getEpisodeCachePrefetchCount()));
+        grid.add(cachePrefetchField, 1, row++);
+        Label cacheUsageLabel = new Label("Checking cache…");
+        grid.add(cacheUsageLabel, 0, row++, 2, 1);
+        Runnable refreshCacheUsage = () -> background.submit(() -> {
+            long used = episodeCache.sizeBytes();
+            int limitMb = DesktopPreferences.getEpisodeCacheLimitMb();
+            String limitText = limitMb > 0 ? formatSize(limitMb * 1024L * 1024L) : "no limit";
+            String usage = "Using " + formatSize(used) + " of " + limitText
+                    + " (" + episodeCache.count() + " episodes)";
+            Platform.runLater(() -> cacheUsageLabel.setText(usage));
+        });
+        refreshCacheUsage.run();
+        Button clearCacheButton = new Button("Clear episode cache");
+        clearCacheButton.setOnAction(event -> background.submit(() -> {
+            int removed = episodeCache.clear();
+            setStatus("Cleared episode cache: "
+                    + (removed == 1 ? "1 episode" : removed + " episodes"));
+            refreshCacheUsage.run();
+            Platform.runLater(episodeList::refresh);
+        }));
+        grid.add(clearCacheButton, 0, row++, 2, 1);
+        Button openCacheButton = new Button("Open cache folder");
+        openCacheButton.setOnAction(event ->
+                getHostServices().showDocument(DesktopPreferences.getEpisodeCacheDir().toURI().toString()));
+        grid.add(openCacheButton, 0, row++, 2, 1);
         grid.add(sectionLabel("Refresh"), 0, row++, 2, 1);
         javafx.scene.control.CheckBox startupBox =
                 new javafx.scene.control.CheckBox("Refresh all on startup");
@@ -1974,6 +2029,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 DesktopPreferences.setVolumeBoostDb((int) boostSlider.getValue());
                 DesktopPreferences.setAutoDownloadDefault(downloadBox.isSelected());
                 DesktopPreferences.setAutoDeleteDefault(deleteBox.isSelected());
+                DesktopPreferences.setEpisodeCacheEnabled(cacheBox.isSelected());
+                DesktopPreferences.setEpisodeCacheRemoveAfterFinish(cacheFinishBox.isSelected());
+                DesktopPreferences.setEpisodeCacheLimitMb(parseNonNegative(cacheLimitField.getText()));
+                DesktopPreferences.setEpisodeCachePrefetchCount(parseNonNegative(cachePrefetchField.getText()));
+                background.submit(episodeCache::trim);
                 DesktopPreferences.setAutoRefreshStartup(startupBox.isSelected());
                 DesktopPreferences.setAutoRefreshMinutes(parseNonNegative(intervalField.getText()));
                 DesktopPreferences.setProxyHost(proxyHost.getText().trim());
@@ -2005,6 +2065,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         autoSave(boostSlider, save);
         autoSave(downloadBox.selectedProperty(), save);
         autoSave(deleteBox.selectedProperty(), save);
+        autoSave(cacheBox.selectedProperty(), save);
+        autoSave(cacheFinishBox.selectedProperty(), save);
+        autoSave(cacheLimitField, save);
+        autoSave(cachePrefetchField, save);
         autoSave(startupBox.selectedProperty(), save);
         autoSave(intervalField, save);
         autoSave(proxyHost, save);
@@ -2803,6 +2867,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 for (FeedMedia media : deletable) {
                     new File(media.getLocalFileUrl()).delete();
                     media.setLocalFileUrl(null);
+                    deleteCachedCopy(media);
                     database.updateMedia(media);
                 }
                 setStatus("Deleted downloads: "
@@ -2812,6 +2877,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
             Platform.runLater(episodeList::refresh);
         });
+    }
+
+    private static void deleteCachedCopy(FeedMedia media) {
+        if (media.getCacheFileUrl() != null) {
+            new File(media.getCacheFileUrl()).delete();
+            media.setCacheFileUrl(null);
+        }
     }
 
     private boolean hasDownloadable(List<FeedItem> items) {
@@ -2856,6 +2928,51 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 setStatus("Auto-delete failed: " + e.getMessage());
             }
         });
+    }
+
+    /**
+     * Caches the episode that just started and prefetches the ones queued behind it, so the next
+     * episode plays from disk instead of the network.
+     */
+    private void cachePlaybackStarted(FeedMedia media) {
+        if (!DesktopPreferences.getEpisodeCacheEnabled()) {
+            return;
+        }
+        episodeCache.cache(media);
+        int prefetch = DesktopPreferences.getEpisodeCachePrefetchCount();
+        if (prefetch > 0) {
+            for (FeedItem upcoming : playback.upcomingQueue(prefetch)) {
+                episodeCache.cache(upcoming.getMedia());
+            }
+        }
+    }
+
+    /** Drops the cached copy of a finished episode; keeps the played state and resume position. */
+    private void cachePlaybackFinished(FeedMedia media) {
+        if (!DesktopPreferences.getEpisodeCacheRemoveAfterFinish() || media.getCacheFileUrl() == null) {
+            return;
+        }
+        background.submit(() -> {
+            // the cache retries on its own while the player still holds the file
+            if (episodeCache.evict(media)) {
+                Platform.runLater(episodeList::refresh);
+            }
+        });
+    }
+
+    /** Episodes the cache must never evict: the one playing and the ones queued right behind it. */
+    private Set<Long> protectedMediaIds() {
+        Set<Long> ids = new HashSet<>();
+        FeedMedia current = playback.getCurrentMedia();
+        if (current != null) {
+            ids.add(current.getId());
+        }
+        for (FeedItem upcoming : playback.upcomingQueue(5)) {
+            if (upcoming.getMedia() != null) {
+                ids.add(upcoming.getMedia().getId());
+            }
+        }
+        return ids;
     }
 
     private class QuietDownloadListener implements EpisodeDownloader.ProgressListener {
@@ -3145,6 +3262,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             // ignore
         }
         downloader.shutdown();
+        if (episodeCache != null) {
+            episodeCache.shutdown();
+        }
         background.shutdownNow();
         try {
             database.close();

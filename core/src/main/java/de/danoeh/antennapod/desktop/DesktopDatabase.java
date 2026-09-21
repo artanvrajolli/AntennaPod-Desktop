@@ -46,7 +46,8 @@ public final class DesktopDatabase implements AutoCloseable {
             stmt.execute("CREATE TABLE IF NOT EXISTS feed_media ("
                     + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                     + "item_id INTEGER NOT NULL UNIQUE REFERENCES feed_items(id) ON DELETE CASCADE, "
-                    + "download_url TEXT, local_file_url TEXT, download_date INTEGER DEFAULT 0, "
+                    + "download_url TEXT, local_file_url TEXT, cache_file_url TEXT, "
+                    + "download_date INTEGER DEFAULT 0, "
                     + "duration INTEGER DEFAULT 0, position INTEGER DEFAULT 0, "
                     + "size INTEGER DEFAULT 0, mime_type TEXT, "
                     + "played_duration INTEGER DEFAULT 0, last_played_statistics INTEGER DEFAULT 0, "
@@ -77,6 +78,7 @@ public final class DesktopDatabase implements AutoCloseable {
         ensureColumn("feed_items", "transcript_url", "TEXT");
         ensureColumn("feed_items", "transcript_type", "TEXT");
         ensureColumn("feed_items", "synced_position", "INTEGER DEFAULT -1");
+        ensureColumn("feed_media", "cache_file_url", "TEXT");
     }
 
     private void ensureColumn(String table, String column, String definition) throws SQLException {
@@ -409,21 +411,23 @@ public final class DesktopDatabase implements AutoCloseable {
 
     public synchronized void updateMedia(FeedMedia media) throws SQLException {
         try (PreparedStatement stmt = connection.prepareStatement(
-                "UPDATE feed_media SET download_url = ?, local_file_url = ?, download_date = ?, duration = ?,"
+                "UPDATE feed_media SET download_url = ?, local_file_url = ?, cache_file_url = ?,"
+                        + " download_date = ?, duration = ?,"
                         + " position = ?, size = ?, mime_type = ?, played_duration = ?,"
                         + " last_played_statistics = ?, last_played_history = ? WHERE id = ?")) {
             setNullable(stmt, 1, media.getDownloadUrl());
             setNullable(stmt, 2, media.getLocalFileUrl());
-            stmt.setLong(3, media.getDownloadDate());
-            stmt.setInt(4, media.getDuration());
-            stmt.setInt(5, media.getPosition());
-            stmt.setLong(6, media.getSize());
-            setNullable(stmt, 7, media.getMimeType());
-            stmt.setInt(8, media.getPlayedDuration());
-            stmt.setLong(9, media.getLastPlayedTimeStatistics());
+            setNullable(stmt, 3, media.getCacheFileUrl());
+            stmt.setLong(4, media.getDownloadDate());
+            stmt.setInt(5, media.getDuration());
+            stmt.setInt(6, media.getPosition());
+            stmt.setLong(7, media.getSize());
+            setNullable(stmt, 8, media.getMimeType());
+            stmt.setInt(9, media.getPlayedDuration());
+            stmt.setLong(10, media.getLastPlayedTimeStatistics());
             Date history = media.getLastPlayedTimeHistory();
-            stmt.setLong(10, history != null ? history.getTime() : 0);
-            stmt.setLong(11, media.getId());
+            stmt.setLong(11, history != null ? history.getTime() : 0);
+            stmt.setLong(12, media.getId());
             stmt.executeUpdate();
         }
     }
@@ -553,6 +557,32 @@ public final class DesktopDatabase implements AutoCloseable {
         }
     }
 
+    public synchronized List<FeedMedia> getCachedMedia() throws SQLException {
+        List<FeedMedia> result = new ArrayList<>();
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT * FROM feed_media WHERE cache_file_url IS NOT NULL")) {
+            while (rs.next()) {
+                result.add(readMedia(rs));
+            }
+        }
+        return result;
+    }
+
+    public synchronized List<FeedMedia> getCachedFinishedMedia() throws SQLException {
+        List<FeedMedia> result = new ArrayList<>();
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "SELECT m.* FROM feed_media m JOIN feed_items i ON i.id = m.item_id"
+                        + " WHERE m.cache_file_url IS NOT NULL AND i.state = ?")) {
+            stmt.setInt(1, FeedItem.PLAYED);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    result.add(readMedia(rs));
+                }
+            }
+        }
+        return result;
+    }
+
     public synchronized FeedItem getItem(long itemId) throws SQLException {
         try (PreparedStatement stmt = connection.prepareStatement("SELECT * FROM feed_items WHERE id = ?")) {
             stmt.setLong(1, itemId);
@@ -589,6 +619,7 @@ public final class DesktopDatabase implements AutoCloseable {
         media.setId(rs.getLong("id"));
         media.setItemId(rs.getLong("item_id"));
         media.setLocalFileUrl(rs.getString("local_file_url"));
+        media.setCacheFileUrl(rs.getString("cache_file_url"));
         media.setDownloaded(rs.getLong("download_date") > 0, rs.getLong("download_date"));
         media.setDuration(rs.getInt("duration"));
         media.setPosition(rs.getInt("position"));

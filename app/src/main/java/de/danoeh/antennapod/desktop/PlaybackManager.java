@@ -41,6 +41,8 @@ public final class PlaybackManager {
     private ScheduledFuture<?> saveTask;
     private java.util.function.Consumer<FeedMedia> playActionRecorder;
     private java.util.function.Consumer<FeedMedia> autoDeleteHandler;
+    private java.util.function.Consumer<FeedMedia> cacheStartedHandler;
+    private java.util.function.Consumer<FeedMedia> cacheFinishedHandler;
     private boolean stopAfterCurrent;
     private int pendingSeekMs = -1;
     private boolean suppressNextPlayAction;
@@ -96,6 +98,26 @@ public final class PlaybackManager {
         }
     }
 
+    private void notifyCacheStarted(FeedMedia media) {
+        if (cacheStartedHandler != null) {
+            try {
+                cacheStartedHandler.accept(media);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void notifyCacheFinished(FeedMedia media) {
+        if (cacheFinishedHandler != null) {
+            try {
+                cacheFinishedHandler.accept(media);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
     public PlaybackManager(DesktopDatabase database, Listener listener) {
         this.database = database;
         this.listener = listener;
@@ -131,8 +153,9 @@ public final class PlaybackManager {
         saveAndRecordCurrent();
         stopPlayer();
         currentMedia = media;
-        String source = media.localFileAvailable() && media.getLocalFileUrl() != null
-                ? new java.io.File(media.getLocalFileUrl()).toURI().toString()
+        String playableFile = media.playableFileUrl();
+        String source = playableFile != null
+                ? new java.io.File(playableFile).toURI().toString()
                 : media.getStreamUrl();
         try {
             currentFxMedia = new Media(source);
@@ -183,6 +206,7 @@ public final class PlaybackManager {
         player.setOnEndOfMedia(this::finishPlayback);
         player.setOnError(() -> abortPlayback(describeError()));
         markStarted(currentMedia);
+        notifyCacheStarted(currentMedia);
         saveTask = scheduler.scheduleWithFixedDelay(this::saveMedia, 5, 5, TimeUnit.SECONDS);
         notifyState();
         notifyLoading(true);
@@ -198,6 +222,7 @@ public final class PlaybackManager {
         saveMedia();
         markPlayed(currentMedia);
         notifyAutoDelete(currentMedia);
+        notifyCacheFinished(currentMedia);
         if (stopAfterCurrent) {
             stopAfterCurrent = false;
             stop();
@@ -310,6 +335,16 @@ public final class PlaybackManager {
 
     public synchronized void setAutoDeleteHandler(java.util.function.Consumer<FeedMedia> handler) {
         this.autoDeleteHandler = handler;
+    }
+
+    /**
+     * Hooks the episode cache into playback: {@code onStarted} fires when an episode begins (cache
+     * it and prefetch the queue) and {@code onFinished} when it plays through to the end.
+     */
+    public synchronized void setCacheHandlers(java.util.function.Consumer<FeedMedia> onStarted,
+                                              java.util.function.Consumer<FeedMedia> onFinished) {
+        this.cacheStartedHandler = onStarted;
+        this.cacheFinishedHandler = onFinished;
     }
 
     public synchronized void setStopAfterCurrent(boolean stopAfterCurrent) {
@@ -433,6 +468,21 @@ public final class PlaybackManager {
 
     public synchronized FeedMedia getCurrentMedia() {
         return currentMedia;
+    }
+
+    /** The episodes queued up after the one playing now, in play order. */
+    public synchronized List<FeedItem> upcomingQueue(int count) {
+        if (count <= 0 || queueIndex < 0) {
+            return List.of();
+        }
+        List<FeedItem> upcoming = new java.util.ArrayList<>();
+        for (int i = queueIndex + 1; i < queue.size() && upcoming.size() < count; i++) {
+            FeedItem item = queue.get(i);
+            if (item.getMedia() != null) {
+                upcoming.add(item);
+            }
+        }
+        return upcoming;
     }
 
     public synchronized boolean isPlaying() {

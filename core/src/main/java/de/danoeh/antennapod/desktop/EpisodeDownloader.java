@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -60,39 +61,11 @@ public final class EpisodeDownloader {
     private void download(FeedMedia media, ProgressListener listener) {
         File target = targetFile(media);
         try {
-            Request request = new Request.Builder().url(media.getDownloadUrl()).get().build();
-            try (Response response = AntennapodHttpClient.getHttpClient().newCall(request).execute()) {
-                if (!response.isSuccessful()) {
-                    throw new IOException("Download failed: " + response);
-                }
-                ResponseBody body = response.body();
-                if (body == null) {
-                    throw new IOException("Empty response");
-                }
-                long total = body.contentLength();
-                target.getParentFile().mkdirs();
-                long bytesRead = 0;
-                try (InputStream in = body.byteStream();
-                     OutputStream out = Files.newOutputStream(target.toPath())) {
-                    byte[] buffer = new byte[32 * 1024];
-                    int read;
-                    while ((read = in.read(buffer)) != -1) {
-                        if (Thread.currentThread().isInterrupted()) {
-                            throw new IOException("Download cancelled");
-                        }
-                        out.write(buffer, 0, read);
-                        bytesRead += read;
-                        listener.onProgress(media.getId(), bytesRead, total);
-                    }
-                }
-                if (total > 0) {
-                    media.setSize(total);
-                }
-                media.setLocalFileUrl(target.getAbsolutePath());
-                media.setDownloaded(true, System.currentTimeMillis());
-                database.updateMedia(media);
-                listener.onFinished(media.getId(), target);
-            }
+            fetchToFile(media, target, listener);
+            media.setLocalFileUrl(target.getAbsolutePath());
+            media.setDownloaded(true, System.currentTimeMillis());
+            database.updateMedia(media);
+            listener.onFinished(media.getId(), target);
         } catch (Exception e) {
             target.delete();
             listener.onError(media.getId(), e);
@@ -101,9 +74,59 @@ public final class EpisodeDownloader {
         }
     }
 
+    /**
+     * Streams the episode to {@code target}. The bytes land in a {@code .part} file first and are
+     * moved into place once complete, so an interrupted transfer never leaves a half file behind
+     * that later looks like a finished download.
+     */
+    static void fetchToFile(FeedMedia media, File target, ProgressListener listener) throws IOException {
+        File part = new File(target.getAbsolutePath() + ".part");
+        Request request = new Request.Builder().url(media.getDownloadUrl()).get().build();
+        try (Response response = AntennapodHttpClient.getHttpClient().newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new IOException("Download failed: " + response);
+            }
+            ResponseBody body = response.body();
+            if (body == null) {
+                throw new IOException("Empty response");
+            }
+            long total = body.contentLength();
+            target.getParentFile().mkdirs();
+            long bytesRead = 0;
+            try (InputStream in = body.byteStream();
+                 OutputStream out = Files.newOutputStream(part.toPath())) {
+                byte[] buffer = new byte[32 * 1024];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        throw new IOException("Download cancelled");
+                    }
+                    out.write(buffer, 0, read);
+                    bytesRead += read;
+                    listener.onProgress(media.getId(), bytesRead, total);
+                }
+            }
+            if (total > 0) {
+                media.setSize(total);
+            }
+            Files.deleteIfExists(target.toPath());
+            Files.move(part.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE);
+        } catch (Exception e) {
+            part.delete();
+            throw e;
+        }
+    }
+
     private File targetFile(FeedMedia media) {
+        long feedId = media.getItem() != null ? media.getItem().getFeedId() : 0;
+        return new File(new File(DesktopPreferences.getMediaDir(), String.valueOf(feedId)),
+                fileNameFor(media));
+    }
+
+    /** File name used for an episode's local copy, shared by downloads and the playback cache. */
+    static String fileNameFor(FeedMedia media) {
         String url = media.getDownloadUrl();
-        String name = url.substring(url.lastIndexOf('/') + 1);
+        String name = url == null ? "" : url.substring(url.lastIndexOf('/') + 1);
         int query = name.indexOf('?');
         if (query >= 0) {
             name = name.substring(0, query);
@@ -111,8 +134,6 @@ public final class EpisodeDownloader {
         if (name.isEmpty()) {
             name = "episode-" + media.getId();
         }
-        name = name.replaceAll("[^a-zA-Z0-9._-]", "_");
-        long feedId = media.getItem() != null ? media.getItem().getFeedId() : 0;
-        return new File(new File(DesktopPreferences.getMediaDir(), String.valueOf(feedId)), name);
+        return name.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 }

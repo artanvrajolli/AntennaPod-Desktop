@@ -1,6 +1,7 @@
 package de.danoeh.antennapod.desktop;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.util.prefs.Preferences;
@@ -17,6 +18,10 @@ public class DesktopSettingsTest {
     private double defaultVolume;
     private boolean autoDownloadDefault;
     private boolean autoDeleteDefault;
+    private boolean episodeCacheEnabled;
+    private boolean episodeCacheRemoveAfterFinish;
+    private int episodeCacheLimitMb;
+    private int episodeCachePrefetchCount;
     private boolean autoRefreshStartup;
     private int autoRefreshMinutes;
     private String proxyHost;
@@ -35,6 +40,10 @@ public class DesktopSettingsTest {
         defaultVolume = DesktopPreferences.getDefaultVolume();
         autoDownloadDefault = DesktopPreferences.getAutoDownloadDefault();
         autoDeleteDefault = DesktopPreferences.getAutoDeleteDefault();
+        episodeCacheEnabled = DesktopPreferences.getEpisodeCacheEnabled();
+        episodeCacheRemoveAfterFinish = DesktopPreferences.getEpisodeCacheRemoveAfterFinish();
+        episodeCacheLimitMb = DesktopPreferences.getEpisodeCacheLimitMb();
+        episodeCachePrefetchCount = DesktopPreferences.getEpisodeCachePrefetchCount();
         autoRefreshStartup = DesktopPreferences.getAutoRefreshStartup();
         autoRefreshMinutes = DesktopPreferences.getAutoRefreshMinutes();
         proxyHost = DesktopPreferences.getProxyHost();
@@ -54,6 +63,10 @@ public class DesktopSettingsTest {
         DesktopPreferences.setDefaultVolume(defaultVolume);
         DesktopPreferences.setAutoDownloadDefault(autoDownloadDefault);
         DesktopPreferences.setAutoDeleteDefault(autoDeleteDefault);
+        DesktopPreferences.setEpisodeCacheEnabled(episodeCacheEnabled);
+        DesktopPreferences.setEpisodeCacheRemoveAfterFinish(episodeCacheRemoveAfterFinish);
+        DesktopPreferences.setEpisodeCacheLimitMb(episodeCacheLimitMb);
+        DesktopPreferences.setEpisodeCachePrefetchCount(episodeCachePrefetchCount);
         DesktopPreferences.setAutoRefreshStartup(autoRefreshStartup);
         DesktopPreferences.setAutoRefreshMinutes(autoRefreshMinutes);
         DesktopPreferences.setProxyHost(proxyHost);
@@ -102,6 +115,42 @@ public class DesktopSettingsTest {
         DesktopPreferences.setAutoDeleteDefault(false);
         DesktopPreferences.setAutoRefreshStartup(false);
         DesktopPreferences.setAutoRefreshMinutes(0);
+    }
+
+    @Test
+    public void testEpisodeCacheSettings() {
+        DesktopPreferences.setEpisodeCacheEnabled(false);
+        DesktopPreferences.setEpisodeCacheRemoveAfterFinish(false);
+        DesktopPreferences.setEpisodeCacheLimitMb(512);
+        DesktopPreferences.setEpisodeCachePrefetchCount(3);
+
+        assertFalse(DesktopPreferences.getEpisodeCacheEnabled());
+        assertFalse(DesktopPreferences.getEpisodeCacheRemoveAfterFinish());
+        assertEquals(512, DesktopPreferences.getEpisodeCacheLimitMb());
+        assertEquals(3, DesktopPreferences.getEpisodeCachePrefetchCount());
+
+        DesktopPreferences.setEpisodeCacheEnabled(true);
+        DesktopPreferences.setEpisodeCacheRemoveAfterFinish(true);
+        DesktopPreferences.setEpisodeCacheLimitMb(2048);
+        DesktopPreferences.setEpisodeCachePrefetchCount(2);
+    }
+
+    @Test
+    public void testEpisodeCacheValuesAreClamped() {
+        Preferences.userNodeForPackage(DesktopPreferences.class).remove("episodeCacheLimitMb");
+        Preferences.userNodeForPackage(DesktopPreferences.class).remove("episodeCachePrefetchCount");
+        assertEquals(2048, DesktopPreferences.getEpisodeCacheLimitMb());
+        assertEquals(2, DesktopPreferences.getEpisodeCachePrefetchCount());
+        assertTrue(DesktopPreferences.getEpisodeCacheEnabled());
+
+        DesktopPreferences.setEpisodeCacheLimitMb(-10);
+        DesktopPreferences.setEpisodeCachePrefetchCount(99);
+        DesktopPreferences.setEpisodeCachePrefetchCount(-1);
+        assertEquals(0, DesktopPreferences.getEpisodeCacheLimitMb());
+        assertEquals(0, DesktopPreferences.getEpisodeCachePrefetchCount());
+
+        DesktopPreferences.setEpisodeCacheLimitMb(2048);
+        DesktopPreferences.setEpisodeCachePrefetchCount(2);
     }
 
     @Test

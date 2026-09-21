@@ -33,6 +33,10 @@ public final class DesktopPreferences {
         return new File(getDataDir(), "cache");
     }
 
+    public static File getEpisodeCacheDir() {
+        return new File(getCacheDir(), "episodes");
+    }
+
     public static File getDatabaseFile() {
         return new File(getDataDir(), "antennapod.db");
     }
@@ -136,6 +140,38 @@ public final class DesktopPreferences {
 
     public static void setAutoDeleteDefault(boolean enabled) {
         PREFS.putBoolean("autoDeleteDefault", enabled);
+    }
+
+    public static boolean getEpisodeCacheEnabled() {
+        return PREFS.getBoolean("episodeCacheEnabled", true);
+    }
+
+    public static void setEpisodeCacheEnabled(boolean enabled) {
+        PREFS.putBoolean("episodeCacheEnabled", enabled);
+    }
+
+    public static boolean getEpisodeCacheRemoveAfterFinish() {
+        return PREFS.getBoolean("episodeCacheRemoveAfterFinish", true);
+    }
+
+    public static void setEpisodeCacheRemoveAfterFinish(boolean enabled) {
+        PREFS.putBoolean("episodeCacheRemoveAfterFinish", enabled);
+    }
+
+    public static int getEpisodeCacheLimitMb() {
+        return PREFS.getInt("episodeCacheLimitMb", 2048);
+    }
+
+    public static void setEpisodeCacheLimitMb(int megabytes) {
+        PREFS.putInt("episodeCacheLimitMb", Math.max(megabytes, 0));
+    }
+
+    public static int getEpisodeCachePrefetchCount() {
+        return PREFS.getInt("episodeCachePrefetchCount", 2);
+    }
+
+    public static void setEpisodeCachePrefetchCount(int count) {
+        PREFS.putInt("episodeCachePrefetchCount", Math.max(0, Math.min(count, 10)));
     }
 
     public static boolean getCloseToTray() {
