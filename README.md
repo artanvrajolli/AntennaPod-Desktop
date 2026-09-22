@@ -39,6 +39,16 @@ Your data (subscriptions, downloads, playback positions) lives in
   (follows the Windows app theme by default)
 - **Sync** with gPodder.net and Nextcloud (two-way subscriptions, positions,
   played state), including import from another device
+- Windows integration: the keyboard's media keys work from any window, the
+  taskbar button shows playback progress and the episode's artwork, and
+  previous, play/pause, next and skip-silence buttons sit under the taskbar
+  thumbnail
+- Keeps running in the tray when the window is closed (configurable), resumes
+  a stream that stops before the episode is over, and keeps a temporary copy
+  of the playing and next queued episode, dropped once it is played
+- Preview a podcast's details and episodes before subscribing
+- Checks GitHub for a newer release and installs it (can be switched off in
+  Settings)
 
 ## Screenshots
 
@@ -65,30 +75,24 @@ More: [favorites](docs/screenshots/favorites.png) ·
 Requirements: JDK 17+ (CI uses Microsoft Build of OpenJDK 21).
 
 ```bat
-gradlew :core:test :app:installDist
+gradlew :core:test :app:test :app:installDist
 ```
 
-Run: `app\build\install\app\bin\app.bat`
+Run: `app\build\install\app\bin\app.bat`, `gradlew :app:run`, or double-click
+`run.bat`.
 
-Package the portable app (needs a JDK with `jpackage`):
+Package the portable zip and the installer (needs a JDK with `jpackage`; the
+installer also needs [WiX Toolset v3](https://wixtoolset.org/) on PATH and is
+built against JDK 21's installer template):
 
 ```bat
-jpackage --type app-image --name "AntennaPod-Desktop" --app-version "0.1.5" ^
-  --vendor "AntennaPod" --dest release --input app\build\install\app\lib ^
-  --main-jar app-0.1.5.jar --main-class de.danoeh.antennapod.desktop.Launcher ^
-  --java-options "--enable-native-access=javafx.media"
+powershell -ExecutionPolicy Bypass -File packaging\windows\package.ps1
 ```
 
-Package the single-file installer (also needs WiX Toolset v3 on PATH):
-
-```bat
-jpackage --type exe --name "AntennaPod-Desktop" --app-version "0.1.5" ^
-  --vendor "AntennaPod" --dest installer --input app\build\install\app\lib ^
-  --main-jar app-0.1.5.jar --main-class de.danoeh.antennapod.desktop.Launcher ^
-  --java-options "--enable-native-access=javafx.media" ^
-  --win-per-user-install --win-menu --win-shortcut ^
-  --win-upgrade-uuid 6f2f2b7c-6a3e-4f4a-9f4a-6b7c2f2b7c11
-```
+This is the same script the release workflows run. It reads the version from
+`app/build.gradle` and writes `AntennaPod-Desktop-Windows.zip` and
+`AntennaPod-Desktop-Setup-<version>.exe` to the repository root. Add
+`-SkipInstaller` to build only the portable zip.
 
 Every push to `main` builds and tests automatically; every `v*` tag publishes
 a ready-to-download release.
@@ -97,8 +101,12 @@ a ready-to-download release.
 
 - `core/` — ported AntennaPod engine (`model`, feed parser, discovery,
   gPodder/Nextcloud sync) with small JVM compatibility shims, plus desktop
-  storage (SQLite), updater, downloader and sync engine. Covered by 40+ tests.
-- `app/` — JavaFX user interface and JavaFX-based playback manager.
+  storage (SQLite), updater, downloader, episode cache and sync engine.
+- `app/` — JavaFX user interface, playback manager, and the Windows shell
+  integration (tray, taskbar, media keys, app-drawn title bar).
+
+Both modules have JUnit tests (35+ test classes); `gradlew :core:test :app:test`
+runs them all.
 
 ## Credits and license
 

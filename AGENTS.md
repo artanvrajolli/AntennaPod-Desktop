@@ -21,8 +21,8 @@ inside `core`.
     `storage/` (SQLite-backed desktop storage, import/export OPML, preferences)
   - `android/` + `androidx/` — hand-written compatibility shims the ported
     engine depends on (Log, XML, media, collections). Keep them minimal.
-  - 20 test classes (JUnit 4) in `core/src/test`.
-- `app/` — JavaFX UI (13 classes under
+  - 21 test classes (JUnit 4) in `core/src/test`.
+- `app/` — JavaFX UI (14 classes under
   `app/src/main/java/de/danoeh/antennapod/desktop`): `DesktopApp` (scenes),
   `PlaybackManager` (JavaFX media playback), `TrayManager` (system tray),
   `WindowChrome` (the app-drawn title bar; the stage is undecorated),
@@ -30,16 +30,17 @@ inside `core`.
   the media buttons under the taskbar thumbnail), `MediaKeys` (the keyboard's
   media keys), `TaskbarIcon` (the playing episode's artwork drawn into the
   window icon), `ThemeManager`/`SystemTheme`, `ImageCache`, `Icons`, `Launcher`
-  (entry point / main class). 13 test classes in `app/src/test`.
+  (entry point / main class), `SeekAccent` (artwork colour for the seek bar).
+  15 test classes in `app/src/test`.
 
 ## Build, test, run
 
 Requires JDK 17+ (CI uses Microsoft Build of OpenJDK 21). Gradle wrapper only.
 
 ```bat
-gradlew :core:test :app:installDist   :: build + all tests (what CI runs)
-gradlew :app:run                      :: run the app from source
-app\build\install\app\bin\app.bat     :: run the installed distribution
+gradlew :core:test :app:test :app:installDist   :: build + all tests (what CI runs)
+gradlew :app:run                                :: run the app from source
+app\build\install\app\bin\app.bat               :: run the installed distribution
 ```
 
 - Both modules use the Java 17 toolchain; JavaFX 21.0.4 via the
@@ -66,7 +67,9 @@ app\build\install\app\bin\app.bat     :: run the installed distribution
   progress, `-Dantennapod.desktop.thumbbar=false` leaves the window procedure
   unsubclassed, `-Dantennapod.desktop.tray=false` disables the tray,
   `-Dantennapod.desktop.icon=false` keeps the plain app icon on the taskbar
-  instead of drawing the playing episode's artwork into it. Use these
+  instead of drawing the playing episode's artwork into it,
+  `-Dantennapod.desktop.mediakeys=false` leaves the keyboard's media keys to
+  other apps. Use these
   to isolate a fault before changing the native code.
 - `core` must not depend on JavaFX; UI code lives in `app`.
 - Shared dependencies are declared in `core/build.gradle` (OkHttp, RxJava3,
@@ -82,6 +85,10 @@ app\build\install\app\bin\app.bat     :: run the installed distribution
 - `.github/workflows/release.yml` — every push to `main` builds + tests and
   uploads artifacts; pushing a `v*` tag publishes a GitHub release
   (portable zip + WiX installer via `jpackage`).
+- Both workflows package through `packaging/windows/package.ps1`. Change the
+  jpackage options there, never inline in a workflow, so the tag release and
+  the auto release cannot ship different installers. It also runs locally
+  (`-SkipInstaller` builds the zip without WiX).
 - `.github/workflows/auto-release.yml` — runs every 30 minutes: if no commit
   has landed for 30 minutes and the `version` in `app/build.gradle` has no
   `v<version>` tag, it releases that version automatically. To cut a release:
