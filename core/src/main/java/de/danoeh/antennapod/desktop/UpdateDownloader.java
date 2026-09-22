@@ -7,6 +7,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
@@ -18,9 +22,9 @@ import okhttp3.ResponseBody;
  * release said it would have has arrived. A short file is deleted rather than kept, because the
  * one thing this must never do is hand a half-downloaded executable to the user to run.
  *
- * <p>This checks that the download is complete, not that it is genuine. The releases carry no
- * signature to verify against, so the protection here is HTTPS to GitHub and the length the API
- * reported — nothing stronger.
+ * <p>When GitHub reports a SHA-256 digest for the asset, the download has to match it, so a file
+ * altered in transit or on a mirror is refused. The releases carry no code signature, so beyond
+ * that the protection is HTTPS to GitHub and the length the API reported.
  */
 public final class UpdateDownloader {
     public interface ProgressListener {
@@ -48,7 +52,8 @@ public final class UpdateDownloader {
         }
         File dir = updateDir();
         dir.mkdirs();
-        File target = new File(dir, release.installerName);
+        // the name comes from the release; only its last part may pick where the file goes
+        File target = new File(dir, new File(release.installerName).getName());
         File part = new File(target.getAbsolutePath() + ".part");
         Request request = new Request.Builder().url(release.installerUrl).get().build();
         try (Response response = AntennapodHttpClient.getHttpClient().newCall(request).execute()) {
@@ -61,7 +66,8 @@ public final class UpdateDownloader {
             }
             long expected = release.installerSize;
             long bytesRead = 0;
-            try (InputStream in = body.byteStream();
+            MessageDigest sha256 = newSha256();
+            try (InputStream in = new DigestInputStream(body.byteStream(), sha256);
                  OutputStream out = Files.newOutputStream(part.toPath())) {
                 byte[] buffer = new byte[64 * 1024];
                 int read;
@@ -79,6 +85,12 @@ public final class UpdateDownloader {
             if (bytesRead != expected) {
                 throw new IOException("Download is " + bytesRead + " bytes, expected " + expected);
             }
+            if (release.installerSha256 != null) {
+                String actual = HexFormat.of().formatHex(sha256.digest());
+                if (!actual.equals(release.installerSha256)) {
+                    throw new IOException("Download does not match the release's checksum");
+                }
+            }
             Files.deleteIfExists(target.toPath());
             Files.move(part.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
             return target;
@@ -86,6 +98,14 @@ public final class UpdateDownloader {
             // never leave a partial installer behind where it could be run
             part.delete();
             throw e;
+        }
+    }
+
+    private static MessageDigest newSha256() throws IOException {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IOException("SHA-256 is not available", e);
         }
     }
 

@@ -76,6 +76,46 @@ public class UpdateDownloaderTest {
         assertEquals("setup.exe", file.getName());
     }
 
+    private static String sha256OfPayload() throws Exception {
+        byte[] payload = new byte[PAYLOAD];
+        for (int i = 0; i < payload.length; i++) {
+            payload[i] = (byte) i;
+        }
+        return java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256").digest(payload));
+    }
+
+    @Test
+    public void testADownloadMatchingTheChecksumIsKept() throws Exception {
+        UpdateChecker.Release release = new UpdateChecker.Release("9.9.9", "notes", baseUrl + "/page",
+                baseUrl + "/setup.exe", "setup.exe", PAYLOAD, sha256OfPayload());
+        File file = UpdateDownloader.download(release, null);
+        assertTrue(file.isFile());
+    }
+
+    @Test
+    public void testADownloadNotMatchingTheChecksumIsRejectedAndNotKept() throws Exception {
+        String wrong = "0".repeat(64);
+        UpdateChecker.Release release = new UpdateChecker.Release("9.9.9", "notes", baseUrl + "/page",
+                baseUrl + "/setup.exe", "setup.exe", PAYLOAD, wrong);
+        try {
+            UpdateDownloader.download(release, null);
+            org.junit.Assert.fail("an installer that does not match its checksum must not be kept");
+        } catch (java.io.IOException expected) {
+            // fine
+        }
+        File[] left = UpdateDownloader.updateDir().listFiles();
+        assertEquals(0, left == null ? 0 : left.length);
+    }
+
+    @Test
+    public void testTheAssetNameCannotLeaveTheUpdateFolder() throws Exception {
+        UpdateChecker.Release release = new UpdateChecker.Release("9.9.9", "notes", baseUrl + "/page",
+                baseUrl + "/setup.exe", "..\\..\\evil.exe", PAYLOAD);
+        File file = UpdateDownloader.download(release, null);
+        assertEquals(UpdateDownloader.updateDir().getCanonicalFile(), file.getParentFile().getCanonicalFile());
+    }
+
     @Test
     public void testAShortDownloadIsRejectedAndNotKept() {
         // the release claims more bytes than the server will send

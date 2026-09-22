@@ -108,6 +108,23 @@ public class UpdateCheckerTest {
     }
 
     @Test
+    public void testTheInstallersDigestIsRead() {
+        String hash = "ab".repeat(32);
+        String json = "{\"tag_name\":\"v0.3.0\",\"assets\":[{\"name\":\"Setup.exe\",\"size\":10,"
+                + "\"browser_download_url\":\"https://example.com/Setup.exe\","
+                + "\"digest\":\"sha256:" + hash.toUpperCase() + "\"}]}";
+        assertEquals(hash, UpdateChecker.parse(json).installerSha256);
+    }
+
+    @Test
+    public void testAMissingOrForeignDigestIsIgnored() {
+        assertNull(UpdateChecker.parse(releaseJson("v0.3.0", "x", "Setup.exe")).installerSha256);
+        assertNull(UpdateChecker.sha256Of("md5:0123"));
+        assertNull(UpdateChecker.sha256Of("sha256:not-hex"));
+        assertNull(UpdateChecker.sha256Of(null));
+    }
+
+    @Test
     public void testAReleaseWithoutATagIsIgnored() {
         assertNull(UpdateChecker.parse("{\"body\":\"x\",\"assets\":[]}"));
     }

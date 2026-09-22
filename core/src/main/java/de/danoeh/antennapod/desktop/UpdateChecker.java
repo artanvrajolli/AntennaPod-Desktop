@@ -34,15 +34,23 @@ public final class UpdateChecker {
         public final String installerUrl;
         public final String installerName;
         public final long installerSize;
+        /** Lower-case hex SHA-256 GitHub reports for the installer, or null if it gave none. */
+        public final String installerSha256;
 
         Release(String version, String notes, String pageUrl, String installerUrl,
                 String installerName, long installerSize) {
+            this(version, notes, pageUrl, installerUrl, installerName, installerSize, null);
+        }
+
+        Release(String version, String notes, String pageUrl, String installerUrl,
+                String installerName, long installerSize, String installerSha256) {
             this.version = version;
             this.notes = notes;
             this.pageUrl = pageUrl;
             this.installerUrl = installerUrl;
             this.installerName = installerName;
             this.installerSize = installerSize;
+            this.installerSha256 = installerSha256;
         }
 
         /** Whether this release carries something the app can install by itself. */
@@ -91,6 +99,7 @@ public final class UpdateChecker {
         String installerUrl = null;
         String installerName = null;
         long installerSize = 0;
+        String installerSha256 = null;
         for (int i = 0; assets != null && i < assets.length(); i++) {
             JSONObject asset = assets.optJSONObject(i);
             if (asset == null) {
@@ -103,9 +112,21 @@ public final class UpdateChecker {
             installerUrl = asset.optString("browser_download_url", null);
             installerName = name;
             installerSize = asset.optLong("size", 0);
+            installerSha256 = sha256Of(asset.optString("digest", ""));
             break;
         }
-        return new Release(version, notes, pageUrl, installerUrl, installerName, installerSize);
+        return new Release(version, notes, pageUrl, installerUrl, installerName, installerSize,
+                installerSha256);
+    }
+
+    /** The hex hash from a GitHub asset digest such as "sha256:ab12...", or null if it is not one. */
+    static String sha256Of(String digest) {
+        String prefix = "sha256:";
+        if (digest == null || !digest.regionMatches(true, 0, prefix, 0, prefix.length())) {
+            return null;
+        }
+        String hex = digest.substring(prefix.length()).trim().toLowerCase(java.util.Locale.US);
+        return hex.matches("[0-9a-f]{64}") ? hex : null;
     }
 
     private static String stripLeadingV(String tag) {
