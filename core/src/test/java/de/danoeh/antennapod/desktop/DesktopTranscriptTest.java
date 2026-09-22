@@ -89,4 +89,48 @@ public class DesktopTranscriptTest {
         Transcript second = TranscriptFetcher.fetch(item);
         assertEquals(first.getSegmentCount(), second.getSegmentCount());
     }
+
+    @Test
+    public void testUnparseableResponseIsNotCached() throws Exception {
+        String[] body = {"<html>Service temporarily unavailable</html>"};
+        server.createContext("/flaky.json", exchange -> {
+            byte[] bytes = body[0].getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(bytes);
+            }
+        });
+        FeedItem item = new FeedItem();
+        item.setId(777);
+        item.setTranscriptUrl("application/json", baseUrl + "/flaky.json");
+        try {
+            TranscriptFetcher.fetch(item);
+            org.junit.Assert.fail("an HTML error page is not a transcript");
+        } catch (java.io.IOException expected) {
+            // fine
+        }
+        assertTrue(!TranscriptFetcher.cacheFile(777, baseUrl + "/flaky.json").exists());
+
+        body[0] = resource("sample-transcript.json");
+        assertEquals(2, TranscriptFetcher.fetch(item).getSegmentCount());
+    }
+
+    @Test
+    public void testMovedTranscriptIsFetchedAgain() throws Exception {
+        FeedItem item = new FeedItem();
+        item.setId(4242);
+        item.setTranscriptUrl("application/srt", baseUrl + "/transcript.srt");
+        TranscriptFetcher.fetch(item);
+
+        // the same episode after a refresh that moved its transcript
+        FeedItem refreshed = new FeedItem();
+        refreshed.setId(4242);
+        refreshed.setTranscriptUrl("application/srt", baseUrl + "/moved.srt");
+        try {
+            TranscriptFetcher.fetch(refreshed);
+            org.junit.Assert.fail("the old address's copy must not answer for the new one");
+        } catch (java.io.IOException expected) {
+            // /moved.srt does not exist on the test server
+        }
+    }
 }

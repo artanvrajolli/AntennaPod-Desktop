@@ -61,22 +61,47 @@ public final class FeedUpdater {
         }
         Feed downloaded = downloadAndParse(finalUrl);
         downloaded.setDownloadUrl(finalUrl);
-        database.insertFeed(downloaded);
-        for (FeedItem item : downloaded.getItems()) {
-            item.setFeedId(downloaded.getId());
-            item.setFeed(downloaded);
-            item.setNew();
-            long itemId = database.insertItem(downloaded.getId(), item);
-            if (item.getMedia() != null) {
-                item.getMedia().setItemId(itemId);
-                database.insertMedia(itemId, item.getMedia());
+        // all or nothing: a failure halfway used to leave the feed with part of its episodes,
+        // and the next attempt found it "already subscribed" and kept it that way
+        database.inTransaction(() -> {
+            database.insertFeed(downloaded);
+            for (FeedItem item : distinctItems(downloaded.getItems())) {
+                item.setFeedId(downloaded.getId());
+                item.setFeed(downloaded);
+                item.setNew();
+                long itemId = database.insertItem(downloaded.getId(), item);
+                if (item.getMedia() != null) {
+                    item.getMedia().setItemId(itemId);
+                    database.insertMedia(itemId, item.getMedia());
+                }
+                if (item.getChapters() != null && !item.getChapters().isEmpty()) {
+                    database.saveChapters(itemId, item.getChapters());
+                }
+                persistTranscriptInfo(itemId, item);
             }
-            if (item.getChapters() != null && !item.getChapters().isEmpty()) {
-                database.saveChapters(itemId, item.getChapters());
-            }
-            persistTranscriptInfo(itemId, item);
-        }
+            return null;
+        });
         return database.getFeed(downloaded.getId());
+    }
+
+    /**
+     * The parsed items that can be stored: one per identifier, and none without one. Feeds that
+     * repeat a GUID (or a title, when they have no GUIDs) broke the unique index on insert, which
+     * failed the whole subscribe or refresh. The first occurrence wins, as feeds list newest first.
+     */
+    static List<FeedItem> distinctItems(List<FeedItem> items) {
+        List<FeedItem> distinct = new ArrayList<>();
+        if (items == null) {
+            return distinct;
+        }
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (FeedItem item : items) {
+            String id = item.getIdentifyingValue();
+            if (id != null && !id.isEmpty() && seen.add(id)) {
+                distinct.add(item);
+            }
+        }
+        return distinct;
     }
 
     /**
@@ -97,7 +122,10 @@ public final class FeedUpdater {
                 new File(media.getCacheFileUrl()).delete();
             }
         }
-        database.deleteFeed(feedId);
+        database.inTransaction(() -> {
+            database.deleteFeed(feedId);
+            return null;
+        });
         // the per-feed folders are empty now unless something else lives there
         new File(DesktopPreferences.getMediaDir(), String.valueOf(feedId)).delete();
         new File(DesktopPreferences.getEpisodeCacheDir(), String.valueOf(feedId)).delete();
@@ -105,6 +133,16 @@ public final class FeedUpdater {
 
     public List<FeedItem> refresh(Feed feed) throws Exception {
         Feed downloaded = downloadAndParse(feed.getDownloadUrl());
+        // the download is done outside the transaction; only storing it holds the database
+        return database.inTransaction(() -> store(feed, downloaded));
+    }
+
+    private List<FeedItem> store(Feed feed, Feed downloaded) throws Exception {
+        if (!database.feedExists(feed.getId())) {
+            // unsubscribed while the feed was downloading: storing it now would bring back the
+            // episodes as rows without a feed, and auto-download could fetch the whole catalogue
+            return new ArrayList<>();
+        }
         feed.setTitle(downloaded.getTitle());
         feed.setLink(downloaded.getLink());
         feed.setDescription(downloaded.getDescription());
@@ -120,7 +158,7 @@ public final class FeedUpdater {
             knownItems.put(known.getIdentifyingValue(), known);
         }
         List<FeedItem> newItems = new ArrayList<>();
-        for (FeedItem parsed : downloaded.getItems()) {
+        for (FeedItem parsed : distinctItems(downloaded.getItems())) {
             FeedItem known = knownItems.get(parsed.getIdentifyingValue());
             if (known == null) {
                 parsed.setFeedId(feed.getId());

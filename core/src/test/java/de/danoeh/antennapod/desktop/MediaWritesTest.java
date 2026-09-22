@@ -16,6 +16,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Date;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -239,6 +240,56 @@ public class MediaWritesTest {
         FeedMedia stored = database.getMedia(media.getId());
         assertEquals("C:\\media\\1.mp3", stored.getLocalFileUrl());
         assertEquals(1234L, stored.getDownloadDate());
+    }
+
+    @Test
+    public void testFeedRepeatingAGuidSubscribesWithOneCopy() throws Exception {
+        feedXml = rss(item("same", "Newest", baseUrl + "/media.mp3?id=2"),
+                item("same", "Older copy", baseUrl + "/media.mp3?id=1"),
+                item("other", "Another", baseUrl + "/media.mp3?id=3"));
+        Feed feed = new FeedUpdater(database).subscribe(baseUrl + "/feed.xml");
+
+        assertEquals(2, database.getItemsOfFeed(feed.getId()).size());
+
+        // and refreshing the same feed does not trip over the repeat either
+        List<FeedItem> added = new FeedUpdater(database).refresh(feed);
+        assertTrue(added.isEmpty());
+        assertEquals(2, database.getItemsOfFeed(feed.getId()).size());
+    }
+
+    @Test
+    public void testFailedSubscribeLeavesNothingBehind() throws Exception {
+        feedXml = rss(item("ep-1", "Episode", baseUrl + "/media.mp3?id=1"));
+        // make storing the episode's media fail halfway through the subscribe
+        try (java.sql.Connection side = java.sql.DriverManager.getConnection(
+                "jdbc:sqlite:" + DesktopPreferences.getDatabaseFile().getAbsolutePath());
+             java.sql.Statement stmt = side.createStatement()) {
+            stmt.execute("CREATE TRIGGER fail_media BEFORE INSERT ON feed_media"
+                    + " BEGIN SELECT RAISE(ABORT, 'disk full'); END");
+        }
+        try {
+            new FeedUpdater(database).subscribe(baseUrl + "/feed.xml");
+            org.junit.Assert.fail("the insert failure should surface");
+        } catch (java.sql.SQLException expected) {
+            // fine
+        }
+        assertNull("a half-stored feed would count as subscribed on the next try",
+                database.getFeedByDownloadUrl(baseUrl + "/feed.xml"));
+    }
+
+    @Test
+    public void testRefreshOfAFeedUnsubscribedMeanwhileStoresNothing() throws Exception {
+        feedXml = rss(item("ep-1", "Episode", baseUrl + "/media.mp3?id=1"));
+        FeedUpdater updater = new FeedUpdater(database);
+        Feed feed = updater.subscribe(baseUrl + "/feed.xml");
+        updater.unsubscribe(feed.getId());
+
+        feedXml = rss(item("ep-2", "New", baseUrl + "/media.mp3?id=2"),
+                item("ep-1", "Episode", baseUrl + "/media.mp3?id=1"));
+        List<FeedItem> added = updater.refresh(feed);
+
+        assertTrue(added.isEmpty());
+        assertTrue(database.getItemsOfFeed(feed.getId()).isEmpty());
     }
 
     private static String rss(String... items) {

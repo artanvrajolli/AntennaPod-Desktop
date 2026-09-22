@@ -95,6 +95,34 @@ public final class DesktopDatabase implements AutoCloseable {
         }
     }
 
+    /** Work run by {@link #inTransaction}. */
+    public interface Work<T> {
+        T run() throws Exception;
+    }
+
+    /**
+     * Runs {@code work} as one transaction: all of it is stored or, if it throws, none of it.
+     * Holding the lock throughout also keeps other threads' writes out of the middle of it, and
+     * a feed's few hundred inserts commit once instead of one disk sync per row.
+     */
+    public synchronized <T> T inTransaction(Work<T> work) throws Exception {
+        if (!connection.getAutoCommit()) {
+            // already inside one: become part of it
+            return work.run();
+        }
+        connection.setAutoCommit(false);
+        try {
+            T result = work.run();
+            connection.commit();
+            return result;
+        } catch (Exception | Error e) {
+            connection.rollback();
+            throw e;
+        } finally {
+            connection.setAutoCommit(true);
+        }
+    }
+
     public synchronized long insertFeed(Feed feed) throws SQLException {
         try (PreparedStatement stmt = connection.prepareStatement(
                 "INSERT INTO feeds (download_url, title, link, description, author, language, image_url,"
@@ -144,6 +172,7 @@ public final class DesktopDatabase implements AutoCloseable {
              PreparedStatement media = connection.prepareStatement(
                 "DELETE FROM feed_media WHERE item_id IN (SELECT id FROM feed_items WHERE feed_id = ?)");
              PreparedStatement items = connection.prepareStatement("DELETE FROM feed_items WHERE feed_id = ?");
+             PreparedStatement prefs = connection.prepareStatement("DELETE FROM feed_preferences WHERE feed_id = ?");
              PreparedStatement feed = connection.prepareStatement("DELETE FROM feeds WHERE id = ?")) {
             chapters.setLong(1, feedId);
             chapters.executeUpdate();
@@ -153,6 +182,8 @@ public final class DesktopDatabase implements AutoCloseable {
             media.executeUpdate();
             items.setLong(1, feedId);
             items.executeUpdate();
+            prefs.setLong(1, feedId);
+            prefs.executeUpdate();
             feed.setLong(1, feedId);
             feed.executeUpdate();
         }
@@ -200,6 +231,15 @@ public final class DesktopDatabase implements AutoCloseable {
                 Feed feed = readFeed(rs);
                 feed.setItems(getItemsOfFeed(feedId));
                 return feed;
+            }
+        }
+    }
+
+    public synchronized boolean feedExists(long feedId) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement("SELECT 1 FROM feeds WHERE id = ?")) {
+            stmt.setLong(1, feedId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
             }
         }
     }
