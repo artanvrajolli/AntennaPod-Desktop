@@ -190,6 +190,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Feed selectedFeed;
     /** The still-loading artwork the seek accent already waits for. */
     private Image seekAccentPendingImage;
+    /**
+     * Per-feed {unplayed, new} counts and the open feed's synced positions, read off the FX thread.
+     * The cells used to query the database for these on every redraw - every few seconds while
+     * playing - and waited on the database lock behind refreshes and sync.
+     */
+    private final Map<Long, int[]> feedCounts = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<Long, Integer> syncedPositions = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicBoolean feedCountsQueued =
+            new java.util.concurrent.atomic.AtomicBoolean();
     /** Bumped by every episode load, so only the newest one is shown when loads overlap. */
     private long episodeLoadGeneration;
     private volatile long loadingMediaId = -1;
@@ -487,8 +496,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     }
                 }
                 setStatus("Auto-refresh done: " + total + " new episodes");
+                refreshFeedCounts();
                 Platform.runLater(() -> {
-                    feedList.refresh();
                     Feed selected = feedList.getSelectionModel().getSelectedItem();
                     if (selected != null) {
                         loadEpisodes(selected);
@@ -1059,17 +1068,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 return;
             }
             titleLabel.setText(feed.getTitle() != null ? feed.getTitle() : feed.getDownloadUrl());
-            String unplayedText = "";
-            int newCount = 0;
-            try {
-                int unplayed = database.countUnplayed(feed.getId());
-                if (unplayed > 0) {
-                    unplayedText = unplayed + " unplayed";
-                }
-                newCount = database.countNew(feed.getId());
-            } catch (Exception e) {
-                // ignore counts on error
-            }
+            int[] counts = feedCounts.get(feed.getId());
+            int unplayed = counts != null ? counts[0] : 0;
+            int newCount = counts != null ? counts[1] : 0;
+            String unplayedText = unplayed > 0 ? unplayed + " unplayed" : "";
             countLabel.setText(unplayedText);
             boolean hasNew = newCount > 0;
             newCountBadge.setText(String.valueOf(newCount));
@@ -1733,12 +1735,38 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
     }
 
+    /**
+     * Re-reads the feed counts in the background and redraws the feed list with them. Calls made
+     * while one is still waiting to run share it: it reads the database when it starts.
+     */
+    private void refreshFeedCounts() {
+        if (background == null || !feedCountsQueued.compareAndSet(false, true)) {
+            return;
+        }
+        background.submit(() -> {
+            feedCountsQueued.set(false);
+            try {
+                Map<Long, int[]> counts = database.getFeedCounts();
+                Platform.runLater(() -> {
+                    feedCounts.clear();
+                    feedCounts.putAll(counts);
+                    feedList.refresh();
+                });
+            } catch (Exception e) {
+                // keep showing the last counts
+            }
+        });
+    }
+
     private void reloadFeeds(Long selectFeedId) {
         background.submit(() -> {
             try {
                 List<Feed> all = database.getAllFeeds();
                 Map<Long, Long> lastPlayed = database.getFeedLastPlayedTimes();
+                Map<Long, int[]> counts = database.getFeedCounts();
                 Platform.runLater(() -> {
+                    feedCounts.clear();
+                    feedCounts.putAll(counts);
                     feedLastPlayed.clear();
                     feedLastPlayed.putAll(lastPlayed);
                     FeedSorter.sortByLastPlayed(all, lastPlayed);
@@ -1794,6 +1822,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 List<FeedItem> items = full.getItems() != null
                         ? new ArrayList<>(full.getItems()) : new ArrayList<>();
                 EpisodeSorter.sort(items, prefs.sortCode);
+                Map<Long, Integer> synced = database.getSyncedPositions(feed.getId());
                 Platform.runLater(() -> {
                     if (load != episodeLoadGeneration) {
                         // a big feed that finished loading after a small one clicked since would
@@ -1807,6 +1836,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     } finally {
                         sortBoxProgrammatic = false;
                     }
+                    syncedPositions.clear();
+                    syncedPositions.putAll(synced);
                     episodes.setAll(items);
                     // a big feed opens at the top; bring the playing episode into view instead
                     scrollToCurrentEpisode();
@@ -1841,7 +1872,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 autoDownloadNew(feed, added);
                 setStatus("Refreshed " + feed.getTitle() + ": " + added.size() + " new episodes");
                 reloadEpisodesIfShowing(feed);
-                Platform.runLater(feedList::refresh);
+                refreshFeedCounts();
             } catch (Exception e) {
                 setStatus("Refresh failed: " + e.getMessage());
             }
@@ -1894,8 +1925,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
                 setStatus("Refresh done: " + total + " new episodes"
                         + (errors > 0 ? ", " + errors + " failed" : ""));
+                refreshFeedCounts();
                 Platform.runLater(() -> {
-                    feedList.refresh();
                     Feed selected = feedList.getSelectionModel().getSelectedItem();
                     if (selected != null) {
                         loadEpisodes(selected);
@@ -3304,10 +3335,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     syncManager.recordPlayedState(item, played);
                 }
                 setStatus((played ? "Marked played: " : "Marked unplayed: ") + episodeCountText(items));
-                Platform.runLater(() -> {
-                    episodeList.refresh();
-                    feedList.refresh();
-                });
+                Platform.runLater(episodeList::refresh);
+                refreshFeedCounts();
             } catch (Exception e) {
                 setStatus("Could not update episodes: " + e.getMessage());
             }
@@ -3874,7 +3903,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     nowPlayingArt != null ? nowPlayingArt.getImage() : null);
         }
         episodeList.refresh();
-        feedList.refresh();
+        refreshFeedCounts();
         scrollToCurrentEpisode();
     }
 
@@ -3952,7 +3981,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         setStatus(message);
         updateLoadingIndicator();
         episodeList.refresh();
-        feedList.refresh();
+        refreshFeedCounts();
     }
 
     /**
@@ -4291,11 +4320,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private int syncedPositionOf(FeedItem item) {
-        try {
-            return database.getSyncedPosition(item.getId());
-        } catch (Exception e) {
-            return -1;
-        }
+        return syncedPositions.getOrDefault(item.getId(), -1);
     }
 
     private static String formatDuration(int millis) {

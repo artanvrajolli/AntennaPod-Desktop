@@ -292,6 +292,37 @@ public class MediaWritesTest {
         assertTrue(database.getItemsOfFeed(feed.getId()).isEmpty());
     }
 
+    @Test
+    public void testFeedCountsMatchThePerFeedQueries() throws Exception {
+        FeedMedia played = episode("Played", baseUrl + "/media.mp3?id=1");
+        episode("Unplayed", baseUrl + "/media.mp3?id=2");
+        FeedMedia fresh = episode("New", baseUrl + "/media.mp3?id=3");
+        database.setItemState(played.getItem().getId(), FeedItem.PLAYED);
+        database.setItemState(fresh.getItem().getId(), FeedItem.NEW);
+        Feed empty = new Feed("http://example.com/empty.xml", null, "Empty");
+        database.insertFeed(empty);
+
+        java.util.Map<Long, int[]> counts = database.getFeedCounts();
+
+        assertEquals(database.countUnplayed(feedId), counts.get(feedId)[0]);
+        assertEquals(database.countNew(feedId), counts.get(feedId)[1]);
+        assertEquals(2, counts.get(feedId)[0]);
+        assertEquals(1, counts.get(feedId)[1]);
+        assertNull("a feed without episodes has no entry", counts.get(empty.getId()));
+    }
+
+    @Test
+    public void testSyncedPositionsOfAFeed() throws Exception {
+        FeedMedia synced = episode("Synced", baseUrl + "/media.mp3?id=1");
+        episode("Never synced", baseUrl + "/media.mp3?id=2");
+        database.setSyncedPosition(synced.getItem().getId(), 90000);
+
+        java.util.Map<Long, Integer> positions = database.getSyncedPositions(feedId);
+
+        assertEquals(1, positions.size());
+        assertEquals(Integer.valueOf(90000), positions.get(synced.getItem().getId()));
+    }
+
     private static String rss(String... items) {
         return "<?xml version=\"1.0\" encoding=\"UTF-8\"?><rss version=\"2.0\"><channel>"
                 + "<title>Writes Feed</title><link>http://example.com</link>"

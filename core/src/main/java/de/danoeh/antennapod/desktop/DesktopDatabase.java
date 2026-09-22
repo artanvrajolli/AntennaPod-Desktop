@@ -764,6 +764,39 @@ public final class DesktopDatabase implements AutoCloseable {
         }
     }
 
+    /** Synced positions of a feed's episodes that have one, by item id. */
+    public synchronized Map<Long, Integer> getSyncedPositions(long feedId) throws SQLException {
+        Map<Long, Integer> positions = new HashMap<>();
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "SELECT id, synced_position FROM feed_items WHERE feed_id = ? AND synced_position > 0")) {
+            stmt.setLong(1, feedId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    positions.put(rs.getLong(1), rs.getInt(2));
+                }
+            }
+        }
+        return positions;
+    }
+
+    /**
+     * Unplayed and new episode counts of every feed in one query, as {unplayed, new} by feed id.
+     * Feeds without episodes are absent.
+     */
+    public synchronized Map<Long, int[]> getFeedCounts() throws SQLException {
+        Map<Long, int[]> counts = new HashMap<>();
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT feed_id,"
+                     + " SUM(CASE WHEN state != 1 THEN 1 ELSE 0 END),"
+                     + " SUM(CASE WHEN state = -1 THEN 1 ELSE 0 END)"
+                     + " FROM feed_items GROUP BY feed_id")) {
+            while (rs.next()) {
+                counts.put(rs.getLong(1), new int[] {rs.getInt(2), rs.getInt(3)});
+            }
+        }
+        return counts;
+    }
+
     public synchronized int countUnplayed(long feedId) throws SQLException {
         try (PreparedStatement stmt = connection.prepareStatement(
                 "SELECT COUNT(*) FROM feed_items WHERE feed_id = ? AND state != 1")) {
