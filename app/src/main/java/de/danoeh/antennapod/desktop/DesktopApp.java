@@ -143,7 +143,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     /** What the synced-position marker means, shown when hovering it in the seek bar or a row. */
     private static final String SYNCED_TIP = "Position synced from another device";
     private static final int SYNCED_MARKER_MIN_GAP_MS = 30000;
-    private static final double SYNCED_MARKER_WIDTH = 3;
+    /** Edge of the synced marker's square; rotated 45 degrees it reads as a hollow diamond. */
+    private static final double SYNCED_MARKER_SIZE = 10;
     private static final double SLIDER_THUMB_DIAMETER = 14;
     private static final double ART_COLUMN_WIDTH = 96;
     private final javafx.beans.property.DoubleProperty loadingPhase =
@@ -1232,14 +1233,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         ghostMarker = new StackPane();
         ghostMarker.getStyleClass().add("ghost-marker");
-        // pickable so the tooltip below has something to hover; it is only 3px wide,
-        // so the seek slider underneath keeps all but that sliver
+        // a hollow diamond, never a bar or a dot, so it cannot read as progress; pickable
+        // so the tooltip below has something to hover, and small enough that the seek
+        // slider underneath keeps all but that sliver
         ghostMarker.setMouseTransparent(false);
         Tooltip.install(ghostMarker, new Tooltip(SYNCED_TIP));
         ghostMarker.setVisible(false);
-        ghostMarker.setPrefSize(3, 14);
-        ghostMarker.setMinSize(3, 14);
-        ghostMarker.setMaxSize(3, 14);
+        ghostMarker.setPrefSize(SYNCED_MARKER_SIZE, SYNCED_MARKER_SIZE);
+        ghostMarker.setMinSize(SYNCED_MARKER_SIZE, SYNCED_MARKER_SIZE);
+        ghostMarker.setMaxSize(SYNCED_MARKER_SIZE, SYNCED_MARKER_SIZE);
+        ghostMarker.setRotate(45);
         StackPane.setAlignment(ghostMarker, Pos.CENTER_LEFT);
         seekPulse = buildLoadingPulse(72, 5, seekSlider.widthProperty());
         seekPulse.setVisible(false);
@@ -4123,7 +4126,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             double thumbCenter = (SLIDER_THUMB_DIAMETER / 2)
                     + fraction * (trackWidth - SLIDER_THUMB_DIAMETER);
             ghostMarker.setTranslateX(seekSlider.getPadding().getLeft()
-                    + thumbCenter - (SYNCED_MARKER_WIDTH / 2));
+                    + thumbCenter - (SYNCED_MARKER_SIZE / 2));
             ghostMarker.setVisible(true);
         } catch (Exception e) {
             ghostMarker.setVisible(false);
@@ -4364,11 +4367,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 Region ghost = new Region();
                 ghost.getStyleClass().add("episode-progress-synced");
                 Tooltip.install(ghost, new Tooltip(SYNCED_TIP));
-                ghost.setMinSize(3, 3);
-                ghost.setPrefSize(3, 3);
-                ghost.setMaxSize(3, 3);
+                ghost.setMinSize(5, 5);
+                ghost.setPrefSize(5, 5);
+                ghost.setMaxSize(5, 5);
+                ghost.setRotate(45);
                 ghost.translateXProperty().bind(
-                        track.widthProperty().multiply(synced / (double) duration).subtract(1.5));
+                        track.widthProperty().multiply(synced / (double) duration).subtract(2.5));
                 StackPane.setAlignment(ghost, Pos.CENTER_LEFT);
                 bar.getChildren().add(ghost);
             }

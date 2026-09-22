@@ -67,9 +67,9 @@
 }
 
 .ghost-marker {
-    -fx-background-color: rgba(236, 236, 236, 0.85);
-    -fx-background-radius: 2;
-    -fx-border-color: transparent;
+    -fx-background-color: transparent;
+    -fx-border-color: rgba(236, 236, 236, 0.9);
+    -fx-border-width: 2;
     -fx-border-radius: 2;
 }
 
@@ -170,8 +170,10 @@
 }
 
 .episode-progress-synced {
-    -fx-background-color: rgba(236, 236, 236, 0.9);
-    -fx-background-radius: 2;
+    -fx-background-color: transparent;
+    -fx-border-color: rgba(236, 236, 236, 0.9);
+    -fx-border-width: 1.5;
+    -fx-border-radius: 2;
 }
 
 .badge-loading {
