@@ -48,10 +48,7 @@ public final class PlaybackManager {
     private int pendingSeekMs = -1;
     private boolean suppressNextPlayAction;
     private final SilenceSkipper silenceSkipper = new SilenceSkipper();
-    private final SilenceBoost silenceBoost = new SilenceBoost();
-    /** What the audio last sounded like: true while it is silence worth fast-forwarding through. */
-    private volatile boolean silenceDetected;
-    /** True while the audio spectrum is being watched, so the applier knows to do anything at all. */
+    /** True while the audio spectrum is being watched for silence worth skipping over. */
     private volatile boolean silenceWatchActive;
     private Media currentFxMedia;
     private ScheduledFuture<?> loadWatchTask;
@@ -79,18 +76,21 @@ public final class PlaybackManager {
     private int resumeAttempts;
     private int resumeFromPositionMs;
 
-    /** How often what the audio sounded like is turned into a rate and a volume on the player. */
+    /** How often complete silence is checked for and skipped over. */
     private static final long SILENCE_APPLY_INTERVAL_MS = 100;
-    /** Audio plays this fraction of the normal volume while fast-forwarding through silence. */
-    private static final double SILENCE_DUCK_FACTOR = 0.15;
-    /** How much of the duck is applied per spectrum update (~0.1 s apart). */
-    private static final double DUCK_DOWN_STEP = 0.3;
-    /** Raising the volume back happens slower, so returning speech never pops. */
-    private static final double DUCK_UP_STEP = 0.25;
-    /** User volume (0..1). Kept separate from the player, which gets the ducked value. */
+    /** How often the audio spectrum is sampled: fast enough to catch speech onsets quickly. */
+    private static final double SILENCE_SPECTRUM_INTERVAL_S = 0.05;
+    /**
+     * Sensitivity floor for the spectrum magnitudes. Below this everything reports the same
+     * value, so it sits well under real speech to leave room for the adaptive threshold.
+     */
+    private static final int SILENCE_SPECTRUM_THRESHOLD_DB = -70;
+    /** How far one silence skip jumps forward. */
+    private static final int SILENCE_SKIP_STEP_MS = 1000;
+    /** No skip lands closer than this to the end of the episode. */
+    private static final int SILENCE_SKIP_END_MARGIN_MS = 2000;
+    /** User volume (0..1). */
     private volatile double userVolume = clampVolume(DesktopPreferences.getDefaultVolume());
-    /** 1.0 = normal volume, SILENCE_DUCK_FACTOR = ducked for silence skipping. */
-    private volatile double duck = 1.0;
     /** How long a stream may take to become ready before playback is given up. */
     private static final long LOAD_TIMEOUT_MS = 30_000;
     /** A stream that will not start is tried again this many times before it is reported. */
@@ -207,9 +207,6 @@ public final class PlaybackManager {
             resumeFromPositionMs = 0;
             loadRetries = 0;
             declaredDurationMs = mediaDurationMs;
-            // a different episode has its own source and its own bitrate, so what the last one
-            // could not keep up with says nothing about this one
-            silenceBoost.reset();
         } else {
             // a restart of the same episode: the player has already overwritten the stored
             // duration with its own estimate, so keep the longest value we ever saw
@@ -234,7 +231,6 @@ public final class PlaybackManager {
             return;
         }
         startHealthWatch();
-        duck = 1.0;
         refreshEffectiveSpeed();
         player.setRate(effectiveSpeed());
         player.setVolume(userVolume);
@@ -373,12 +369,7 @@ public final class PlaybackManager {
         }
         if (!enabled) {
             silenceWatchActive = false;
-            silenceDetected = false;
             player.setAudioSpectrumListener(null);
-            // no spectrum updates will arrive to ramp back, so restore immediately
-            duck = 1.0;
-            player.setVolume(userVolume);
-            player.setRate(effectiveSpeed());
             return;
         }
         configureSilenceSkipping();
@@ -390,33 +381,32 @@ public final class PlaybackManager {
 
     private void configureSilenceSkipping() {
         silenceSkipper.reset();
-        silenceDetected = false;
         if (!DesktopPreferences.getSkipSilence()) {
             silenceWatchActive = false;
             return;
         }
         silenceWatchActive = true;
+        try {
+            player.setAudioSpectrumInterval(SILENCE_SPECTRUM_INTERVAL_S);
+            player.setAudioSpectrumThreshold(SILENCE_SPECTRUM_THRESHOLD_DB);
+        } catch (Exception e) {
+            // spectrum tuning is best-effort; detection still works on the defaults
+        }
         player.setAudioSpectrumListener((timestamp, duration, magnitudes, phases) -> {
-            boolean silent = silenceSkipper.update(magnitudes, System.currentTimeMillis());
-            // a loud frame ends the fast-forward immediately instead of after the exit
-            // delay, so returning speech is never played at the boosted rate
-            silenceDetected = silent && !silenceSkipper.isAudioLoud();
+            silenceSkipper.update(magnitudes, System.currentTimeMillis());
         });
     }
 
     /**
-     * Turns what the audio last sounded like into a rate and a volume on the player.
+     * Jumps over complete silence instead of playing through it.
      *
-     * <p>This used to happen inside the audio spectrum callback, which is JavaFX's own media
-     * thread calling back into the player it is decoding on. Two things went wrong there. The
-     * callback only fires while the player is playing, so once a boosted stream drained its
-     * buffer and stalled there was nothing left to lower the rate again — it resumed at the
-     * boosted rate, drained the buffer once more, and the episode eventually gave up without ever
-     * continuing. And the rate change went back into native media code from within its own
-     * callback. Reading the state on a timer instead means the player is always brought back to
-     * its normal rate when it is not playing, whatever the audio last said.
+     * <p>Fast-forwarding quiet audio at a boosted rate still played every gap and sounded bad;
+     * seeking over stretches of digital silence skips them entirely. The detector only fires on
+     * true silence (around -57&nbsp;dB average power, far below even quiet speech), so spoken
+     * audio is never jumped over — and the verdict drops the instant sound returns, so a skip
+     * never starts inside speech.
      */
-    private void applySilenceRate() {
+    private void maybeSkipSilence() {
         MediaPlayer activePlayer;
         synchronized (this) {
             activePlayer = silenceWatchActive ? player : null;
@@ -430,65 +420,43 @@ public final class PlaybackManager {
         } catch (Exception e) {
             return;
         }
-        long now = System.currentTimeMillis();
-        if (status == MediaPlayer.Status.STALLED) {
-            // the fast-forward is the first suspect for a dry buffer, so it goes before the
-            // stall does rather than after the stream has been given up on
-            silenceBoost.onStalled(now);
-        } else if (status == MediaPlayer.Status.PLAYING) {
-            silenceBoost.onPlaying();
+        if (status != MediaPlayer.Status.PLAYING) {
+            // no spectrum frames arrive while not playing; stale timing must not fire later
+            silenceSkipper.reset();
+            return;
         }
-        boolean silent = silenceDetected && status == MediaPlayer.Status.PLAYING
-                && silenceBoost.isAllowed(now);
-        if (silent) {
-            // fade the volume out first and only speed up once it is already quiet:
-            // speeding up full-volume audio is what produces the loud pitch sound
-            if (duck > SILENCE_DUCK_FACTOR) {
-                duck = Math.max(SILENCE_DUCK_FACTOR, duck - DUCK_DOWN_STEP);
-                setPlayerVolume(activePlayer, effectiveVolume());
-            }
-            if (duck <= SILENCE_DUCK_FACTOR + 0.001) {
-                setPlayerRate(activePlayer, SilenceBoost.rateFor(effectiveSpeed(), playingFromFile));
-            }
-        } else {
-            // back to normal speed immediately, then raise the volume again slowly
-            setPlayerRate(activePlayer, effectiveSpeed());
-            if (duck < 1.0) {
-                duck = Math.min(1.0, duck + DUCK_UP_STEP);
-                setPlayerVolume(activePlayer, effectiveVolume());
-            }
+        if (!silenceSkipper.isCompletelySilent()) {
+            return;
+        }
+        int positionMs;
+        int durationMs;
+        try {
+            positionMs = (int) activePlayer.getCurrentTime().toMillis();
+            durationMs = getDuration();
+        } catch (Exception e) {
+            return;
+        }
+        if (durationMs <= 0
+                || positionMs + SILENCE_SKIP_STEP_MS > durationMs - SILENCE_SKIP_END_MARGIN_MS) {
+            return;
+        }
+        // a fresh hold is required after every jump, so long silences are walked over step by
+        // step and skipping stops the instant sound returns
+        silenceSkipper.reset();
+        try {
+            activePlayer.seek(new Duration(positionMs + SILENCE_SKIP_STEP_MS));
+        } catch (Exception e) {
+            // the player is on its way out; whatever replaces it starts at its own position
         }
     }
 
-    private void tickSilenceRate() {
+    private void tickSilenceSkip() {
         try {
-            applySilenceRate();
+            maybeSkipSilence();
         } catch (Throwable t) {
-            // a scheduled task that throws is cancelled silently, which would strand the rate
+            // a scheduled task that throws is cancelled silently, which would strand skipping
             t.printStackTrace();
         }
-    }
-
-    private static void setPlayerRate(MediaPlayer target, float rate) {
-        try {
-            if (Math.abs(target.getRate() - rate) > 0.01f) {
-                target.setRate(rate);
-            }
-        } catch (Exception e) {
-            // the player is on its way out; whatever replaces it starts at its own rate
-        }
-    }
-
-    private static void setPlayerVolume(MediaPlayer target, double volume) {
-        try {
-            target.setVolume(volume);
-        } catch (Exception e) {
-            // as above
-        }
-    }
-
-    private double effectiveVolume() {
-        return clampVolume(userVolume * duck);
     }
 
     private static double clampVolume(double volume) {
@@ -595,6 +563,8 @@ public final class PlaybackManager {
 
     public synchronized void seek(int positionMs) {
         if (player != null) {
+            // a jump lands in unknown audio; stale quiet-since timing must not skip into it
+            silenceSkipper.reset();
             player.seek(new Duration(clampPosition(positionMs)));
         }
     }
@@ -622,7 +592,7 @@ public final class PlaybackManager {
     public synchronized void setVolume(double volume) {
         userVolume = clampVolume(volume);
         if (player != null) {
-            player.setVolume(effectiveVolume());
+            player.setVolume(userVolume);
         }
     }
 
@@ -715,7 +685,6 @@ public final class PlaybackManager {
             previous = player;
             player = null;
             silenceWatchActive = false;
-            silenceDetected = false;
             currentFxMedia = null;
             mediaReady = false;
             everPlayed = false;
@@ -787,7 +756,7 @@ public final class PlaybackManager {
                 HEALTH_CHECK_INTERVAL_MS, HEALTH_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
         stallWatchTask = healthScheduler.scheduleWithFixedDelay(this::checkPlaybackHealth,
                 HEALTH_CHECK_INTERVAL_MS, HEALTH_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
-        silenceTask = healthScheduler.scheduleWithFixedDelay(this::tickSilenceRate,
+        silenceTask = healthScheduler.scheduleWithFixedDelay(this::tickSilenceSkip,
                 SILENCE_APPLY_INTERVAL_MS, SILENCE_APPLY_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
