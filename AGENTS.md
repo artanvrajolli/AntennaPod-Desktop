@@ -21,7 +21,7 @@ inside `core`.
     `storage/` (SQLite-backed desktop storage, import/export OPML, preferences)
   - `android/` + `androidx/` — hand-written compatibility shims the ported
     engine depends on (Log, XML, media, collections). Keep them minimal.
-  - 21 test classes (JUnit 4) in `core/src/test`.
+  - 22 test classes (JUnit 4) in `core/src/test`.
 - `app/` — JavaFX UI (14 classes under
   `app/src/main/java/de/danoeh/antennapod/desktop`): `DesktopApp` (scenes),
   `PlaybackManager` (JavaFX media playback), `TrayManager` (system tray),
@@ -31,7 +31,7 @@ inside `core`.
   media keys), `TaskbarIcon` (the playing episode's artwork drawn into the
   window icon), `ThemeManager`/`SystemTheme`, `ImageCache`, `Icons`, `Launcher`
   (entry point / main class), `SeekAccent` (artwork colour for the seek bar).
-  15 test classes in `app/src/test`.
+  16 test classes in `app/src/test`.
 
 ## Build, test, run
 
@@ -72,6 +72,15 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   other apps. Use these
   to isolate a fault before changing the native code.
 - `core` must not depend on JavaFX; UI code lives in `app`.
+- Episode state is written through the narrow `DesktopDatabase` writers
+  (`updatePlaybackState`, `setMediaDownloaded`, `clearMediaDownload`,
+  `setMediaCacheFile`, `updateMediaFromFeed`). The player, downloader, cache
+  and refresh each hold their own `FeedMedia` copy, and `updateMedia` rewrites
+  every column from whichever copy it is given, undoing the others' changes.
+  Changes spanning several statements go through `inTransaction`.
+- No database queries or `MediaPlayer` calls from list cells or other FX-thread
+  hot paths: load what cells show in the background (see `feedCounts`,
+  `syncedPositions` in `DesktopApp`) and let the cells read the snapshot.
 - Shared dependencies are declared in `core/build.gradle` (OkHttp, RxJava3,
   org.json, commons-lang3/io, jsoup, xpp3, sqlite-jdbc, slf4j) and exposed via
   `api`, so `app` inherits them. `app` adds only what is desktop-specific: JNA
