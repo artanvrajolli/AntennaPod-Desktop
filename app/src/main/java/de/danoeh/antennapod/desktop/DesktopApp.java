@@ -107,8 +107,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private long syncedMarkerItemId = -1;
     private volatile int syncedMarkerPositionMs = -1;
     private Slider seekSlider;
-    /** The slider's track node, looked up once the skin exists, so the buffer can be drawn on it. */
+    /** The slider's track node, looked up once the skin exists, so progress can be drawn on it. */
     private Node seekTrack;
+    /** What the cache last reported fetched, so the track can be repainted as playback moves. */
+    private int lastBufferedMs;
+    /** Painted gradient stops, so the track is only restyled when something visibly moved. */
+    private double paintedPlayedPercent = -1;
+    private double paintedBufferedPercent = -1;
     private StackPane ghostMarker;
     private Slider volumeSlider;
     private ComboBox<String> speedBox;
@@ -1193,6 +1198,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         seekSlider.valueProperty().addListener((obs, oldValue, newValue) -> {
             if (sliderDragging) {
                 updateTimeLabels(newValue.intValue(), (int) seekSlider.getMax());
+                paintSeekTrack(newValue.intValue(), lastBufferedMs, (int) seekSlider.getMax());
             }
         });
         ghostMarker = new StackPane();
@@ -3760,10 +3766,24 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     /**
-     * Draws the fetched part of the episode into the seek bar's own track, the way a video player
-     * does: the lighter run is what can be played without waiting for the network.
+     * Draws the seek bar's own track in three runs, the way a video player does: what played so
+     * far in the theme accent, then what is fetched and can play without waiting for the network,
+     * then the rest.
      */
     private void updateBufferBar(int bufferedMs, int durationMs) {
+        lastBufferedMs = Math.max(bufferedMs, 0);
+        paintSeekTrack((int) seekSlider.getValue(), lastBufferedMs, durationMs);
+    }
+
+    /** Repositions the progress fill as playback moves; the fetched run is kept from the cache. */
+    private void updateProgressBar(int positionMs, int durationMs) {
+        if (seekSlider == null) {
+            return;
+        }
+        paintSeekTrack(positionMs, lastBufferedMs, durationMs);
+    }
+
+    private void paintSeekTrack(int positionMs, int bufferedMs, int durationMs) {
         if (seekSlider == null) {
             return;
         }
@@ -3773,19 +3793,33 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (seekTrack == null) {
             return;
         }
-        if (durationMs <= 0 || bufferedMs <= 0) {
+        if (durationMs <= 0) {
             // back to whatever the stylesheet says
             seekTrack.setStyle(null);
+            paintedPlayedPercent = -1;
+            paintedBufferedPercent = -1;
             return;
         }
-        double percent = Math.max(0, Math.min(100, bufferedMs * 100.0 / durationMs));
+        double played = clampTrackPercent(positionMs * 100.0 / durationMs);
+        double buffered = Math.max(clampTrackPercent(bufferedMs * 100.0 / durationMs), played);
+        if (Math.abs(played - paintedPlayedPercent) < 0.5
+                && Math.abs(buffered - paintedBufferedPercent) < 0.5) {
+            // position ticks arrive many times a second; only restyle on visible movement
+            return;
+        }
+        paintedPlayedPercent = played;
+        paintedBufferedPercent = buffered;
         boolean dark = ThemeManager.isDark();
-        String buffered = dark ? "#8d8d8d" : "#9e9e9e";
+        String fetched = dark ? "#8d8d8d" : "#9e9e9e";
         String rest = dark ? "#5f5f5f" : "#c9c9c9";
         seekTrack.setStyle(String.format(Locale.US,
-                "-fx-background-color: linear-gradient(to right, %s 0%%, %s %.2f%%, %s %.2f%%,"
-                        + " %s 100%%);",
-                buffered, buffered, percent, rest, percent, rest));
+                "-fx-background-color: linear-gradient(to right, -fx-accent 0%%, -fx-accent %.2f%%,"
+                        + " %s %.2f%%, %s %.2f%%, %s %.2f%%, %s 100%%);",
+                played, fetched, played, fetched, buffered, rest, buffered, rest));
+    }
+
+    private static double clampTrackPercent(double value) {
+        return Math.max(0, Math.min(100, value));
     }
 
     @Override
@@ -3796,6 +3830,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         seekSlider.setMax(Math.max(durationMs, 1));
         seekSlider.setValue(Math.min(positionMs, Math.max(durationMs, 1)));
+        updateProgressBar(positionMs, durationMs);
         updateGhostMarker(positionMs, durationMs);
         updateTimeLabels(positionMs, durationMs);
         long now = System.currentTimeMillis();
