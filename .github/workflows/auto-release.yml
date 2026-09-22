@@ -76,35 +76,11 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build and test
-        run: ./gradlew :core:test :app:installDist --console=plain
+        run: ./gradlew :core:test :app:test :app:installDist --console=plain
 
-      - name: Package portable app image
+      - name: Package portable zip and installer
         shell: pwsh
-        run: |
-          $jpackage = Join-Path $env:JAVA_HOME 'bin\jpackage.exe'
-          & $jpackage --type app-image --name "AntennaPod-Desktop" --app-version $env:APP_VERSION `
-            --vendor "AntennaPod" --dest release --input app/build/install/app/lib `
-            --main-jar "app-$env:APP_VERSION.jar" --main-class de.danoeh.antennapod.desktop.Launcher `
-            --icon icons/app.ico --java-options "--enable-native-access=javafx.media"
-          if ($LASTEXITCODE -ne 0) { throw "jpackage failed with exit code $LASTEXITCODE" }
-
-      - name: Zip portable app
-        shell: pwsh
-        run: Compress-Archive -Path release/AntennaPod-Desktop -DestinationPath AntennaPod-Desktop-Windows.zip
-
-      - name: Build installer (single .exe)
-        shell: pwsh
-        run: |
-          $jpackage = Join-Path $env:JAVA_HOME 'bin\jpackage.exe'
-          & $jpackage --type exe --name "AntennaPod-Desktop" --app-version $env:APP_VERSION `
-            --vendor "AntennaPod" --dest installer --input app/build/install/app/lib `
-            --main-jar "app-$env:APP_VERSION.jar" --main-class de.danoeh.antennapod.desktop.Launcher `
-            --icon icons/app.ico --java-options "--enable-native-access=javafx.media" `
-            --win-per-user-install --win-menu --win-shortcut `
-            --win-upgrade-uuid 6f2f2b7c-6a3e-4f4a-9f4a-6b7c2f2b7c11
-          if ($LASTEXITCODE -ne 0) { throw "jpackage installer failed with exit code $LASTEXITCODE" }
-          Move-Item "installer/AntennaPod-Desktop-$env:APP_VERSION.exe" `
-            "AntennaPod-Desktop-Setup-$env:APP_VERSION.exe"
+        run: ./packaging/windows/package.ps1 -Version $env:APP_VERSION
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
