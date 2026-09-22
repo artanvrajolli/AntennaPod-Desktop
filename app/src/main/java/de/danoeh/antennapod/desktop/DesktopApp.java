@@ -133,8 +133,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
      */
     private long lastScrolledMediaId = -1;
     private StackPane ghostMarker;
-    /** Fades the synced marker away half a minute after it appears. */
-    private PauseTransition ghostFadeDelay;
+    /** Dissolves the synced marker away over half a minute after it appears. */
     private FadeTransition ghostFadeOut;
     /** The episode the fade above was armed for; re-armed when it or visibility changes. */
     private long ghostFadeItemId = -1;
@@ -4156,9 +4155,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
      * next appearance starts solid.
      */
     private void hideGhostMarker() {
-        if (ghostFadeDelay != null) {
-            ghostFadeDelay.stop();
-        }
         if (ghostFadeOut != null) {
             ghostFadeOut.stop();
         }
@@ -4167,28 +4163,23 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         ghostMarker.setVisible(false);
     }
 
-    /** Shows the marker solid, then fades it away after half a minute. */
+    /** Shows the marker, then dissolves it away progressively over half a minute. */
     private void armGhostFade(long itemId) {
         if (ghostFadeOut != null) {
             ghostFadeOut.stop();
         }
         ghostFadeItemId = itemId;
         ghostMarker.setOpacity(1);
-        if (ghostFadeDelay == null) {
-            ghostFadeDelay = new PauseTransition(Duration.seconds(SYNCED_MARKER_FADE_SECONDS));
-            ghostFadeDelay.setOnFinished(event -> {
-                ghostFadeOut = new FadeTransition(Duration.millis(800), ghostMarker);
-                ghostFadeOut.setFromValue(1);
-                ghostFadeOut.setToValue(0);
-                ghostFadeOut.setOnFinished(done -> {
-                    ghostFadedItemId = ghostFadeItemId;
-                    ghostFadeItemId = -1;
-                    ghostMarker.setVisible(false);
-                });
-                ghostFadeOut.play();
-            });
-        }
-        ghostFadeDelay.playFromStart();
+        ghostFadeOut = new FadeTransition(
+                Duration.seconds(SYNCED_MARKER_FADE_SECONDS), ghostMarker);
+        ghostFadeOut.setFromValue(1);
+        ghostFadeOut.setToValue(0);
+        ghostFadeOut.setOnFinished(done -> {
+            ghostFadedItemId = ghostFadeItemId;
+            ghostFadeItemId = -1;
+            ghostMarker.setVisible(false);
+        });
+        ghostFadeOut.play();
     }
 
     private int syncedPositionOf(FeedItem item) {
