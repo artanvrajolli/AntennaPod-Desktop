@@ -207,6 +207,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private java.nio.channels.FileLock instanceLock;
     private java.util.concurrent.ScheduledExecutorService autoRefreshScheduler;
     private java.util.concurrent.ScheduledFuture<?> autoRefreshTask;
+    private int scheduledRefreshMinutes;
+    /** The proxy settings the HTTP client was last built with. */
+    private String appliedProxy;
 
     public static void main(String[] args) {
         launch(args);
@@ -431,6 +434,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private void applyProxy() {
         String host = DesktopPreferences.getProxyHost();
+        // settings save on every change, and rebuilding the HTTP client drops its connections,
+        // so only a proxy that actually changed is applied
+        String proxy = host + "|" + DesktopPreferences.getProxyPort() + "|"
+                + DesktopPreferences.getProxyUser() + "|" + DesktopPreferences.getProxyPassword();
+        if (proxy.equals(appliedProxy)) {
+            return;
+        }
+        appliedProxy = proxy;
         if (host == null || host.isEmpty()) {
             de.danoeh.antennapod.net.common.AntennapodHttpClient.setProxyConfig(null);
         } else {
@@ -444,11 +455,17 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private synchronized void scheduleAutoRefresh() {
+        int minutes = DesktopPreferences.getAutoRefreshMinutes();
+        if (autoRefreshTask != null && minutes == scheduledRefreshMinutes) {
+            // settings save on every change; restarting the timer each time kept pushing the
+            // next refresh back by a whole interval
+            return;
+        }
         if (autoRefreshTask != null) {
             autoRefreshTask.cancel(false);
             autoRefreshTask = null;
         }
-        int minutes = DesktopPreferences.getAutoRefreshMinutes();
+        scheduledRefreshMinutes = minutes;
         if (minutes <= 0) {
             return;
         }
@@ -470,11 +487,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     }
                 }
                 setStatus("Auto-refresh done: " + total + " new episodes");
-                Platform.runLater(feedList::refresh);
-                Feed selected = feedList.getSelectionModel().getSelectedItem();
-                if (selected != null) {
-                    loadEpisodes(selected);
-                }
+                Platform.runLater(() -> {
+                    feedList.refresh();
+                    Feed selected = feedList.getSelectionModel().getSelectedItem();
+                    if (selected != null) {
+                        loadEpisodes(selected);
+                    }
+                });
             } catch (Exception e) {
                 setStatus("Auto-refresh failed: " + e.getMessage());
             }
@@ -1875,11 +1894,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
                 setStatus("Refresh done: " + total + " new episodes"
                         + (errors > 0 ? ", " + errors + " failed" : ""));
-                Feed selected = feedList.getSelectionModel().getSelectedItem();
-                if (selected != null) {
-                    loadEpisodes(selected);
-                }
-                Platform.runLater(feedList::refresh);
+                Platform.runLater(() -> {
+                    feedList.refresh();
+                    Feed selected = feedList.getSelectionModel().getSelectedItem();
+                    if (selected != null) {
+                        loadEpisodes(selected);
+                    }
+                });
             } catch (Exception e) {
                 setStatus("Refresh failed: " + e.getMessage());
             }

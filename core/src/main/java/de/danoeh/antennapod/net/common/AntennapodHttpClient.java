@@ -26,6 +26,7 @@ public class AntennapodHttpClient {
     private static final int READ_TIMEOUT = 30000;
     private static final int MAX_CONNECTIONS = 8;
     private static File cacheDirectory;
+    private static Cache cache;
     private static ProxyConfig proxyConfig;
 
     private static volatile OkHttpClient httpClient = null;
@@ -74,7 +75,7 @@ public class AntennapodHttpClient {
         builder.connectTimeout(CONNECTION_TIMEOUT, TimeUnit.MILLISECONDS);
         builder.readTimeout(READ_TIMEOUT, TimeUnit.MILLISECONDS);
         builder.writeTimeout(READ_TIMEOUT, TimeUnit.MILLISECONDS);
-        builder.cache(new Cache(cacheDirectory, 20L * 1000000)); // 20MB
+        builder.cache(sharedCache());
 
         // configure redirects
         builder.followRedirects(true);
@@ -96,6 +97,21 @@ public class AntennapodHttpClient {
 
         SslClientSetup.installCertificates(builder);
         return builder;
+    }
+
+    /**
+     * One cache per directory for every client built here. OkHttp requires that no two caches
+     * share a directory; each reinit (every proxy change) and every newBuilder() caller used to
+     * open another one on the same journal. Null, and so no cache, without a directory.
+     */
+    private static synchronized Cache sharedCache() {
+        if (cacheDirectory == null) {
+            return null;
+        }
+        if (cache == null || !cache.directory().equals(cacheDirectory)) {
+            cache = new Cache(cacheDirectory, 20L * 1000000); // 20MB
+        }
+        return cache;
     }
 
     public static void setCacheDirectory(File cacheDirectory) {
