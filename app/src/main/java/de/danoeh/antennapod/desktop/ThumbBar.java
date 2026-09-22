@@ -29,8 +29,8 @@ import java.util.List;
 import javafx.application.Platform;
 
 /**
- * The media buttons under the window's taskbar thumbnail — previous, play/pause and next — which
- * Windows shows when you hover the taskbar button.
+ * The media buttons under the window's taskbar thumbnail — previous, play/pause, next and skip
+ * silence — which Windows shows when you hover the taskbar button.
  *
  * <p>This is the part of the taskbar integration that has to sit inside the window's message loop:
  * the shell reports a button press as {@code WM_COMMAND}, and it announces that the taskbar button
@@ -48,6 +48,10 @@ final class ThumbBar {
         void onPlayPause();
 
         void onNext();
+
+        boolean isSilenceSkipping();
+
+        void onSilenceSkipping(boolean enabled);
     }
 
     private static final int WM_COMMAND = 0x0111;
@@ -64,7 +68,9 @@ final class ThumbBar {
     private static final int ID_PREVIOUS = 101;
     private static final int ID_PLAY_PAUSE = 102;
     private static final int ID_NEXT = 103;
-    private static final int BUTTON_COUNT = 3;
+    private static final int ID_SILENCE = 104;
+    /** Windows allows up to seven thumbnail buttons; previous, play/pause, next, silence. */
+    private static final int BUTTON_COUNT = 4;
 
     private final HWND hwnd;
     private final WindowsTaskbar.TaskbarList3 taskbarList;
@@ -89,8 +95,11 @@ final class ThumbBar {
     private HICON playIcon;
     private HICON pauseIcon;
     private HICON nextIcon;
+    private HICON silenceOnIcon;
+    private HICON silenceOffIcon;
     private boolean added;
     private boolean showingPause;
+    private boolean showingSilenceOn;
 
     private ThumbBar(HWND hwnd, WindowsTaskbar.TaskbarList3 taskbarList, Callbacks callbacks,
             java.util.function.Consumer<Runnable> onComThread) {
@@ -152,6 +161,29 @@ final class ThumbBar {
         });
     }
 
+    /** Swaps the silence button between its on and off pictures. */
+    void setSilenceSkipping(boolean enabled) {
+        if (!added || enabled == showingSilenceOn) {
+            return;
+        }
+        showingSilenceOn = enabled;
+        onComThread.accept(() -> {
+            try {
+                THUMBBUTTON silence = buttons[3];
+                silence.hIcon = enabled ? silenceOnIcon : silenceOffIcon;
+                setTip(silence, silenceTip(enabled));
+                silence.write();
+                taskbarList.thumbBarUpdateButtons(hwnd, BUTTON_COUNT, buttons[0].getPointer());
+            } catch (Throwable t) {
+                t.printStackTrace();
+            }
+        });
+    }
+
+    private static String silenceTip(boolean enabled) {
+        return enabled ? "Skip silence: on" : "Skip silence: off";
+    }
+
     /** Puts the original window procedure back and frees the icons. */
     void dispose() {
         try {
@@ -210,6 +242,9 @@ final class ThumbBar {
             case ID_PREVIOUS: action = callbacks::onPrevious; break;
             case ID_PLAY_PAUSE: action = callbacks::onPlayPause; break;
             case ID_NEXT: action = callbacks::onNext; break;
+            case ID_SILENCE:
+                action = () -> callbacks.onSilenceSkipping(!callbacks.isSilenceSkipping());
+                break;
             default: return;
         }
         // hand back to the application thread rather than acting inside the message loop
@@ -234,9 +269,13 @@ final class ThumbBar {
 
     private void buildButtons() {
         buttons = (THUMBBUTTON[]) new THUMBBUTTON().toArray(BUTTON_COUNT);
+        showingSilenceOn = callbacks != null && callbacks.isSilenceSkipping();
         fill(buttons[0], ID_PREVIOUS, previousIcon, "Previous");
         fill(buttons[1], ID_PLAY_PAUSE, playIcon, "Play");
         fill(buttons[2], ID_NEXT, nextIcon, "Next");
+        fill(buttons[3], ID_SILENCE,
+                showingSilenceOn ? silenceOnIcon : silenceOffIcon,
+                silenceTip(showingSilenceOn));
     }
 
     private void fill(THUMBBUTTON button, int id, HICON icon, String tip) {
@@ -275,10 +314,13 @@ final class ThumbBar {
         playIcon = toIcon(draw(size, ink, Glyph.PLAY));
         pauseIcon = toIcon(draw(size, ink, Glyph.PAUSE));
         nextIcon = toIcon(draw(size, ink, Glyph.NEXT));
+        silenceOnIcon = toIcon(draw(size, ink, Glyph.SILENCE_ON));
+        silenceOffIcon = toIcon(draw(size, ink, Glyph.SILENCE_OFF));
     }
 
     private void destroyIcons() {
-        for (HICON icon : new HICON[]{previousIcon, playIcon, pauseIcon, nextIcon}) {
+        for (HICON icon : new HICON[]{previousIcon, playIcon, pauseIcon, nextIcon,
+                silenceOnIcon, silenceOffIcon}) {
             if (icon != null) {
                 try {
                     Win32.INSTANCE.DestroyIcon(icon);
@@ -288,9 +330,10 @@ final class ThumbBar {
             }
         }
         previousIcon = playIcon = pauseIcon = nextIcon = null;
+        silenceOnIcon = silenceOffIcon = null;
     }
 
-    enum Glyph { PREVIOUS, PLAY, PAUSE, NEXT }
+    enum Glyph { PREVIOUS, PLAY, PAUSE, NEXT, SILENCE_ON, SILENCE_OFF }
 
     /** The same shapes as the in-app transport controls, drawn at icon size. */
     static BufferedImage draw(int size, Color ink, Glyph glyph) {
@@ -330,11 +373,38 @@ final class ThumbBar {
                 g.fill(triangle(left, top, left, bottom, right - barWidth, size / 2.0));
                 break;
             }
+            case SILENCE_ON:
+                drawWave(g, left, top, right, bottom);
+                break;
+            case SILENCE_OFF: {
+                drawWave(g, left, top, right, bottom);
+                double slashWidth = Math.max(size * 0.09, 1.5);
+                g.setStroke(new BasicStroke((float) slashWidth, BasicStroke.CAP_BUTT,
+                        BasicStroke.JOIN_MITER));
+                g.draw(new java.awt.geom.Line2D.Double(right, top, left, bottom));
+                break;
+            }
             default:
                 break;
         }
         g.dispose();
         return image;
+    }
+
+    /** Five rising and falling bars, the waveform the in-app skip-silence control uses. */
+    private static void drawWave(Graphics2D g, double left, double top, double right,
+            double bottom) {
+        double height = bottom - top;
+        double[] fractions = {0.35, 0.6, 0.95, 0.6, 0.35};
+        double slot = (right - left) / fractions.length;
+        double barWidth = Math.max(slot * 0.45, 1.2);
+        double middle = top + height / 2;
+        for (int i = 0; i < fractions.length; i++) {
+            double barHeight = Math.max(height * fractions[i], 1.2);
+            double x = left + slot * i + (slot - barWidth) / 2;
+            g.fill(new java.awt.geom.Rectangle2D.Double(x, middle - barHeight / 2,
+                    barWidth, barHeight));
+        }
     }
 
     private static Path2D triangle(double x1, double y1, double x2, double y2, double x3,

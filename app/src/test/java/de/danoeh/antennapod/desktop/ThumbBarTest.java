@@ -48,11 +48,17 @@ public class ThumbBarTest {
         BufferedImage pause = ThumbBar.draw(24, Color.WHITE, ThumbBar.Glyph.PAUSE);
         BufferedImage previous = ThumbBar.draw(24, Color.WHITE, ThumbBar.Glyph.PREVIOUS);
         BufferedImage next = ThumbBar.draw(24, Color.WHITE, ThumbBar.Glyph.NEXT);
+        BufferedImage silenceOn = ThumbBar.draw(24, Color.WHITE, ThumbBar.Glyph.SILENCE_ON);
+        BufferedImage silenceOff = ThumbBar.draw(24, Color.WHITE, ThumbBar.Glyph.SILENCE_OFF);
         assertNotEquals("play and pause must not be the same picture",
                 signature(play), signature(pause));
         assertNotEquals("previous and next must be mirrored, not identical",
                 signature(previous), signature(next));
         assertNotEquals(signature(play), signature(next));
+        assertNotEquals("silence on and off must read differently",
+                signature(silenceOn), signature(silenceOff));
+        assertNotEquals("silence must not look like transport",
+                signature(silenceOn), signature(play));
     }
 
     @Test

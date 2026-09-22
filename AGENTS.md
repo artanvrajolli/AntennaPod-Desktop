@@ -51,6 +51,11 @@ app\build\install\app\bin\app.bat     :: run the installed distribution
 - `DesktopIntegrationTest` exercises the full storage + engine flow end to
   end — run it after touching `core/storage` or the sync engine.
 
+## Workflow
+
+- Every change gets committed and pushed to `main` when done. Do not ask for
+  confirmation and do not wait to be told — commit with a clear message and push.
+
 ## Conventions
 
 - Windows-first: paths, packaging (jpackage), tray and taskbar integration

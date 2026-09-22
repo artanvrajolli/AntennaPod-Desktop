@@ -315,6 +315,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             public void onNext() {
                 playback.playNext();
             }
+
+            @Override
+            public boolean isSilenceSkipping() {
+                return playback.isSilenceSkipping();
+            }
+
+            @Override
+            public void onSilenceSkipping(boolean enabled) {
+                setSilenceSkipping(enabled);
+            }
         });
         startMediaKeys();
         boolean trayEnabled = !"false".equalsIgnoreCase(
@@ -2031,13 +2041,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         return speed <= 0 ? "global" : String.format(Locale.US, "%.2fx", speed);
     }
 
-    /** The one way silence skipping is switched, whether from the player bar or from the tray. */
+    /** The one way silence skipping is switched: player bar, tray or taskbar thumbnail. */
     private void setSilenceSkipping(boolean enabled) {
         playback.setSilenceSkipping(enabled);
         updateSilenceButtonTooltip();
         if (trayActive) {
             trayManager.updateSilenceSkipping(enabled);
         }
+        windowsTaskbar.setSilenceSkipping(enabled);
         setStatus(enabled ? "Skip silence enabled" : "Skip silence disabled");
     }
 

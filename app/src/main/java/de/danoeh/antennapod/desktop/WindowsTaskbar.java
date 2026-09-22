@@ -152,6 +152,17 @@ public final class WindowsTaskbar {
         run(list -> list.setProgressState(hwnd, state));
     }
 
+    /** Reflects the skip-silence toggle on the thumbnail toolbar's fourth button. */
+    public void setSilenceSkipping(boolean enabled) {
+        if (taskbarList == null) {
+            return;
+        }
+        ThumbBar bar = thumbBar;
+        if (bar != null) {
+            bar.setSilenceSkipping(enabled);
+        }
+    }
+
     public void shutdown() {
         submit(() -> {
             ThumbBar bar = thumbBar;
