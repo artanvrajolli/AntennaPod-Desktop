@@ -140,6 +140,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     /** The episode already informed and faded out; it stays out of the way until a new one. */
     private long ghostFadedItemId = -1;
     private Slider volumeSlider;
+    /** The volume slider's track node, looked up once the skin exists, for its fill. */
+    private Node volumeTrack;
+    /** Painted volume stops, so the track is only restyled on visible movement. */
+    private double paintedVolumePercent = -1;
+    private String paintedVolumeAccent;
     private ComboBox<String> speedBox;
     private Button silenceButton;
     private ProgressIndicator loadingSpinner;
@@ -1279,6 +1284,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             double volume = newValue.doubleValue();
             playback.setVolume(volume);
             DesktopPreferences.setDefaultVolume(volume);
+            paintVolumeTrack();
             if (volume > 0) {
                 lastVolume = volume;
             }
@@ -3739,15 +3745,43 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private void updatePlayPauseButton() {
         if (playPauseButton != null) {
+            String accent = seekAccent != null ? seekAccent : "-fx-accent";
             playPauseButton.setGraphic(Icons.accent(playback != null && playback.isPlaying()
-                    ? Icons.pause(26) : Icons.play(26)));
+                    ? Icons.pause(26) : Icons.play(26), accent));
         }
+    }
+
+    /** Paints the volume slider's own fill, wearing the same accent as the seek bar. */
+    private void paintVolumeTrack() {
+        if (volumeSlider == null) {
+            return;
+        }
+        if (volumeTrack == null) {
+            volumeTrack = volumeSlider.lookup(".track");
+        }
+        if (volumeTrack == null) {
+            return;
+        }
+        String accent = seekAccent != null ? seekAccent : "-fx-accent";
+        double percent = clampTrackPercent(volumeSlider.getValue() * 100.0);
+        if (Math.abs(percent - paintedVolumePercent) < 1
+                && Objects.equals(accent, paintedVolumeAccent)) {
+            return;
+        }
+        paintedVolumePercent = percent;
+        paintedVolumeAccent = accent;
+        String rest = ThemeManager.isDark() ? "#5f5f5f" : "#c9c9c9";
+        volumeTrack.setStyle(String.format(Locale.US,
+                "-fx-background-color: linear-gradient(to right, %s 0%%, %s %.2f%%,"
+                        + " %s %.2f%%, %s 100%%);",
+                accent, accent, percent, rest, percent, rest));
     }
 
     @Override
     public void onStateChanged() {
         updatePlayPauseButton();
         updateTransportEnabled();
+        paintVolumeTrack();
         FeedMedia current = playback.getCurrentMedia();
         windowsTaskbar.setPlaybackState(current != null, playback.isPlaying());
         if (current == null) {
@@ -3958,6 +3992,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         boolean tinted = seekAccent != null || !Objects.equals(paintedAccent, "-fx-accent");
         seekAccent = null;
         styleSeekThumb();
+        updatePlayPauseButton();
+        paintedVolumePercent = -1;
+        paintVolumeTrack();
         if (!tinted || seekSlider == null) {
             paintedPlayedPercent = -1;
             paintedBufferedPercent = -1;
@@ -3976,6 +4013,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         seekAccent = color;
         styleSeekThumb();
+        updatePlayPauseButton();
+        paintedVolumePercent = -1;
+        paintVolumeTrack();
         paintedPlayedPercent = -1;
         paintedBufferedPercent = -1;
         if (seekSlider != null) {
