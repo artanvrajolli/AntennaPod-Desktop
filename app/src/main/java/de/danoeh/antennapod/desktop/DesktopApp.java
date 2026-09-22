@@ -109,11 +109,23 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Slider seekSlider;
     /** The slider's track node, looked up once the skin exists, so progress can be drawn on it. */
     private Node seekTrack;
+    /** The slider's thumb dot, tinted with the same accent as the played run. */
+    private Node seekThumb;
     /** What the cache last reported fetched, so the track can be repainted as playback moves. */
     private int lastBufferedMs;
     /** Painted gradient stops, so the track is only restyled when something visibly moved. */
     private double paintedPlayedPercent = -1;
     private double paintedBufferedPercent = -1;
+    /**
+     * The artwork accent tinting the played run and the thumb, as a hex color. Null while the
+     * slider keeps the theme's own blue ({@code -fx-accent}): no artwork, or nothing usable
+     * sampled from it yet.
+     */
+    private String seekAccent;
+    /** What the accent was last resolved for; "" while it is the plain theme blue. */
+    private String seekAccentUrl = "";
+    /** The accent the track was last painted with, so a new cover repaints even at 0%. */
+    private String paintedAccent;
     private StackPane ghostMarker;
     private Slider volumeSlider;
     private ComboBox<String> speedBox;
@@ -3581,6 +3593,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             if (artPlaceholder != null) {
                 artPlaceholder.setVisible(true);
             }
+            updateSeekAccent(null);
             return;
         }
         if (!artUrl.equals(nowPlayingArt.getUserData())) {
@@ -3591,6 +3604,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (artPlaceholder != null) {
             artPlaceholder.setVisible(false);
         }
+        updateSeekAccent(artUrl);
     }
 
     /** The episode's own image, or the subscription's when the episode brings none. */
@@ -3783,6 +3797,121 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         paintSeekTrack(positionMs, lastBufferedMs, durationMs);
     }
 
+    /**
+     * Follows the artwork of what is playing: the episode's own image, or the subscription's
+     * when the episode brings none. The dominant color becomes the seek bar's accent; with no
+     * artwork the slider keeps the theme's own blue, so a null or empty url clears the tint.
+     */
+    private void updateSeekAccent(String artUrl) {
+        String wanted = artUrl != null ? artUrl : "";
+        if (wanted.equals(seekAccentUrl)) {
+            if (wanted.isEmpty() || seekAccent != null) {
+                return;
+            }
+            // same artwork but still untinted: the image may have finished loading since
+            // the last try, so fall through and sample it again
+        } else {
+            // a new episode or subscription: drop the old tint first, so its color never
+            // lingers on artwork that has none, is still loading, or cannot be sampled
+            seekAccentUrl = wanted;
+            clearSeekAccent();
+            if (wanted.isEmpty()) {
+                return;
+            }
+        }
+        Image artwork = nowPlayingArt != null ? nowPlayingArt.getImage() : null;
+        if (artwork == null) {
+            artwork = ImageCache.get(wanted, 96, 96);
+        }
+        if (artwork == null || artwork.isError()) {
+            clearSeekAccent();
+            return;
+        }
+        if (artwork.getProgress() < 1) {
+            // still loading: tint once the pixels are there, unless the episode changed meanwhile
+            Image pending = artwork;
+            pending.progressProperty().addListener((obs, oldProgress, progress) -> {
+                if (progress.doubleValue() >= 1 && wanted.equals(seekAccentUrl)) {
+                    if (pending.isError()) {
+                        clearSeekAccent();
+                        return;
+                    }
+                    String color = SeekAccent.fromFx(pending);
+                    if (color != null) {
+                        applySeekAccent(wanted, color);
+                    } else {
+                        clearSeekAccent();
+                    }
+                }
+            });
+            return;
+        }
+        String color = SeekAccent.fromFx(artwork);
+        if (color != null) {
+            applySeekAccent(wanted, color);
+        } else {
+            clearSeekAccent();
+        }
+    }
+
+    /**
+     * Drops the artwork tint from the thumb and the track, back to the theme blue. Only
+     * repaints when something was tinted, so repeated clears stay cheap.
+     */
+    private void clearSeekAccent() {
+        boolean tinted = seekAccent != null || !Objects.equals(paintedAccent, "-fx-accent");
+        seekAccent = null;
+        styleSeekThumb();
+        if (!tinted || seekSlider == null) {
+            paintedPlayedPercent = -1;
+            paintedBufferedPercent = -1;
+            paintedAccent = null;
+            return;
+        }
+        paintedPlayedPercent = -1;
+        paintedBufferedPercent = -1;
+        paintedAccent = null;
+        paintSeekTrack((int) seekSlider.getValue(), lastBufferedMs, (int) seekSlider.getMax());
+    }
+
+    private void applySeekAccent(String wanted, String color) {
+        if (!wanted.equals(seekAccentUrl) || color.equals(seekAccent)) {
+            return;
+        }
+        seekAccent = color;
+        styleSeekThumb();
+        paintedPlayedPercent = -1;
+        paintedBufferedPercent = -1;
+        if (seekSlider != null) {
+            paintSeekTrack((int) seekSlider.getValue(), lastBufferedMs, (int) seekSlider.getMax());
+        }
+    }
+
+    /**
+     * Tints the thumb dot with the artwork accent; clears it back to the theme blue. A flat
+     * fill loses the depth Modena's layered thumb brings, so the tinted dot gets its own
+     * white ring and drop shadow to read on any track behind it, in either theme.
+     */
+    private void styleSeekThumb() {
+        if (seekSlider == null) {
+            return;
+        }
+        if (seekThumb == null) {
+            seekThumb = seekSlider.lookup(".thumb");
+        }
+        if (seekThumb == null) {
+            return;
+        }
+        if (seekAccent != null) {
+            seekThumb.setStyle("-fx-background-color: rgba(255,255,255,0.95), " + seekAccent + ";"
+                    + " -fx-background-insets: 0, 1.5;"
+                    + " -fx-background-radius: 1em;"
+                    + " -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.55), 5, 0.3, 0, 1);");
+        } else {
+            seekThumb.setStyle(null);
+        }
+    }
+
     private void paintSeekTrack(int positionMs, int bufferedMs, int durationMs) {
         if (seekSlider == null) {
             return;
@@ -3798,24 +3927,29 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             seekTrack.setStyle(null);
             paintedPlayedPercent = -1;
             paintedBufferedPercent = -1;
+            paintedAccent = null;
             return;
         }
+        String accent = seekAccent != null ? seekAccent : "-fx-accent";
         double played = clampTrackPercent(positionMs * 100.0 / durationMs);
         double buffered = Math.max(clampTrackPercent(bufferedMs * 100.0 / durationMs), played);
         if (Math.abs(played - paintedPlayedPercent) < 0.5
-                && Math.abs(buffered - paintedBufferedPercent) < 0.5) {
+                && Math.abs(buffered - paintedBufferedPercent) < 0.5
+                && Objects.equals(accent, paintedAccent)) {
             // position ticks arrive many times a second; only restyle on visible movement
             return;
         }
         paintedPlayedPercent = played;
         paintedBufferedPercent = buffered;
+        paintedAccent = accent;
         boolean dark = ThemeManager.isDark();
         String fetched = dark ? "#8d8d8d" : "#9e9e9e";
         String rest = dark ? "#5f5f5f" : "#c9c9c9";
         seekTrack.setStyle(String.format(Locale.US,
-                "-fx-background-color: linear-gradient(to right, -fx-accent 0%%, -fx-accent %.2f%%,"
+                "-fx-background-color: linear-gradient(to right, %s 0%%, %s %.2f%%,"
                         + " %s %.2f%%, %s %.2f%%, %s %.2f%%, %s 100%%);",
-                played, fetched, played, fetched, buffered, rest, buffered, rest));
+                accent, accent, played, fetched, played, fetched, buffered, rest, buffered, rest));
+        styleSeekThumb();
     }
 
     private static double clampTrackPercent(double value) {
