@@ -108,7 +108,7 @@ public final class SilenceSkipper {
      *                   attenuation is added back so detection sees the pre-volume level
      * @return whether the audio is currently considered silence worth skipping
      */
-    public boolean update(float[] magnitudes, long nowMs, double duckGain) {
+    public synchronized boolean update(float[] magnitudes, long nowMs, double duckGain) {
         if (magnitudes == null || magnitudes.length == 0) {
             return silent;
         }
@@ -150,7 +150,7 @@ public final class SilenceSkipper {
         return silent;
     }
 
-    public void reset() {
+    public synchronized void reset() {
         silent = false;
         loud = false;
         lastLevelDb = Double.NEGATIVE_INFINITY;
@@ -166,7 +166,7 @@ public final class SilenceSkipper {
      * hysteresis {@link #update} applies to its silence verdict. Lets callers stop
      * fast-forwarding the moment sound returns instead of after the exit delay.
      */
-    public boolean isAudioLoud() {
+    public synchronized boolean isAudioLoud() {
         return loud;
     }
 
@@ -175,7 +175,7 @@ public final class SilenceSkipper {
      * Unlike the adaptive verdict above, this uses a fixed strict threshold far below speech,
      * so it can only ever fire on (near-)digital silence — never on spoken audio.
      */
-    public boolean isCompletelySilent() {
+    public synchronized boolean isCompletelySilent() {
         return completeSilent;
     }
 

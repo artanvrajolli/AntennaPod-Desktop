@@ -34,7 +34,12 @@ public final class PlaybackManager {
                 return thread;
             });
 
-    private MediaPlayer player;
+    /**
+     * The player for {@link #currentMedia}. Volatile because every player callback compares its own
+     * player against it: a replaced player's queued events (clock ticks, the STOPPED status its
+     * disposal causes, a late ready) must not act on the episode that replaced it.
+     */
+    private volatile MediaPlayer player;
     private volatile FeedMedia currentMedia;
     private List<FeedItem> queue = List.of();
     private int queueIndex = -1;
@@ -44,6 +49,7 @@ public final class PlaybackManager {
     private java.util.function.Consumer<FeedMedia> cacheStartedHandler;
     private java.util.function.Consumer<FeedMedia> cacheFinishedHandler;
     private Runnable resumeLastHandler;
+    private Runnable stopAfterCurrentHandler;
     private boolean stopAfterCurrent;
     private int pendingSeekMs = -1;
     private boolean suppressNextPlayAction;
@@ -197,6 +203,7 @@ public final class PlaybackManager {
     public synchronized void playMedia(FeedMedia media) {
         queue = List.of();
         queueIndex = -1;
+        pendingSeekMs = -1;
         startPlayback(media);
     }
 
@@ -217,7 +224,7 @@ public final class PlaybackManager {
         lastKnownPositionMs = 0;
         currentMedia = media;
         finishedMedia = null;
-        String playableFile = media.playableFileUrl();
+        String playableFile = existingLocalCopy(media);
         playingFromFile = playableFile != null;
         String source = playableFile != null
                 ? new java.io.File(playableFile).toURI().toString()
@@ -233,11 +240,17 @@ public final class PlaybackManager {
             notifyError("Could not play \"" + titleOf(media) + "\": " + e.getMessage());
             return;
         }
+        final MediaPlayer created = player;
         startHealthWatch();
         refreshEffectiveSpeed();
         player.setRate(effectiveSpeed());
         player.setVolume(userVolume);
         player.statusProperty().addListener((obs, oldStatus, newStatus) -> {
+            if (player != created) {
+                // stopping a replaced player reports STOPPED late; taken for the new one it
+                // marked a stream that had not loaded as ready and switched off its load timeout
+                return;
+            }
             if (newStatus == MediaPlayer.Status.PLAYING) {
                 everPlayed = true;
                 startCaching();
@@ -252,6 +265,9 @@ public final class PlaybackManager {
         configureSilenceSkipping();
         int startPosition = Math.max(media.getPosition(), DesktopPreferences.getSkipIntroSec() * 1000);
         player.setOnReady(() -> {
+            if (player != created) {
+                return;
+            }
             mediaReady = true;
             int duration = getDuration();
             if (duration > 0) {
@@ -277,6 +293,11 @@ public final class PlaybackManager {
             notifyState();
         });
         player.currentTimeProperty().addListener((obs, oldTime, newTime) -> {
+            if (player != created) {
+                // a tick from the previous episode would count as this one's position, and with
+                // skip-ending on could finish an episode that has only just started
+                return;
+            }
             int positionMs = (int) newTime.toMillis();
             if (positionMs > 0) {
                 lastKnownPositionMs = positionMs;
@@ -284,8 +305,16 @@ public final class PlaybackManager {
             listener.onPositionChanged(positionMs, getDuration());
             checkSkipEnding(positionMs);
         });
-        player.setOnEndOfMedia(this::finishPlayback);
-        player.setOnError(() -> abortPlayback(describeError()));
+        player.setOnEndOfMedia(() -> {
+            if (player == created) {
+                finishPlayback();
+            }
+        });
+        player.setOnError(() -> {
+            if (player == created) {
+                abortPlayback(describeError());
+            }
+        });
         markStarted(currentMedia);
         saveTask = scheduler.scheduleWithFixedDelay(this::saveMedia, 5, 5, TimeUnit.SECONDS);
         notifyState();
@@ -330,13 +359,21 @@ public final class PlaybackManager {
         recordFinishedAction();
         currentMedia.setPosition(0);
         currentMedia.setPlayedDuration(currentMedia.getPlayedDuration() + currentMedia.getDuration());
-        saveMedia();
+        // written as it stands: asking the player now would bring back the position at the end
+        persistMedia(currentMedia);
+        // stop() and playNext() save the episode once more on the way out; it is finished, so
+        // that save has to keep it at the start rather than bring back the position at the end
+        lastKnownPositionMs = 0;
         markPlayed(currentMedia);
         notifyAutoDelete(currentMedia);
         notifyCacheFinished(currentMedia);
         if (stopAfterCurrent) {
             stopAfterCurrent = false;
             stop();
+            Runnable handler = stopAfterCurrentHandler;
+            if (handler != null) {
+                Platform.runLater(handler);
+            }
         } else {
             playNext();
         }
@@ -398,8 +435,11 @@ public final class PlaybackManager {
         } catch (Exception e) {
             // spectrum tuning is best-effort; detection still works on the defaults
         }
+        final MediaPlayer watched = player;
         player.setAudioSpectrumListener((timestamp, duration, magnitudes, phases) -> {
-            silenceSkipper.update(magnitudes, System.currentTimeMillis());
+            if (player == watched) {
+                silenceSkipper.update(magnitudes, System.currentTimeMillis());
+            }
         });
     }
 
@@ -493,6 +533,21 @@ public final class PlaybackManager {
 
     public synchronized boolean isStopAfterCurrent() {
         return stopAfterCurrent;
+    }
+
+    /** Called on the FX thread when playback stopped because stop-after-current was set. */
+    public synchronized void setStopAfterCurrentHandler(Runnable handler) {
+        this.stopAfterCurrentHandler = handler;
+    }
+
+    /** Pauses if something is playing; unlike {@link #togglePlayPause} it never starts playback. */
+    public synchronized void pause() {
+        if (player != null && player.getStatus() == MediaPlayer.Status.PLAYING) {
+            player.pause();
+            saveMedia();
+            recordPlayAction();
+            notifyState();
+        }
     }
 
     /**
@@ -608,6 +663,8 @@ public final class PlaybackManager {
                 FeedItem next = queue.get(i);
                 if (next.getMedia() != null) {
                     queueIndex = i;
+                    // a resume position still waiting for the last episode to load is not this one's
+                    pendingSeekMs = -1;
                     startPlayback(next.getMedia());
                     return;
                 }
@@ -618,16 +675,23 @@ public final class PlaybackManager {
 
     public synchronized void playPrevious() {
         if (player != null && player.getCurrentTime().toSeconds() > 5) {
-            player.seek(Duration.ZERO);
+            seek(0);
             return;
         }
-        if (queueIndex > 0) {
-            queueIndex--;
-            FeedItem previous = queue.get(queueIndex);
+        // walk back past episodes without audio, as playNext walks forward past them
+        for (int i = queueIndex - 1; i >= 0; i--) {
+            FeedItem previous = queue.get(i);
             if (previous.getMedia() != null) {
+                queueIndex = i;
+                pendingSeekMs = -1;
                 startPlayback(previous.getMedia());
                 return;
             }
+        }
+        if (player != null) {
+            // nothing before this episode: start it over rather than stop playback
+            seek(0);
+            return;
         }
         stop();
     }
@@ -950,9 +1014,22 @@ public final class PlaybackManager {
      * started streaming, so a restart would read something the failing source could not give us.
      */
     private boolean canResumeFromNewSource(int positionMs) {
-        return currentMedia != null && !playingFromFile && currentMedia.playableFileUrl() != null
+        return currentMedia != null && !playingFromFile && existingLocalCopy(currentMedia) != null
                 && isPrematureStop(positionMs, trustedDurationMs())
                 && resumeAttempts < MAX_RESUME_ATTEMPTS;
+    }
+
+    /**
+     * The local copy to play: the download if its file is still there, else the playback cache's
+     * copy, else null to stream. A download deleted outside the app is still recorded as present,
+     * and playing that path failed every time instead of falling back to the stream.
+     */
+    static String existingLocalCopy(FeedMedia media) {
+        String download = media.getLocalFileUrl();
+        if (media.localFileAvailable() && download != null && new java.io.File(download).isFile()) {
+            return download;
+        }
+        return media.cacheFileAvailable() ? media.getCacheFileUrl() : null;
     }
 
     static boolean isPrematureStop(int positionMs, int durationMs) {
@@ -1012,13 +1089,20 @@ public final class PlaybackManager {
         }
         int position;
         int duration;
-        if (javafx.application.Platform.isFxApplicationThread()) {
-            // layout thread: reading the player here can block the whole UI in native media code
+        if (!mediaReady) {
+            // until it is ready the player reports position 0; nothing has been played yet, and
+            // saving that 0 wiped the resume point of a stream that was slow to load
             position = media.getPosition();
+            duration = media.getDuration();
+        } else if (Platform.isFxApplicationThread() || Thread.holdsLock(this)) {
+            // no player calls here: on the FX thread they can block the whole UI in native media
+            // code, and with the lock held a wedged player would block everyone waiting for it.
+            // The clock listener keeps the position current; media's own copy is up to 5 s old.
+            int known = lastKnownPositionMs;
+            position = known > 0 ? known : media.getPosition();
             duration = media.getDuration();
         } else {
             try {
-                // never hold the lock while calling into the player: native media calls can block
                 position = (int) activePlayer.getCurrentTime().toMillis();
                 duration = resolveDuration(activePlayer.getTotalDuration(), media.getDuration());
             } catch (Exception e) {
@@ -1029,6 +1113,11 @@ public final class PlaybackManager {
         if (duration > 0) {
             media.setDuration(duration);
         }
+        persistMedia(media);
+    }
+
+    /** Writes the episode's playback state as it stands, without asking the player. */
+    private void persistMedia(FeedMedia media) {
         media.setLastPlayedTimeStatistics(System.currentTimeMillis());
         try {
             database.updatePlaybackState(media);

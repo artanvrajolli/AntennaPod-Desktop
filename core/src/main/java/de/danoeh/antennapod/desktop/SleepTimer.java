@@ -21,6 +21,11 @@ public final class SleepTimer {
     });
     private final Listener listener;
     private ScheduledFuture<?> future;
+    /**
+     * Counts schedules and cancels. An expiry already running when the timer is restarted or
+     * cancelled finds a newer generation and does nothing, instead of switching the new timer off.
+     */
+    private long generation;
     private Mode mode = Mode.OFF;
     private long deadlineMs;
 
@@ -33,7 +38,7 @@ public final class SleepTimer {
         mode = Mode.AFTER_MINUTES;
         deadlineMs = System.currentTimeMillis() + minutes * 60_000L;
         persist();
-        future = scheduler.schedule(this::expire, minutes * 60_000L, TimeUnit.MILLISECONDS);
+        schedule(minutes * 60_000L);
     }
 
     synchronized void startMillis(long millis) {
@@ -41,7 +46,7 @@ public final class SleepTimer {
         mode = Mode.AFTER_MINUTES;
         deadlineMs = System.currentTimeMillis() + millis;
         persist();
-        future = scheduler.schedule(this::expire, millis, TimeUnit.MILLISECONDS);
+        schedule(millis);
     }
 
     public synchronized void startEndOfEpisode() {
@@ -58,7 +63,13 @@ public final class SleepTimer {
         persist();
     }
 
+    private void schedule(long delayMs) {
+        long scheduled = generation;
+        future = scheduler.schedule(() -> expire(scheduled), delayMs, TimeUnit.MILLISECONDS);
+    }
+
     private void cancelLocked() {
+        generation++;
         if (future != null) {
             future.cancel(false);
             future = null;
@@ -87,20 +98,24 @@ public final class SleepTimer {
                 cancelLocked();
                 mode = Mode.AFTER_MINUTES;
                 deadlineMs = savedDeadline;
-                future = scheduler.schedule(this::expire, remaining, TimeUnit.MILLISECONDS);
+                schedule(remaining);
             } else {
                 DesktopPreferences.setSleepTimerMode("off");
             }
         }
     }
 
-    private void expire() {
+    private void expire(long scheduled) {
         synchronized (this) {
+            if (scheduled != generation) {
+                return;
+            }
             mode = Mode.OFF;
             deadlineMs = 0;
             future = null;
+            // inside the lock, so it cannot land after a timer started meanwhile has saved itself
+            DesktopPreferences.setSleepTimerMode("off");
         }
-        DesktopPreferences.setSleepTimerMode("off");
         listener.onTimerExpired();
     }
 

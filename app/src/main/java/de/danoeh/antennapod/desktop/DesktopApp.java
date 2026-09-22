@@ -254,15 +254,23 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         this.syncManager = syncManager;
         scheduleAutoSync();
         sleepTimer = new SleepTimer(() -> {
-            if (playback.isPlaying()) {
-                playback.togglePlayPause();
-            }
+            // pause only: toggling could start playback if it stopped in the meantime
+            playback.pause();
             setStatus("Sleep timer expired, playback paused");
         });
         sleepTimer.restore();
         if (sleepTimer.getMode() == SleepTimer.Mode.END_OF_EPISODE) {
             playback.setStopAfterCurrent(true);
         }
+        playback.setStopAfterCurrentHandler(() -> {
+            // the end-of-episode timer has done its job; left on, it showed "episode" without
+            // stopping the next one and came back at the next launch to stop an episode unasked
+            if (sleepTimer.getMode() == SleepTimer.Mode.END_OF_EPISODE) {
+                sleepTimer.cancel();
+                updateSleepButton();
+                setStatus("Sleep timer: stopped at the end of the episode");
+            }
+        });
         javafx.animation.Timeline sleepTicker = new javafx.animation.Timeline(
                 new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1),
                         event -> updateSleepButton()));
