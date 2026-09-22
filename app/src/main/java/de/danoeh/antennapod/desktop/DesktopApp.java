@@ -1889,15 +1889,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private void unsubscribe(Feed feed) {
         background.submit(() -> {
             try {
-                for (FeedItem item : database.getItemsOfFeed(feed.getId())) {
-                    if (item.getMedia() != null && item.getMedia().getLocalFileUrl() != null) {
-                        new File(item.getMedia().getLocalFileUrl()).delete();
-                    }
-                    if (item.getMedia() != null) {
-                        deleteCachedCopy(item.getMedia());
-                    }
-                }
-                database.deleteFeed(feed.getId());
+                feedUpdater.unsubscribe(feed.getId());
                 setStatus("Unsubscribed from " + feed.getTitle());
                 Platform.runLater(() -> {
                     episodes.clear();

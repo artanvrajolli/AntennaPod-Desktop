@@ -17,12 +17,16 @@ import de.danoeh.antennapod.net.sync.serviceinterface.UploadChangesResponse;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 public class SyncManager {
     private static final String STATE_SUB_TIMESTAMP = "syncSubTimestamp";
+    private static final String STATE_PENDING_SUBSCRIPTIONS = "syncPendingSubscriptions";
+    /** How close to the end a synced position has to be for the episode to count as played. */
+    private static final int ALMOST_ENDED_MS = 30_000;
     private static final String STATE_ACTION_TIMESTAMP = "syncActionTimestamp";
 
     private final DesktopDatabase database;
@@ -125,6 +129,18 @@ public class SyncManager {
         }
     }
 
+    /** Subscriptions added on another device that could not be subscribed to yet. */
+    List<String> pendingSubscriptions() throws Exception {
+        String stored = database.getSyncState(STATE_PENDING_SUBSCRIPTIONS, "");
+        List<String> urls = new ArrayList<>();
+        for (String url : stored.split("\n")) {
+            if (!url.isBlank()) {
+                urls.add(url.trim());
+            }
+        }
+        return urls;
+    }
+
     private void ensureDevice(ISyncService service) {
         if (!(service instanceof GpodnetService)) {
             return;
@@ -156,21 +172,29 @@ public class SyncManager {
         for (Feed feed : database.getAllFeeds()) {
             localUrls.add(feed.getDownloadUrl());
         }
+        // The timestamp above has already moved past these changes, so a subscription that fails
+        // now (a timeout, a 5xx) would never be offered again. Keep it and retry on later syncs.
+        Set<String> wanted = new LinkedHashSet<>(pendingSubscriptions());
+        wanted.addAll(changes.getAdded());
+        wanted.removeAll(changes.getRemoved());
+        List<String> stillPending = new ArrayList<>();
         int added = 0;
-        for (String url : changes.getAdded()) {
+        for (String url : wanted) {
             if (!localUrls.contains(url)) {
                 try {
                     feedUpdater.subscribe(url);
                     added++;
                 } catch (Exception e) {
                     e.printStackTrace();
+                    stillPending.add(url);
                 }
             }
         }
+        database.setSyncState(STATE_PENDING_SUBSCRIPTIONS, String.join("\n", stillPending));
         for (String url : changes.getRemoved()) {
             Feed feed = database.getFeedByDownloadUrl(url);
             if (feed != null) {
-                database.deleteFeed(feed.getId());
+                feedUpdater.unsubscribe(feed.getId());
             }
         }
 
@@ -277,13 +301,18 @@ public class SyncManager {
                 return false;
             }
             FeedMedia media = item.getMedia();
-            if (action.getTotal() > 0) {
-                media.setDuration(action.getTotal() * 1000);
+            // the duration known here wins, as in AntennaPod for Android: the sender's total can
+            // be a guess, and older builds of this app sent 1 second for an unknown duration,
+            // which then marked episodes played and stored as one second long
+            int durationMs = media.getDuration();
+            if (durationMs <= 0 && action.getTotal() > 0) {
+                durationMs = action.getTotal() * 1000;
+                media.setDuration(durationMs);
             }
             if (action.getPosition() >= 0) {
                 media.setPosition(action.getPosition() * 1000);
             }
-            if (action.getTotal() > 0 && action.getPosition() >= action.getTotal() - 30) {
+            if (action.getTotal() > 0 && isAlmostEnded(action.getPosition() * 1000, durationMs)) {
                 item.setPlayed(true);
                 database.setItemState(item.getId(), item.getPlayState());
                 media.setPosition(0);
@@ -301,6 +330,22 @@ public class SyncManager {
             e.printStackTrace();
             return false;
         }
+    }
+
+    /**
+     * Whether a position counts as having finished the episode: within 30 seconds of the end, or
+     * within the last tenth for short episodes, so a 20-second clip is not finished by starting it.
+     */
+    static boolean isAlmostEnded(int positionMs, int durationMs) {
+        if (durationMs <= 0 || positionMs < 0) {
+            return false;
+        }
+        return positionMs >= durationMs - Math.min(ALMOST_ENDED_MS, durationMs / 10);
+    }
+
+    /** Total in seconds for an episode action; 0 when unknown, which receivers ignore. */
+    static int totalSeconds(FeedMedia media) {
+        return Math.max(media.getDuration() / 1000, 0);
     }
 
     public void recordPlayAction(FeedMedia media) {
@@ -321,7 +366,7 @@ public class SyncManager {
             builder.currentTimestamp();
             builder.started(0);
             builder.position(media.getPosition() / 1000);
-            builder.total(Math.max(media.getDuration() / 1000, 1));
+            builder.total(totalSeconds(media));
             EpisodeAction action = builder.build();
             database.enqueueSyncAction(action.getPodcast(), action.getEpisode(), action.getGuid(),
                     action.getAction().name(), action.getTimestamp().getTime(),
@@ -344,7 +389,7 @@ public class SyncManager {
             if (feed == null || item.getMedia().getDownloadUrl() == null) {
                 return;
             }
-            int totalSec = Math.max(item.getMedia().getDuration() / 1000, 1);
+            int totalSec = totalSeconds(item.getMedia());
             EpisodeAction.Builder builder = new EpisodeAction.Builder(item, EpisodeAction.Action.PLAY);
             builder.currentTimestamp();
             builder.started(0);

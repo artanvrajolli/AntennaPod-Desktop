@@ -79,6 +79,30 @@ public final class FeedUpdater {
         return database.getFeed(downloaded.getId());
     }
 
+    /**
+     * Removes a subscription together with its downloads and cached copies. Used both when the
+     * user unsubscribes and when sync reports the feed removed on another device, which used to
+     * drop only the database rows and leave the files on disk with nothing pointing at them.
+     */
+    public void unsubscribe(long feedId) throws Exception {
+        for (FeedItem item : database.getItemsOfFeed(feedId)) {
+            FeedMedia media = item.getMedia();
+            if (media == null) {
+                continue;
+            }
+            if (media.getLocalFileUrl() != null) {
+                new File(media.getLocalFileUrl()).delete();
+            }
+            if (media.getCacheFileUrl() != null) {
+                new File(media.getCacheFileUrl()).delete();
+            }
+        }
+        database.deleteFeed(feedId);
+        // the per-feed folders are empty now unless something else lives there
+        new File(DesktopPreferences.getMediaDir(), String.valueOf(feedId)).delete();
+        new File(DesktopPreferences.getEpisodeCacheDir(), String.valueOf(feedId)).delete();
+    }
+
     public List<FeedItem> refresh(Feed feed) throws Exception {
         Feed downloaded = downloadAndParse(feed.getDownloadUrl());
         feed.setTitle(downloaded.getTitle());

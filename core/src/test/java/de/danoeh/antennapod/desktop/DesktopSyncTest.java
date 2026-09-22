@@ -1,12 +1,16 @@
 package de.danoeh.antennapod.desktop;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import androidx.core.util.Pair;
 import com.sun.net.httpserver.HttpServer;
 import de.danoeh.antennapod.model.feed.Feed;
 import de.danoeh.antennapod.model.feed.FeedItem;
+import de.danoeh.antennapod.model.feed.FeedMedia;
 import de.danoeh.antennapod.net.sync.service.EpisodeActionFilter;
 import de.danoeh.antennapod.net.sync.serviceinterface.EpisodeAction;
 import de.danoeh.antennapod.net.sync.serviceinterface.EpisodeActionChanges;
@@ -309,6 +313,7 @@ public class DesktopSyncTest {
         FeedItem item = stored.getItems().get(0);
         item.setFeed(stored);
         item.getMedia().setDuration(600000);
+        database.updatePlaybackState(item.getMedia());
 
         SyncManager manager = new TestSyncManager(database, updater, fakeService);
         EpisodeAction remoteFinished = new EpisodeAction.Builder(
@@ -324,6 +329,126 @@ public class DesktopSyncTest {
         assertTrue(result.playedItemIds.contains(item.getId()));
         assertTrue(result.unplayedItemIds.isEmpty());
         assertTrue(database.getItem(item.getId()).isPlayed());
+    }
+
+    @Test
+    public void testFailedRemoteSubscriptionIsRetriedOnTheNextSync() throws Exception {
+        FeedUpdater updater = new FeedUpdater(database);
+        String flaky = baseUrl + "/flaky.xml";
+        fakeService.remoteAdded.add(flaky);
+        server.createContext("/flaky.xml", exchange -> {
+            exchange.sendResponseHeaders(503, -1);
+            exchange.close();
+        });
+        SyncManager manager = new TestSyncManager(database, updater, fakeService);
+
+        SyncManager.SyncResult first = manager.sync();
+        assertEquals(0, first.subscriptionsAdded);
+        assertEquals(List.of(flaky), manager.pendingSubscriptions());
+
+        // the server offers each change once; the next sync has nothing new to say about it
+        fakeService.remoteAdded.clear();
+        server.removeContext("/flaky.xml");
+        SyncManager.SyncResult second = manager.sync();
+
+        assertEquals(1, second.subscriptionsAdded);
+        assertNotNull(database.getFeedByDownloadUrl(flaky));
+        assertTrue(manager.pendingSubscriptions().isEmpty());
+    }
+
+    @Test
+    public void testPendingSubscriptionRemovedRemotelyIsDropped() throws Exception {
+        FeedUpdater updater = new FeedUpdater(database);
+        String flaky = baseUrl + "/flaky.xml";
+        fakeService.remoteAdded.add(flaky);
+        server.createContext("/flaky.xml", exchange -> {
+            exchange.sendResponseHeaders(503, -1);
+            exchange.close();
+        });
+        SyncManager manager = new TestSyncManager(database, updater, fakeService);
+        manager.sync();
+
+        fakeService.remoteAdded.clear();
+        fakeService.remoteRemoved.add(flaky);
+        server.removeContext("/flaky.xml");
+        manager.sync();
+
+        assertNull(database.getFeedByDownloadUrl(flaky));
+        assertTrue(manager.pendingSubscriptions().isEmpty());
+    }
+
+    @Test
+    public void testRemoteRemovalDeletesDownloadedFiles() throws Exception {
+        FeedUpdater updater = new FeedUpdater(database);
+        Feed feed = updater.subscribe(baseUrl + "/local.xml");
+        FeedMedia media = database.getItemsOfFeed(feed.getId()).get(0).getMedia();
+        File download = new File(new File(DesktopPreferences.getMediaDir(), String.valueOf(feed.getId())),
+                media.getId() + "-ep1.mp3");
+        download.getParentFile().mkdirs();
+        Files.writeString(download.toPath(), "audio");
+        database.setMediaDownloaded(media.getId(), download.getAbsolutePath(), 1000L, 5L);
+        File cached = new File(new File(DesktopPreferences.getEpisodeCacheDir(), String.valueOf(feed.getId())),
+                media.getId() + "-ep1.mp3");
+        cached.getParentFile().mkdirs();
+        Files.writeString(cached.toPath(), "audio");
+        database.setMediaCacheFile(media.getId(), cached.getAbsolutePath());
+
+        fakeService.remoteRemoved.add(feed.getDownloadUrl());
+        new TestSyncManager(database, updater, fakeService).sync();
+
+        assertNull(database.getFeedByDownloadUrl(feed.getDownloadUrl()));
+        assertFalse("the download outlived its subscription", download.exists());
+        assertFalse("the cached copy outlived its subscription", cached.exists());
+        assertFalse(download.getParentFile().exists());
+    }
+
+    @Test
+    public void testUnknownDurationIsNotSentAsOneSecond() throws Exception {
+        FeedUpdater updater = new FeedUpdater(database);
+        Feed feed = updater.subscribe(baseUrl + "/local.xml");
+        Feed stored = database.getFeed(feed.getId());
+        FeedItem item = stored.getItems().get(0);
+        item.setFeed(stored);
+        item.getMedia().setDuration(0);
+
+        SyncManager manager = new TestSyncManager(database, updater, fakeService);
+        manager.recordPlayedState(item, false);
+
+        assertEquals(0, database.getQueuedSyncActions().get(0).total);
+    }
+
+    @Test
+    public void testRemoteTotalDoesNotOverrideKnownDuration() throws Exception {
+        FeedUpdater updater = new FeedUpdater(database);
+        Feed feed = updater.subscribe(baseUrl + "/local.xml");
+        Feed stored = database.getFeed(feed.getId());
+        FeedItem item = stored.getItems().get(0);
+        item.setFeed(stored);
+        item.getMedia().setPosition(1800000);
+        database.updatePlaybackState(item.getMedia());
+
+        // what an older build sent after marking an episode unplayed with no duration known
+        EpisodeAction oneSecond = new EpisodeAction.Builder(
+                feed.getDownloadUrl(), item.getMedia().getDownloadUrl(), EpisodeAction.Action.PLAY)
+                .timestamp(new Date(System.currentTimeMillis() + 60000))
+                .guid(item.getItemIdentifier())
+                .started(0).position(0).total(1).build();
+        fakeService.remoteActions.add(oneSecond);
+        SyncManager.SyncResult result = new TestSyncManager(database, updater, fakeService).sync();
+
+        FeedMedia reloaded = database.getMedia(item.getMedia().getId());
+        assertEquals("the feed's 1:02:03 stays", 3723000, reloaded.getDuration());
+        assertFalse(database.getItem(item.getId()).isPlayed());
+        assertTrue(result.playedItemIds.isEmpty());
+    }
+
+    @Test
+    public void testAlmostEnded() {
+        assertTrue(SyncManager.isAlmostEnded(3590000, 3600000));
+        assertFalse(SyncManager.isAlmostEnded(3500000, 3600000));
+        assertFalse("starting a short clip does not finish it", SyncManager.isAlmostEnded(0, 20000));
+        assertTrue(SyncManager.isAlmostEnded(19000, 20000));
+        assertFalse(SyncManager.isAlmostEnded(1000, 0));
     }
 
     @Test
