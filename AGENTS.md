@@ -83,3 +83,10 @@ app\build\install\app\bin\app.bat     :: run the installed distribution
   bump `version = '...'` in `app/build.gradle`, push, and stop committing —
   it appears on its own.
 - Version is defined only in `app/build.gradle`; the CI reads it from there.
+- `packaging/windows/main.wxs` is jpackage's own WiX template (JDK 21) with one
+  addition: the exit dialog's optional checkbox starts the app when the wizard
+  is closed. It is passed with `--resource-dir`, and `--win-dir-chooser` is what
+  brings in the wizard it sits on - without it jpackage builds a progress-only
+  installer that closes itself. Keep the file in step if the JDK's template
+  changes; jpackage says `Using custom package resource [Main WiX project file]`
+  when it picks it up. WiX 3 is needed to build an installer locally.
