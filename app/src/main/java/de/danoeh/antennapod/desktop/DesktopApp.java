@@ -3765,9 +3765,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     /**
-     * Brings the playing episode into view when it is in the open list. Selection is left
-     * alone: this only scrolls, so a feed with hundreds of episodes opens on the one that
-     * matters instead of the top.
+     * Brings the playing episode into the middle of the open list, with episodes above and
+     * below it (499 – [500] – 501), instead of the top edge. Selection is left alone: this
+     * only scrolls, so a feed with hundreds of episodes opens on the one that matters.
      */
     private void scrollToCurrentEpisode() {
         if (playback == null || episodeList == null) {
@@ -3781,8 +3781,33 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (index < 0) {
             return;
         }
-        episodeList.scrollTo(index);
+        episodeList.scrollTo(centeredScrollTarget(index, estimateVisibleRows()));
         lastScrolledMediaId = current.getId();
+    }
+
+    /**
+     * The row to put at the top so the playing row lands mid-list: half a page above it,
+     * clamped to the top for the first episodes.
+     */
+    static int centeredScrollTarget(int index, int visibleRows) {
+        return Math.max(0, index - Math.max(1, visibleRows / 2));
+    }
+
+    /** How many episode rows fit on screen, measured off a real cell when one is laid out. */
+    private int estimateVisibleRows() {
+        double height = episodeList.getHeight();
+        if (height <= 0) {
+            return 6;
+        }
+        double cellHeight = 64;
+        for (Node cell : episodeList.lookupAll(".list-cell")) {
+            double cellH = cell.getBoundsInParent().getHeight();
+            if (cellH > 8) {
+                cellHeight = cellH;
+                break;
+            }
+        }
+        return Math.max(1, (int) (height / cellHeight));
     }
 
     /** Row of the media in the list, or -1 when it is filtered out or plays from elsewhere. */

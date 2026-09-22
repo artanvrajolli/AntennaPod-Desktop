@@ -19,6 +19,15 @@ public class EpisodeScrollTest {
     }
 
     @Test
+    public void testPlayingEpisodeLandsMidList() {
+        // ten rows on screen: episode 500 scrolls so row 495 is at the top, leaving
+        // 499 above and 501 below the playing row
+        assertEquals(495, DesktopApp.centeredScrollTarget(500, 10));
+        assertEquals(0, DesktopApp.centeredScrollTarget(2, 10));
+        assertEquals(0, DesktopApp.centeredScrollTarget(0, 10));
+    }
+
+    @Test
     public void testMissingOrFilteredEpisodeGivesMinusOne() {
         List<FeedItem> items = new ArrayList<>();
         items.add(itemWithMedia(1, 11));
