@@ -154,11 +154,11 @@ public class DesktopSettingsTest {
     }
 
     @Test
-    public void testThemeModeDefaultsToAutoAndRoundTrips() {
+    public void testThemeModeDefaultsToDarkAndRoundTrips() {
         Preferences.userNodeForPackage(DesktopPreferences.class).remove("themeMode");
-        assertEquals("auto", DesktopPreferences.getThemeMode());
-        DesktopPreferences.setThemeMode("dark");
         assertEquals("dark", DesktopPreferences.getThemeMode());
+        DesktopPreferences.setThemeMode("auto");
+        assertEquals("auto", DesktopPreferences.getThemeMode());
         DesktopPreferences.setThemeMode("light");
         assertEquals("light", DesktopPreferences.getThemeMode());
     }

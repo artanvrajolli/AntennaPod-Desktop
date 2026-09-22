@@ -219,7 +219,7 @@ public final class DesktopPreferences {
     }
 
     public static String getThemeMode() {
-        return PREFS.get("themeMode", "auto");
+        return PREFS.get("themeMode", "dark");
     }
 
     public static void setThemeMode(String mode) {
