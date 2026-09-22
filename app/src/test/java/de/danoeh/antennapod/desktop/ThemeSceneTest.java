@@ -39,6 +39,7 @@ public class ThemeSceneTest {
 
     private static void verifyTrayControls() {
         java.util.List<String> actions = new java.util.ArrayList<>();
+        boolean[] silenceSkipping = {false};
         TrayManager manager = new TrayManager();
         javafx.scene.layout.VBox panel = manager.buildControls(new TrayManager.Callbacks() {
             public void onPlayPause() { actions.add("play"); }
@@ -49,6 +50,11 @@ public class ThemeSceneTest {
             public void onSeek(int positionMs) { actions.add("seek:" + positionMs); }
             public void onShow() { actions.add("show"); }
             public void onExit() { actions.add("exit"); }
+            public boolean isSilenceSkipping() { return silenceSkipping[0]; }
+            public void onSilenceSkipping(boolean enabled) {
+                silenceSkipping[0] = enabled;
+                actions.add("silence:" + enabled);
+            }
         });
         javafx.scene.layout.HBox transport = (javafx.scene.layout.HBox) panel.getChildren().get(1);
         org.junit.Assert.assertEquals(5, transport.getChildren().size());
@@ -69,12 +75,23 @@ public class ThemeSceneTest {
         progressSlider.setValue(120000);
         progressSlider.getOnMousePressed().handle(null);
         progressSlider.getOnMouseReleased().handle(null);
-        javafx.scene.layout.HBox footer = (javafx.scene.layout.HBox) panel.getChildren().get(3);
+        javafx.scene.layout.HBox options = (javafx.scene.layout.HBox) panel.getChildren().get(3);
+        javafx.scene.control.CheckBox silence =
+                (javafx.scene.control.CheckBox) options.getChildren().get(0);
+        org.junit.Assert.assertEquals("Skip silence", silence.getText());
+        assertFalse("the tray has to open showing the state it really is in", silence.isSelected());
+        silence.fire();
+        assertTrue(silence.isSelected());
+        assertTrue(silenceSkipping[0]);
+        // switched in the window instead: the tray toggle has to follow
+        manager.updateSilenceSkipping(false);
+        assertFalse(silence.isSelected());
+        javafx.scene.layout.HBox footer = (javafx.scene.layout.HBox) panel.getChildren().get(4);
         for (javafx.scene.Node node : footer.getChildren()) {
             ((javafx.scene.control.Button) node).fire();
         }
         org.junit.Assert.assertEquals(java.util.List.of("previous", "back", "play", "forward", "next",
-                "seek:120000", "show", "exit"), actions);
+                "seek:120000", "silence:true", "show", "exit"), actions);
         manager.remove();
         manager.remove();
     }

@@ -40,6 +40,8 @@ import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.Slider;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.control.ToolBar;
@@ -146,6 +148,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private volatile long loadingMediaId = -1;
     private final TrayManager trayManager = new TrayManager();
     private boolean trayActive;
+    /** The app's own icon, in every size, kept so the window icon can go back to it. */
+    private final List<Image> baseIcons = new ArrayList<>();
+    /** The same icons as AWT images, converted once, ready to be drawn on. */
+    private final List<java.awt.image.BufferedImage> baseIconImages = new ArrayList<>();
+    /** The artwork currently drawn into the window icon; "" while it is the plain app icon. */
+    private String taskbarIconArtUrl = "";
     private boolean shuttingDown;
     private Stage mainStage;
     private java.nio.channels.FileChannel instanceLockChannel;
@@ -230,7 +238,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         stage.setTitle(APP_NAME + " " + appVersion());
         stage.setMinWidth(1000);
         stage.setMinHeight(640);
-        stage.getIcons().addAll(appIcons());
+        baseIcons.addAll(appIcons());
+        stage.getIcons().addAll(baseIcons);
         javafx.scene.Parent sceneRoot = appShell;
         if (WindowChrome.isEnabled()) {
             // the style has to be set before the stage is shown, and it cannot be changed after
@@ -329,6 +338,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 trayManager.remove();
                 trayActive = false;
                 shutdown();
+            }
+
+            @Override
+            public boolean isSilenceSkipping() {
+                return playback.isSilenceSkipping();
+            }
+
+            @Override
+            public void onSilenceSkipping(boolean enabled) {
+                setSilenceSkipping(enabled);
             }
         });
         Platform.setImplicitExit(!trayActive);
@@ -1198,12 +1217,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
 
         silenceButton = iconButton(Icons.wave(), "Skip silence");
-        silenceButton.setOnAction(event -> {
-            boolean enabled = !DesktopPreferences.getSkipSilence();
-            playback.setSilenceSkipping(enabled);
-            updateSilenceButtonTooltip();
-            setStatus(enabled ? "Skip silence enabled" : "Skip silence disabled");
-        });
+        silenceButton.setOnAction(event ->
+                setSilenceSkipping(!DesktopPreferences.getSkipSilence()));
         updateSilenceButtonTooltip();
 
         volumeSlider = new Slider(0, 1, DesktopPreferences.getDefaultVolume());
@@ -1991,6 +2006,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         return speed <= 0 ? "global" : String.format(Locale.US, "%.2fx", speed);
     }
 
+    /** The one way silence skipping is switched, whether from the player bar or from the tray. */
+    private void setSilenceSkipping(boolean enabled) {
+        playback.setSilenceSkipping(enabled);
+        updateSilenceButtonTooltip();
+        if (trayActive) {
+            trayManager.updateSilenceSkipping(enabled);
+        }
+        setStatus(enabled ? "Skip silence enabled" : "Skip silence disabled");
+    }
+
     private void updateSilenceButtonTooltip() {
         if (silenceButton != null) {
             boolean enabled = DesktopPreferences.getSkipSilence();
@@ -2187,10 +2212,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void showSettings() {
-        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
-        grid.setHgap(8);
-        grid.setVgap(8);
-        grid.setPadding(new Insets(12));
+        TabPane tabs = new TabPane();
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+
+        // ---- General: appearance, window behaviour, updates ---------------
+        javafx.scene.layout.GridPane grid = settingsGrid();
         int row = 0;
         grid.add(sectionLabel("Appearance"), 0, row++, 2, 1);
         grid.add(new Label("Theme:"), 0, row);
@@ -2198,6 +2224,40 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         themeBox.getItems().addAll(THEME_OPTIONS);
         themeBox.setValue(themeModeLabel(DesktopPreferences.getThemeMode()));
         grid.add(themeBox, 1, row++);
+        grid.add(sectionLabel("Window"), 0, row++, 2, 1);
+        javafx.scene.control.CheckBox closeToTrayBox = new javafx.scene.control.CheckBox(
+                "Keep running in the system tray when the window is closed");
+        closeToTrayBox.setSelected(DesktopPreferences.getCloseToTray());
+        grid.add(closeToTrayBox, 0, row++, 2, 1);
+        javafx.scene.control.CheckBox mediaKeysBox = new javafx.scene.control.CheckBox(
+                "Let the keyboard's media keys control playback from any window");
+        mediaKeysBox.setSelected(DesktopPreferences.getMediaKeysEnabled());
+        mediaKeysBox.setDisable(!MediaKeys.isEnabled());
+        mediaKeysBox.setTooltip(new Tooltip("Play/pause, next, previous and stop. Windows gives "
+                + "each of these keys to one app at a time, so turning this off hands them back "
+                + "to another player."));
+        grid.add(mediaKeysBox, 0, row++, 2, 1);
+        grid.add(sectionLabel("Updates"), 0, row++, 2, 1);
+        Label versionLabel = new Label("Version " + appVersion());
+        versionLabel.getStyleClass().add("muted-label");
+        grid.add(versionLabel, 0, row++, 2, 1);
+        javafx.scene.control.CheckBox updateCheckBox =
+                new javafx.scene.control.CheckBox("Check for updates on startup");
+        updateCheckBox.setSelected(DesktopPreferences.getUpdateCheckEnabled());
+        grid.add(updateCheckBox, 0, row++, 2, 1);
+        Button checkUpdatesButton = new Button("Check for updates");
+        checkUpdatesButton.setOnAction(event -> {
+            // a check the user asked for reports whatever it finds, and offers a skipped release
+            // again, because asking for it is the point
+            DesktopPreferences.setSkippedUpdateVersion("");
+            background.submit(() -> checkForUpdates(true));
+        });
+        grid.add(checkUpdatesButton, 0, row++, 2, 1);
+        tabs.getTabs().add(settingsTab("General", grid));
+
+        // ---- Playback ------------------------------------------------------
+        grid = settingsGrid();
+        row = 0;
         grid.add(sectionLabel("Playback"), 0, row++, 2, 1);
         grid.add(new Label("Default speed:"), 0, row);
         ComboBox<String> settingsSpeedBox = new ComboBox<>();
@@ -2223,6 +2283,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         boostSlider.setMajorTickUnit(3);
         boostSlider.setSnapToTicks(true);
         grid.add(boostSlider, 1, row++);
+        tabs.getTabs().add(settingsTab("Playback", grid));
+
+        // ---- Downloads: download defaults and the episode cache ------------
+        grid = settingsGrid();
+        row = 0;
         grid.add(sectionLabel("Downloads"), 0, row++, 2, 1);
         javafx.scene.control.CheckBox downloadBox =
                 new javafx.scene.control.CheckBox("Auto-download new episodes by default");
@@ -2276,24 +2341,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         openCacheButton.setOnAction(event ->
                 getHostServices().showDocument(DesktopPreferences.getEpisodeCacheDir().toURI().toString()));
         grid.add(openCacheButton, 0, row++, 2, 1);
+        tabs.getTabs().add(settingsTab("Downloads", grid));
 
-        grid.add(sectionLabel("Updates"), 0, row++, 2, 1);
-        Label versionLabel = new Label("Version " + appVersion());
-        versionLabel.getStyleClass().add("muted-label");
-        grid.add(versionLabel, 0, row++, 2, 1);
-        javafx.scene.control.CheckBox updateCheckBox =
-                new javafx.scene.control.CheckBox("Check for updates on startup");
-        updateCheckBox.setSelected(DesktopPreferences.getUpdateCheckEnabled());
-        grid.add(updateCheckBox, 0, row++, 2, 1);
-        Button checkUpdatesButton = new Button("Check for updates");
-        checkUpdatesButton.setOnAction(event -> {
-            // a check the user asked for reports whatever it finds, and offers a skipped release
-            // again, because asking for it is the point
-            DesktopPreferences.setSkippedUpdateVersion("");
-            background.submit(() -> checkForUpdates(true));
-        });
-        grid.add(checkUpdatesButton, 0, row++, 2, 1);
-
+        // ---- Network: refresh schedule and proxy ----------------------------
+        grid = settingsGrid();
+        row = 0;
         grid.add(sectionLabel("Refresh"), 0, row++, 2, 1);
         javafx.scene.control.CheckBox startupBox =
                 new javafx.scene.control.CheckBox("Refresh all on startup");
@@ -2316,19 +2368,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         javafx.scene.control.PasswordField proxyPass = new javafx.scene.control.PasswordField();
         proxyPass.setText(DesktopPreferences.getProxyPassword());
         grid.add(proxyPass, 1, row++);
-        grid.add(sectionLabel("Window"), 0, row++, 2, 1);
-        javafx.scene.control.CheckBox closeToTrayBox = new javafx.scene.control.CheckBox(
-                "Keep running in the system tray when the window is closed");
-        closeToTrayBox.setSelected(DesktopPreferences.getCloseToTray());
-        grid.add(closeToTrayBox, 0, row++, 2, 1);
-        javafx.scene.control.CheckBox mediaKeysBox = new javafx.scene.control.CheckBox(
-                "Let the keyboard's media keys control playback from any window");
-        mediaKeysBox.setSelected(DesktopPreferences.getMediaKeysEnabled());
-        mediaKeysBox.setDisable(!MediaKeys.isEnabled());
-        mediaKeysBox.setTooltip(new Tooltip("Play/pause, next, previous and stop. Windows gives "
-                + "each of these keys to one app at a time, so turning this off hands them back "
-                + "to another player."));
-        grid.add(mediaKeysBox, 0, row++, 2, 1);
+        tabs.getTabs().add(settingsTab("Network", grid));
+
         Label savedLabel = new Label("Changes are saved automatically.");
         savedLabel.setWrapText(true);
         Runnable save = () -> {
@@ -2394,10 +2435,29 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         autoSave(proxyPass, save);
         autoSave(closeToTrayBox.selectedProperty(), save);
         autoSave(mediaKeysBox.selectedProperty(), save);
-        grid.add(savedLabel, 0, row++, 2, 1);
-        javafx.scene.control.ScrollPane scroll = new javafx.scene.control.ScrollPane(grid);
+
+        VBox.setVgrow(tabs, Priority.ALWAYS);
+        HBox savedBar = new HBox(savedLabel);
+        savedBar.setPadding(new Insets(6, 12, 10, 12));
+        showSidebar("Settings", new VBox(tabs, savedBar));
+    }
+
+    /** A fresh grid for one settings tab. */
+    private static javafx.scene.layout.GridPane settingsGrid() {
+        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
+        grid.setHgap(8);
+        grid.setVgap(8);
+        grid.setPadding(new Insets(12));
+        return grid;
+    }
+
+    /** Wraps one settings grid in a scrolling, fixed (non-closable) tab. */
+    private static Tab settingsTab(String title, javafx.scene.layout.GridPane grid) {
+        ScrollPane scroll = new ScrollPane(grid);
         scroll.setFitToWidth(true);
-        showSidebar("Settings", scroll);
+        Tab tab = new Tab(title, scroll);
+        tab.setClosable(false);
+        return tab;
     }
 
     private static Label sectionLabel(String text) {
@@ -2869,7 +2929,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     }
                     updateSyncButtonTooltip();
                     reloadFeeds(null);
-                    episodeList.refresh();
+                    // the sync wrote the new play states straight to the database, while the rows
+                    // still hold the items as they were when the feed was opened: re-read them,
+                    // because re-rendering only redraws what is now stale
+                    Feed open = selectedFeed;
+                    if (open != null) {
+                        loadEpisodes(open);
+                    } else {
+                        episodeList.refresh();
+                    }
                 });
                 setStatus(summary);
             } catch (Exception e) {
@@ -3498,14 +3566,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (nowPlayingArt == null) {
             return;
         }
-        boolean hasMedia = current != null && current.getItem() != null;
-        String artUrl = null;
-        if (hasMedia) {
-            artUrl = current.getItem().getImageUrl();
-            if (artUrl == null || artUrl.isEmpty()) {
-                artUrl = feedImageUrl(current.getItem().getFeedId());
-            }
-        }
+        String artUrl = nowPlayingArtUrl(current);
         setArtColumnWidth(ART_COLUMN_WIDTH);
         if (artUrl == null || artUrl.isEmpty()) {
             nowPlayingArt.setUserData(null);
@@ -3523,6 +3584,80 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         nowPlayingArt.setVisible(true);
         if (artPlaceholder != null) {
             artPlaceholder.setVisible(false);
+        }
+    }
+
+    /** The episode's own image, or the subscription's when the episode brings none. */
+    private String nowPlayingArtUrl(FeedMedia current) {
+        if (current == null || current.getItem() == null) {
+            return null;
+        }
+        String artUrl = current.getItem().getImageUrl();
+        if (artUrl == null || artUrl.isEmpty()) {
+            artUrl = feedImageUrl(current.getItem().getFeedId());
+        }
+        return artUrl;
+    }
+
+    /**
+     * Draws the artwork of whatever is playing into the middle of the window icon, which is the
+     * icon Windows shows on the taskbar button. Goes back to the plain app icon when there is no
+     * artwork to draw, or nothing is playing.
+     */
+    private void updateTaskbarIcon(String artUrl) {
+        if (mainStage == null || !TaskbarIcon.isEnabled()) {
+            return;
+        }
+        String wanted = artUrl != null ? artUrl : "";
+        if (wanted.equals(taskbarIconArtUrl)) {
+            return;
+        }
+        taskbarIconArtUrl = wanted;
+        if (wanted.isEmpty()) {
+            mainStage.getIcons().setAll(baseIcons);
+            return;
+        }
+        Image artwork = ImageCache.get(wanted, TaskbarIcon.ARTWORK_SIZE, TaskbarIcon.ARTWORK_SIZE);
+        if (artwork == null || artwork.isError()) {
+            mainStage.getIcons().setAll(baseIcons);
+            return;
+        }
+        if (artwork.getProgress() < 1) {
+            // still loading: keep the icon that is up and draw this one once the image is there
+            artwork.progressProperty().addListener((obs, oldProgress, progress) -> {
+                if (progress.doubleValue() >= 1 && !artwork.isError()
+                        && wanted.equals(taskbarIconArtUrl)) {
+                    applyTaskbarIcon(artwork);
+                }
+            });
+            return;
+        }
+        applyTaskbarIcon(artwork);
+    }
+
+    private void applyTaskbarIcon(Image artwork) {
+        java.awt.image.BufferedImage source = TaskbarIcon.toAwt(artwork);
+        if (source == null) {
+            mainStage.getIcons().setAll(baseIcons);
+            return;
+        }
+        if (baseIconImages.isEmpty()) {
+            for (Image icon : baseIcons) {
+                java.awt.image.BufferedImage converted = TaskbarIcon.toAwt(icon);
+                if (converted != null) {
+                    baseIconImages.add(converted);
+                }
+            }
+        }
+        List<Image> icons = new ArrayList<>();
+        for (java.awt.image.BufferedImage base : baseIconImages) {
+            Image composed = TaskbarIcon.toFx(TaskbarIcon.compose(base, source));
+            if (composed != null) {
+                icons.add(composed);
+            }
+        }
+        if (!icons.isEmpty()) {
+            mainStage.getIcons().setAll(icons);
         }
     }
 
@@ -3580,6 +3715,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             nowPlayingLabel.setTooltip(null);
         }
         updateNowPlayingArt(current);
+        updateTaskbarIcon(nowPlayingArtUrl(current));
         updatePlayPauseButton();
         if (trayActive) {
             trayManager.update(playback.isPlaying(), title,
@@ -3869,7 +4005,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             for (Region control : fixedControls) {
                 control.setMinWidth(Region.USE_PREF_SIZE);
             }
-            syncBadge.setTooltip(new Tooltip("Updated by the last sync"));
+            syncBadge.setTooltip(
+                    new Tooltip("Appeared in the last sync's episode actions"));
             syncBadge.setVisible(false);
             syncBadge.setManaged(false);
             newBadge.setTooltip(new Tooltip("New episode"));

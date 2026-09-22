@@ -14,6 +14,7 @@ import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.scene.layout.Priority;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Slider;
 import javafx.scene.control.Tooltip;
@@ -50,10 +51,17 @@ public final class TrayManager {
         void onShow();
 
         void onExit();
+
+        /** Whether silence skipping is on right now, so the tray can show its current state. */
+        boolean isSilenceSkipping();
+
+        void onSilenceSkipping(boolean enabled);
     }
 
     private volatile TrayIcon trayIcon;
+    private Callbacks callbacks;
     private Stage controlsWindow;
+    private CheckBox silenceToggle;
     private Button playPauseButton;
     private Label nowPlayingLabel;
     private Label positionLabel;
@@ -120,6 +128,7 @@ public final class TrayManager {
     }
 
     VBox buildControls(Callbacks callbacks) {
+        this.callbacks = callbacks;
         nowPlayingLabel = new Label("Nothing playing");
         nowPlayingLabel.setWrapText(true);
         nowPlayingLabel.setMaxWidth(260);
@@ -156,12 +165,26 @@ public final class TrayManager {
             hideControls();
             callbacks.onExit();
         });
+        silenceToggle = new CheckBox("Skip silence");
+        silenceToggle.setSelected(callbacks.isSilenceSkipping());
+        silenceToggle.setTooltip(new Tooltip("Play through quiet passages faster"));
+        silenceToggle.setOnAction(event ->
+                callbacks.onSilenceSkipping(silenceToggle.isSelected()));
+        HBox options = new HBox(8, silenceToggle);
+        options.setAlignment(Pos.CENTER_LEFT);
         HBox actions = new HBox(8, show, exit);
         actions.setAlignment(Pos.CENTER);
-        VBox panel = new VBox(12, nowPlayingLabel, transport, progressRow, actions);
+        VBox panel = new VBox(12, nowPlayingLabel, transport, progressRow, options, actions);
         panel.setPadding(new Insets(14));
         panel.setPrefWidth(288);
         return panel;
+    }
+
+    /** Keeps the tray's own toggle in step when silence skipping is switched elsewhere. */
+    public void updateSilenceSkipping(boolean enabled) {
+        if (silenceToggle != null) {
+            silenceToggle.setSelected(enabled);
+        }
     }
 
     void updateProgress(int positionMs, int durationMs) {
@@ -211,6 +234,10 @@ public final class TrayManager {
         if (controlsWindow.isShowing()) {
             hideControls();
             return;
+        }
+        if (silenceToggle != null && callbacks != null) {
+            // read it on the way up: it can have been switched in the window since the last look
+            silenceToggle.setSelected(callbacks.isSilenceSkipping());
         }
         Point2D pointer = new javafx.scene.robot.Robot().getMousePosition();
         Rectangle2D bounds = Screen.getScreensForRectangle(pointer.getX(), pointer.getY(), 1, 1)
@@ -304,7 +331,14 @@ public final class TrayManager {
             return defaultIcon;
         }
         Dimension traySize = SystemTray.getSystemTray().getTrayIconSize();
-        return toTrayIcon(source, Math.max(traySize.width, 16), Math.max(traySize.height, 16));
+        int width = Math.max(traySize.width, 16);
+        int height = Math.max(traySize.height, 16);
+        if (!TaskbarIcon.isEnabled()) {
+            // the escape hatch: the artwork on its own, the way the tray drew it before
+            return toTrayIcon(source, width, height);
+        }
+        // the same icon the taskbar button shows: the app icon with the artwork in the middle
+        return TaskbarIcon.compose(TaskbarIcon.scale(defaultIcon, width, height), source);
     }
 
     static BufferedImage toTrayIcon(BufferedImage source, int width, int height) {

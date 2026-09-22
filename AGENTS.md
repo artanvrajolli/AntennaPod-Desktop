@@ -1,6 +1,6 @@
 # AGENTS.md — AntennaPod Desktop
 
-Guidance for coding agents working in this repository. Current version: **0.1.8**.
+Guidance for coding agents working in this repository. Current version: **0.1.10**.
 
 ## What this is
 
@@ -22,14 +22,15 @@ inside `core`.
   - `android/` + `androidx/` — hand-written compatibility shims the ported
     engine depends on (Log, XML, media, collections). Keep them minimal.
   - 20 test classes (JUnit 4) in `core/src/test`.
-- `app/` — JavaFX UI (11 classes under
+- `app/` — JavaFX UI (13 classes under
   `app/src/main/java/de/danoeh/antennapod/desktop`): `DesktopApp` (scenes),
   `PlaybackManager` (JavaFX media playback), `TrayManager` (system tray),
   `WindowChrome` (the app-drawn title bar; the stage is undecorated),
   `WindowsTaskbar` + `ThumbBar` (ITaskbarList3 via JNA: taskbar progress and
-  the media buttons under the taskbar thumbnail), `ThemeManager`/`SystemTheme`,
-  `ImageCache`, `Icons`, `Launcher` (entry point / main class). 11 test classes
-  in `app/src/test`.
+  the media buttons under the taskbar thumbnail), `MediaKeys` (the keyboard's
+  media keys), `TaskbarIcon` (the playing episode's artwork drawn into the
+  window icon), `ThemeManager`/`SystemTheme`, `ImageCache`, `Icons`, `Launcher`
+  (entry point / main class). 13 test classes in `app/src/test`.
 
 ## Build, test, run
 
@@ -58,7 +59,9 @@ app\build\install\app\bin\app.bat     :: run the installed distribution
   piece has an escape hatch: `-Dantennapod.desktop.customchrome=false` restores
   the system title bar, `-Dantennapod.desktop.taskbar=false` drops the taskbar
   progress, `-Dantennapod.desktop.thumbbar=false` leaves the window procedure
-  unsubclassed, `-Dantennapod.desktop.tray=false` disables the tray. Use these
+  unsubclassed, `-Dantennapod.desktop.tray=false` disables the tray,
+  `-Dantennapod.desktop.icon=false` keeps the plain app icon on the taskbar
+  instead of drawing the playing episode's artwork into it. Use these
   to isolate a fault before changing the native code.
 - `core` must not depend on JavaFX; UI code lives in `app`.
 - Shared dependencies are declared in `core/build.gradle` (OkHttp, RxJava3,
