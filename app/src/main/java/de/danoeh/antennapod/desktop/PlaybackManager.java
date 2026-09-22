@@ -75,6 +75,8 @@ public final class PlaybackManager {
     /** Consecutive restarts that did not get playback any further. */
     private int resumeAttempts;
     private int resumeFromPositionMs;
+    /** The episode already marked played and advanced past, so a second end signal cannot do it twice. */
+    private FeedMedia finishedMedia;
 
     /** How often complete silence is checked for and skipped over. */
     private static final long SILENCE_APPLY_INTERVAL_MS = 100;
@@ -214,6 +216,7 @@ public final class PlaybackManager {
         }
         lastKnownPositionMs = 0;
         currentMedia = media;
+        finishedMedia = null;
         String playableFile = media.playableFileUrl();
         playingFromFile = playableFile != null;
         String source = playableFile != null
@@ -305,7 +308,7 @@ public final class PlaybackManager {
     }
 
     private synchronized void finishPlayback() {
-        if (currentMedia == null) {
+        if (currentMedia == null || currentMedia == finishedMedia) {
             return;
         }
         int positionMs = Math.max(lastKnownPositionMs, currentMedia.getPosition());
@@ -318,9 +321,12 @@ public final class PlaybackManager {
 
     /** Marks the episode played and moves on. Only called once playback really is over. */
     private synchronized void completeEpisode() {
-        if (currentMedia == null) {
+        if (currentMedia == null || currentMedia == finishedMedia) {
             return;
         }
+        // claim it first: end-of-media, skip-ending and the stuck-at-end watchdog below can
+        // all report the same finish, and advancing twice would skip an episode
+        finishedMedia = currentMedia;
         recordFinishedAction();
         currentMedia.setPosition(0);
         currentMedia.setPlayedDuration(currentMedia.getPlayedDuration() + currentMedia.getDuration());
@@ -597,12 +603,14 @@ public final class PlaybackManager {
     }
 
     public synchronized void playNext() {
-        if (queueIndex >= 0 && queueIndex + 1 < queue.size()) {
-            queueIndex++;
-            FeedItem next = queue.get(queueIndex);
-            if (next.getMedia() != null) {
-                startPlayback(next.getMedia());
-                return;
+        if (queueIndex >= 0) {
+            for (int i = queueIndex + 1; i < queue.size(); i++) {
+                FeedItem next = queue.get(i);
+                if (next.getMedia() != null) {
+                    queueIndex = i;
+                    startPlayback(next.getMedia());
+                    return;
+                }
             }
         }
         stop();
@@ -818,6 +826,7 @@ public final class PlaybackManager {
     private void runPlaybackHealthCheck() {
         String failure = null;
         Boolean stalledChange = null;
+        boolean finishAtEnd = false;
         synchronized (this) {
             if (player == null || currentMedia == null) {
                 return;
@@ -843,9 +852,15 @@ public final class PlaybackManager {
                 stalledSince = 0;
                 if (stoppedSince == 0) {
                     stoppedSince = now;
-                } else if (now - stoppedSince >= UNEXPECTED_STOP_GRACE_MS
-                        && canResumeFromNewSource(lastKnownPositionMs)) {
-                    failure = "playback stopped unexpectedly";
+                } else if (now - stoppedSince >= UNEXPECTED_STOP_GRACE_MS) {
+                    if (canResumeFromNewSource(lastKnownPositionMs)) {
+                        failure = "playback stopped unexpectedly";
+                    } else if (lastKnownPositionMs > 0
+                            && !isPrematureStop(lastKnownPositionMs, trustedDurationMs())) {
+                        // end-of-media never fired, but the player stopped at the end: finish
+                        // so the queue advances instead of sitting stopped forever with no error
+                        finishAtEnd = true;
+                    }
                 }
             } else {
                 stalledSince = 0;
@@ -861,6 +876,10 @@ public final class PlaybackManager {
         }
         if (failure != null) {
             abortPlayback(failure);
+        } else if (finishAtEnd) {
+            // via the FX thread, where players are created; the finishedMedia guard makes a
+            // racing end-of-media signal harmless
+            Platform.runLater(this::finishPlayback);
         } else if (stalledChange != null) {
             notifyLoading(stalledChange);
         }
