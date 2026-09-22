@@ -161,6 +161,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private static final int SYNCED_MARKER_FADE_SECONDS = 30;
     private static final double SLIDER_THUMB_DIAMETER = 14;
     private static final double ART_COLUMN_WIDTH = 96;
+    /** Node properties {@link #showHtml} keeps on a shownotes view. */
+    private static final String SHOWN_PAGE = "antennapod.shownPage";
+    private static final String LINKS_TO_BROWSER = "antennapod.linksToBrowser";
     private final javafx.beans.property.DoubleProperty loadingPhase =
             new javafx.beans.property.SimpleDoubleProperty(0);
     private javafx.animation.Timeline loadingPulseTimeline;
@@ -745,16 +748,34 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
     }
 
+    /**
+     * Shows a page in a shownotes view. A link clicked in it opens in the browser and the page is
+     * put back: the view is too small to browse in and has no way back.
+     */
+    private void showHtml(WebView view, String page) {
+        view.getProperties().put(SHOWN_PAGE, page);
+        if (view.getProperties().putIfAbsent(LINKS_TO_BROWSER, Boolean.TRUE) == null) {
+            view.getEngine().locationProperty().addListener((obs, oldLocation, newLocation) -> {
+                if (newLocation != null
+                        && (newLocation.startsWith("http://") || newLocation.startsWith("https://"))) {
+                    getHostServices().showDocument(newLocation);
+                    String shown = (String) view.getProperties().get(SHOWN_PAGE);
+                    Platform.runLater(() -> view.getEngine().loadContent(shown));
+                }
+            });
+        }
+        view.getEngine().loadContent(page);
+    }
+
     private void showUpdateModal(UpdateChecker.Release release, String current) {
         Label heading = new Label("AntennaPod Desktop " + release.version);
         heading.setStyle("-fx-font-size: 15px; -fx-font-weight: bold;");
         Label installed = new Label("You have " + current);
         installed.getStyleClass().add("muted-label");
 
-        javafx.scene.web.WebView notes = new javafx.scene.web.WebView();
+        WebView notes = new WebView();
         notes.setPrefHeight(240);
-        notes.getEngine().loadContent(Shownotes.toPage(null,
-                releaseNotesHtml(release.notes), ThemeManager.isDark()));
+        showHtml(notes, Shownotes.toPage(null, releaseNotesHtml(release.notes), ThemeManager.isDark()));
 
         Label status = new Label();
         status.setWrapText(true);
@@ -2599,17 +2620,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         meta.setText(metaText.toString());
         meta.setPadding(new Insets(8, 8, 0, 8));
-        javafx.scene.web.WebView webView = new javafx.scene.web.WebView();
-        javafx.scene.web.WebEngine engine = webView.getEngine();
-        String page = Shownotes.toPage(item.getTitle(), item.getDescription(), ThemeManager.isDark());
-        engine.loadContent(page);
-        engine.locationProperty().addListener((obs, oldLocation, newLocation) -> {
-            if (newLocation != null
-                    && (newLocation.startsWith("http://") || newLocation.startsWith("https://"))) {
-                getHostServices().showDocument(newLocation);
-                Platform.runLater(() -> engine.loadContent(page));
-            }
-        });
+        WebView webView = new WebView();
+        showHtml(webView, Shownotes.toPage(item.getTitle(), item.getDescription(), ThemeManager.isDark()));
         Button websiteButton = new Button("Open episode website");
         websiteButton.setDisable(item.getLink() == null || item.getLink().isEmpty());
         websiteButton.setOnAction(event -> getHostServices().showDocument(item.getLink()));
@@ -3144,10 +3156,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         HBox buttons = new HBox(8, subscribeButton, websiteButton, copyButton);
 
-        javafx.scene.web.WebView description = new javafx.scene.web.WebView();
+        WebView description = new WebView();
         description.setPrefHeight(260);
-        javafx.scene.web.WebEngine engine = description.getEngine();
-        engine.loadContent(Shownotes.toPage(null, "<p>Loading description\u2026</p>",
+        showHtml(description, Shownotes.toPage(null, "<p>Loading description\u2026</p>",
                 ThemeManager.isDark()));
 
         Label feedUrlLabel = new Label(result.feedUrl);
@@ -3161,7 +3172,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
         if (result.feedUrl == null || result.feedUrl.isEmpty()) {
             meta.setText("This result has no feed address.");
-            engine.loadContent(Shownotes.toPage(null, "", ThemeManager.isDark()));
+            showHtml(description, Shownotes.toPage(null, "", ThemeManager.isDark()));
             return;
         }
         background.submit(() -> {
@@ -3171,7 +3182,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     meta.setText(describePodcast(feed));
                     String html = feed.getDescription() == null || feed.getDescription().isEmpty()
                             ? "<p><i>This podcast has no description.</i></p>" : feed.getDescription();
-                    engine.loadContent(Shownotes.toPage(null, html, ThemeManager.isDark()));
+                    showHtml(description, Shownotes.toPage(null, html, ThemeManager.isDark()));
                     String link = feed.getLink();
                     websiteButton.setDisable(link == null || link.isEmpty());
                     websiteButton.setOnAction(event -> getHostServices().showDocument(link));
@@ -3181,7 +3192,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             } catch (Exception e) {
                 Platform.runLater(() -> {
                     meta.setText("Could not load details: " + e.getMessage());
-                    engine.loadContent(Shownotes.toPage(null, "", ThemeManager.isDark()));
+                    showHtml(description, Shownotes.toPage(null, "", ThemeManager.isDark()));
                 });
             }
         });
