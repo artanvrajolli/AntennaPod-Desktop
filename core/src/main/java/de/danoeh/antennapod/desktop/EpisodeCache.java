@@ -99,7 +99,7 @@ public final class EpisodeCache {
             if (!media.cacheFileAvailable()) {
                 media.setCacheFileUrl(target.getAbsolutePath());
                 try {
-                    database.updateMedia(media);
+                    database.setMediaCacheFile(media.getId(), media.getCacheFileUrl());
                 } catch (SQLException e) {
                     report("Could not update episode cache: " + e.getMessage());
                 }
@@ -156,7 +156,7 @@ public final class EpisodeCache {
                 }
             });
             media.setCacheFileUrl(target.getAbsolutePath());
-            database.updateMedia(media);
+            database.setMediaCacheFile(media.getId(), media.getCacheFileUrl());
         } catch (Exception e) {
             target.delete();
             new File(target.getAbsolutePath() + ".part").delete();
@@ -198,7 +198,7 @@ public final class EpisodeCache {
         pendingEvictions.remove(media.getId());
         media.setCacheFileUrl(null);
         try {
-            database.updateMedia(media);
+            database.setMediaCacheFile(media.getId(), null);
         } catch (SQLException e) {
             report("Could not update episode cache: " + e.getMessage());
         }

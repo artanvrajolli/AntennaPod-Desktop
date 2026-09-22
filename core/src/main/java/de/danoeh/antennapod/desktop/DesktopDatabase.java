@@ -432,6 +432,79 @@ public final class DesktopDatabase implements AutoCloseable {
         }
     }
 
+    // The writers below each own a few columns. updateMedia writes every column from whatever
+    // instance the caller holds, so a download, the playback cache, a feed refresh and the player
+    // - each holding its own copy loaded at a different time - would undo one another's changes.
+
+    /** Records a finished download. Position, history and the playback cache are left alone. */
+    public synchronized void setMediaDownloaded(long mediaId, String localFileUrl, long downloadDate,
+            long size) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "UPDATE feed_media SET local_file_url = ?, download_date = ?,"
+                        + " size = CASE WHEN ? > 0 THEN ? ELSE size END WHERE id = ?")) {
+            stmt.setString(1, localFileUrl);
+            stmt.setLong(2, downloadDate);
+            stmt.setLong(3, size);
+            stmt.setLong(4, size);
+            stmt.setLong(5, mediaId);
+            stmt.executeUpdate();
+        }
+    }
+
+    /** Forgets an episode's download once its file is gone. */
+    public synchronized void clearMediaDownload(long mediaId) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "UPDATE feed_media SET local_file_url = NULL, download_date = 0 WHERE id = ?")) {
+            stmt.setLong(1, mediaId);
+            stmt.executeUpdate();
+        }
+    }
+
+    /** Records where the playback cache keeps an episode, or null once the copy is dropped. */
+    public synchronized void setMediaCacheFile(long mediaId, String cacheFileUrl) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "UPDATE feed_media SET cache_file_url = ? WHERE id = ?")) {
+            setNullable(stmt, 1, cacheFileUrl);
+            stmt.setLong(2, mediaId);
+            stmt.executeUpdate();
+        }
+    }
+
+    /** Saves how far an episode has been listened to. Its files are left alone. */
+    public synchronized void updatePlaybackState(FeedMedia media) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "UPDATE feed_media SET duration = ?, position = ?, played_duration = ?,"
+                        + " last_played_statistics = ?, last_played_history = ? WHERE id = ?")) {
+            stmt.setInt(1, media.getDuration());
+            stmt.setInt(2, media.getPosition());
+            stmt.setInt(3, media.getPlayedDuration());
+            stmt.setLong(4, media.getLastPlayedTimeStatistics());
+            Date history = media.getLastPlayedTimeHistory();
+            stmt.setLong(5, history != null ? history.getTime() : 0);
+            stmt.setLong(6, media.getId());
+            stmt.executeUpdate();
+        }
+    }
+
+    /**
+     * Takes over what a feed refresh says about an episode's enclosure. A duration already known is
+     * kept, since the player measures it more precisely than the feed states it.
+     */
+    public synchronized void updateMediaFromFeed(FeedMedia media) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "UPDATE feed_media SET download_url = ?, mime_type = COALESCE(?, mime_type),"
+                        + " size = CASE WHEN ? > 0 THEN ? ELSE size END,"
+                        + " duration = CASE WHEN duration <= 0 THEN ? ELSE duration END WHERE id = ?")) {
+            setNullable(stmt, 1, media.getDownloadUrl());
+            setNullable(stmt, 2, media.getMimeType());
+            stmt.setLong(3, media.getSize());
+            stmt.setLong(4, media.getSize());
+            stmt.setInt(5, media.getDuration());
+            stmt.setLong(6, media.getId());
+            stmt.executeUpdate();
+        }
+    }
+
     public synchronized void addToPlaybackHistory(long mediaId, Date date) throws SQLException {
         try (PreparedStatement stmt = connection.prepareStatement(
                 "UPDATE feed_media SET last_played_history = ? WHERE id = ?")) {

@@ -64,7 +64,8 @@ public final class EpisodeDownloader {
             fetchToFile(media, target, listener);
             media.setLocalFileUrl(target.getAbsolutePath());
             media.setDownloaded(true, System.currentTimeMillis());
-            database.updateMedia(media);
+            database.setMediaDownloaded(media.getId(), media.getLocalFileUrl(), media.getDownloadDate(),
+                    media.getSize());
             listener.onFinished(media.getId(), target);
         } catch (Exception e) {
             target.delete();
@@ -117,10 +118,12 @@ public final class EpisodeDownloader {
         }
     }
 
-    private File targetFile(FeedMedia media) {
+    static File targetFile(FeedMedia media) {
         long feedId = media.getItem() != null ? media.getItem().getFeedId() : 0;
+        // the media id keeps episodes whose URLs share a file name (".../media.mp3?id=...") apart;
+        // without it one download replaced another and both episodes played the same audio
         return new File(new File(DesktopPreferences.getMediaDir(), String.valueOf(feedId)),
-                fileNameFor(media));
+                media.getId() + "-" + fileNameFor(media));
     }
 
     /** File name used for an episode's local copy, shared by downloads and the playback cache. */

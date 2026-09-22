@@ -3473,8 +3473,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 for (FeedMedia media : deletable) {
                     new File(media.getLocalFileUrl()).delete();
                     media.setLocalFileUrl(null);
-                    deleteCachedCopy(media);
-                    database.updateMedia(media);
+                    database.clearMediaDownload(media.getId());
+                    if (deleteCachedCopy(media)) {
+                        database.setMediaCacheFile(media.getId(), null);
+                    }
                 }
                 setStatus("Deleted downloads: "
                         + (deletable.size() == 1 ? "1 episode" : deletable.size() + " episodes"));
@@ -3485,11 +3487,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
     }
 
-    private static void deleteCachedCopy(FeedMedia media) {
-        if (media.getCacheFileUrl() != null) {
-            new File(media.getCacheFileUrl()).delete();
-            media.setCacheFileUrl(null);
+    /** Deletes the playback cache's copy of an episode; true if there was one. */
+    private static boolean deleteCachedCopy(FeedMedia media) {
+        if (media.getCacheFileUrl() == null) {
+            return false;
         }
+        new File(media.getCacheFileUrl()).delete();
+        media.setCacheFileUrl(null);
+        return true;
     }
 
     private boolean hasDownloadable(List<FeedItem> items) {
@@ -3526,7 +3531,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 if (media.getLocalFileUrl() != null) {
                     new File(media.getLocalFileUrl()).delete();
                     media.setLocalFileUrl(null);
-                    database.updateMedia(media);
+                    database.clearMediaDownload(media.getId());
                     setStatus("Auto-deleted: " + media.getHumanReadableIdentifier());
                     Platform.runLater(episodeList::refresh);
                 }

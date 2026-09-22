@@ -294,7 +294,7 @@ public class SyncManager {
                 media.setPosition(0);
                 unplayedIds.add(item.getId());
             }
-            database.updateMedia(media);
+            database.updatePlaybackState(media);
             changedIds.add(item.getId());
             return true;
         } catch (Exception e) {

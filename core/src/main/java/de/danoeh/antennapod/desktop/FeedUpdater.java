@@ -111,11 +111,13 @@ public final class FeedUpdater {
             } else {
                 known.updateFromOther(parsed);
                 database.updateItem(known);
-                if (known.getMedia() != null) {
-                    database.updateMedia(known.getMedia());
-                } else if (parsed.getMedia() != null) {
-                    parsed.getMedia().setItemId(known.getId());
-                    database.insertMedia(known.getId(), parsed.getMedia());
+                FeedMedia media = known.getMedia();
+                if (media != null && media.getId() > 0) {
+                    database.updateMediaFromFeed(media);
+                } else if (media != null) {
+                    // updateFromOther adopts the parsed enclosure when the episode had none yet
+                    media.setItemId(known.getId());
+                    database.insertMedia(known.getId(), media);
                 }
                 if (known.getChapters() != null && !known.getChapters().isEmpty()) {
                     database.saveChapters(known.getId(), known.getChapters());

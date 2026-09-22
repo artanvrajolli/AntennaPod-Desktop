@@ -1031,7 +1031,7 @@ public final class PlaybackManager {
         }
         media.setLastPlayedTimeStatistics(System.currentTimeMillis());
         try {
-            database.updateMedia(media);
+            database.updatePlaybackState(media);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -1056,7 +1056,7 @@ public final class PlaybackManager {
                 database.setItemState(media.getItem().getId(), media.getItem().getPlayState());
             }
             media.setLastPlayedTimeHistory(new java.util.Date());
-            database.updateMedia(media);
+            database.updatePlaybackState(media);
         } catch (Exception e) {
             e.printStackTrace();
         }
