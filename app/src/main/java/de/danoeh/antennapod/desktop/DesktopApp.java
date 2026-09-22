@@ -126,6 +126,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private String seekAccentUrl = "";
     /** The accent the track was last painted with, so a new cover repaints even at 0%. */
     private String paintedAccent;
+    /**
+     * The playing episode the list was last scrolled to. Scrolling happens once per episode,
+     * so pausing or buffering never yanks the list back after the user scrolled away.
+     */
+    private long lastScrolledMediaId = -1;
     private StackPane ghostMarker;
     private Slider volumeSlider;
     private ComboBox<String> speedBox;
@@ -1707,6 +1712,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                         sortBoxProgrammatic = false;
                     }
                     episodes.setAll(items);
+                    // a big feed opens at the top; bring the playing episode into view instead
+                    scrollToCurrentEpisode();
                 });
             } catch (Exception e) {
                 setStatus("Could not load episodes: " + e.getMessage());
@@ -3743,6 +3750,42 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         episodeList.refresh();
         feedList.refresh();
+        scrollToCurrentEpisode();
+    }
+
+    /**
+     * Brings the playing episode into view when it is in the open list. Selection is left
+     * alone: this only scrolls, so a feed with hundreds of episodes opens on the one that
+     * matters instead of the top.
+     */
+    private void scrollToCurrentEpisode() {
+        if (playback == null || episodeList == null) {
+            return;
+        }
+        FeedMedia current = playback.getCurrentMedia();
+        if (current == null || current.getId() == lastScrolledMediaId) {
+            return;
+        }
+        int index = indexOfMedia(visibleEpisodes, current.getId());
+        if (index < 0) {
+            return;
+        }
+        episodeList.scrollTo(index);
+        lastScrolledMediaId = current.getId();
+    }
+
+    /** Row of the media in the list, or -1 when it is filtered out or plays from elsewhere. */
+    static int indexOfMedia(List<FeedItem> items, long mediaId) {
+        if (items == null) {
+            return -1;
+        }
+        for (int i = 0; i < items.size(); i++) {
+            FeedItem item = items.get(i);
+            if (item != null && item.getMedia() != null && item.getMedia().getId() == mediaId) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     @Override
