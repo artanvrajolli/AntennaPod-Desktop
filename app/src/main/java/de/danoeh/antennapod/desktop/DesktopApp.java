@@ -19,6 +19,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import javafx.animation.FadeTransition;
 import javafx.animation.PauseTransition;
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -132,6 +133,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
      */
     private long lastScrolledMediaId = -1;
     private StackPane ghostMarker;
+    /** Fades the synced marker away half a minute after it appears. */
+    private PauseTransition ghostFadeDelay;
+    private FadeTransition ghostFadeOut;
+    /** The episode the fade above was armed for; re-armed when it or visibility changes. */
+    private long ghostFadeItemId = -1;
+    /** The episode already informed and faded out; it stays out of the way until a new one. */
+    private long ghostFadedItemId = -1;
     private Slider volumeSlider;
     private ComboBox<String> speedBox;
     private Button silenceButton;
@@ -141,10 +149,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private long lastProgressRefreshMs;
     private static final String PROJECT_URL = "https://github.com/artanvrajolli/AntennaPod-Desktop";
     /** What the synced-position marker means, shown when hovering it in the seek bar or a row. */
-    private static final String SYNCED_TIP = "Position synced from another device";
+    private static final String SYNCED_TIP = "Synced position";
     private static final int SYNCED_MARKER_MIN_GAP_MS = 30000;
     /** Edge of the synced marker's square; rotated 45 degrees it reads as a hollow diamond. */
     private static final double SYNCED_MARKER_SIZE = 10;
+    /** How long the marker stays up before fading away, so it informs once, then leaves. */
+    private static final int SYNCED_MARKER_FADE_SECONDS = 30;
     private static final double SLIDER_THUMB_DIAMETER = 14;
     private static final double ART_COLUMN_WIDTH = 96;
     private final javafx.beans.property.DoubleProperty loadingPhase =
@@ -4100,7 +4110,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         FeedMedia current = playback.getCurrentMedia();
         if (current == null || durationMs <= 0 || current.getItem() == null) {
-            ghostMarker.setVisible(false);
+            hideGhostMarker();
             return;
         }
         if (current.getItem().getId() != syncedMarkerItemId) {
@@ -4109,17 +4119,17 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         try {
             int syncedPosition = syncedMarkerPositionMs;
             if (syncedPosition < 0 || syncedPosition > durationMs) {
-                ghostMarker.setVisible(false);
+                hideGhostMarker();
                 return;
             }
             if (Math.abs(syncedPosition - positionMs) < SYNCED_MARKER_MIN_GAP_MS) {
-                ghostMarker.setVisible(false);
+                hideGhostMarker();
                 return;
             }
             double trackWidth = seekSlider.getWidth() - seekSlider.getPadding().getLeft()
                     - seekSlider.getPadding().getRight();
             if (trackWidth <= 0) {
-                ghostMarker.setVisible(false);
+                hideGhostMarker();
                 return;
             }
             double fraction = syncedPosition / (double) durationMs;
@@ -4127,10 +4137,58 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     + fraction * (trackWidth - SLIDER_THUMB_DIAMETER);
             ghostMarker.setTranslateX(seekSlider.getPadding().getLeft()
                     + thumbCenter - (SYNCED_MARKER_SIZE / 2));
+            long itemId = current.getItem().getId();
+            if (itemId == ghostFadedItemId) {
+                // already informed for this episode; stay out of the way
+                return;
+            }
+            if (!ghostMarker.isVisible() || ghostFadeItemId != itemId) {
+                armGhostFade(itemId);
+            }
             ghostMarker.setVisible(true);
         } catch (Exception e) {
-            ghostMarker.setVisible(false);
+            hideGhostMarker();
         }
+    }
+
+    /**
+     * Hides the synced marker and drops any fade in flight, restoring full opacity so the
+     * next appearance starts solid.
+     */
+    private void hideGhostMarker() {
+        if (ghostFadeDelay != null) {
+            ghostFadeDelay.stop();
+        }
+        if (ghostFadeOut != null) {
+            ghostFadeOut.stop();
+        }
+        ghostFadeItemId = -1;
+        ghostMarker.setOpacity(1);
+        ghostMarker.setVisible(false);
+    }
+
+    /** Shows the marker solid, then fades it away after half a minute. */
+    private void armGhostFade(long itemId) {
+        if (ghostFadeOut != null) {
+            ghostFadeOut.stop();
+        }
+        ghostFadeItemId = itemId;
+        ghostMarker.setOpacity(1);
+        if (ghostFadeDelay == null) {
+            ghostFadeDelay = new PauseTransition(Duration.seconds(SYNCED_MARKER_FADE_SECONDS));
+            ghostFadeDelay.setOnFinished(event -> {
+                ghostFadeOut = new FadeTransition(Duration.millis(800), ghostMarker);
+                ghostFadeOut.setFromValue(1);
+                ghostFadeOut.setToValue(0);
+                ghostFadeOut.setOnFinished(done -> {
+                    ghostFadedItemId = ghostFadeItemId;
+                    ghostFadeItemId = -1;
+                    ghostMarker.setVisible(false);
+                });
+                ghostFadeOut.play();
+            });
+        }
+        ghostFadeDelay.playFromStart();
     }
 
     private int syncedPositionOf(FeedItem item) {
