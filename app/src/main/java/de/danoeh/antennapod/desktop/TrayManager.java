@@ -1,6 +1,7 @@
 package de.danoeh.antennapod.desktop;
 
 import java.awt.AWTException;
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.EventQueue;
 import java.awt.Font;
@@ -70,6 +71,17 @@ public final class TrayManager {
     private BufferedImage defaultIcon;
     private java.awt.Image currentIcon;
     private Image pendingArtwork;
+    /** The tray icon without the progress fill, rebuilt when the artwork changes. */
+    private BufferedImage iconBase;
+    /** Last position/duration reported, so the icon fill can follow playback. */
+    private int lastPositionMs;
+    private int lastDurationMs;
+    /** Progress fraction already drawn, so the icon is only rebuilt on visible movement. */
+    private double paintedProgress = -1;
+    /** The blue the played run is drawn in, matching the placeholder icon. */
+    private static final Color PROGRESS_FILL = new Color(0x1F, 0x6F, 0xEB);
+    /** The dark run behind the fill and the unplayed remainder of the bar. */
+    private static final Color PROGRESS_REST = new Color(0x00, 0x00, 0x00, 170);
 
     public boolean init(Callbacks callbacks) {
         if (!SystemTray.isSupported()) {
@@ -195,6 +207,9 @@ public final class TrayManager {
             progressSlider.setDisable(true);
             progressSlider.setValue(0);
             positionLabel.setText("");
+            lastPositionMs = 0;
+            lastDurationMs = 0;
+            repaintTrayIcon();
             return;
         }
         progressSlider.setDisable(false);
@@ -203,6 +218,9 @@ public final class TrayManager {
             progressSlider.setValue(Math.min(positionMs, durationMs));
         }
         positionLabel.setText(formatTime(positionMs) + " / " + formatTime(durationMs));
+        lastPositionMs = Math.max(positionMs, 0);
+        lastDurationMs = durationMs;
+        repaintTrayIcon();
     }
 
     private static String formatTime(int millis) {
@@ -294,23 +312,64 @@ public final class TrayManager {
     }
 
     private void applyArtwork(Image artwork) {
-        if (artwork == null || artwork.isError()) {
+        if (artwork == null || artwork.isError() || artwork.getProgress() < 1) {
+            iconBase = defaultIcon;
+            lastDurationMs = 0;
+            paintedProgress = -1;
             setIcon(defaultIcon);
-            return;
-        }
-        if (artwork.getProgress() < 1) {
-            setIcon(defaultIcon);
-            if (artwork != pendingArtwork) {
+            if (artwork != null && !artwork.isError() && artwork.getProgress() < 1
+                    && artwork != pendingArtwork) {
                 pendingArtwork = artwork;
                 artwork.progressProperty().addListener((obs, oldProgress, progress) -> {
                     if (progress.doubleValue() >= 1 && !artwork.isError()) {
-                        setIcon(artworkIcon(artwork));
+                        applyArtwork(artwork);
                     }
                 });
             }
             return;
         }
-        setIcon(artworkIcon(artwork));
+        iconBase = composeBase(artwork);
+        paintedProgress = -1;
+        repaintTrayIcon();
+    }
+
+    /**
+     * Draws the played fraction as a filled bar along the bottom of the tray icon, so progress
+     * stays visible even when the controls window is closed.
+     */
+    private void repaintTrayIcon() {
+        BufferedImage base = iconBase;
+        if (trayIcon == null || base == null) {
+            return;
+        }
+        if (lastDurationMs <= 0) {
+            paintedProgress = -1;
+            setIcon(base);
+            return;
+        }
+        double fraction = Math.max(0, Math.min(1, lastPositionMs / (double) lastDurationMs));
+        if (Math.abs(fraction - paintedProgress) < 0.02) {
+            // position ticks arrive many times a second; only rebuild on visible movement
+            return;
+        }
+        paintedProgress = fraction;
+        setIcon(withProgress(base, fraction));
+    }
+
+    static BufferedImage withProgress(BufferedImage base, double fraction) {
+        int width = base.getWidth();
+        int height = base.getHeight();
+        BufferedImage icon = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = icon.createGraphics();
+        g.drawImage(base, 0, 0, null);
+        int barHeight = Math.max(2, height / 6);
+        int barY = height - barHeight;
+        g.setColor(PROGRESS_REST);
+        g.fillRect(0, barY, width, barHeight);
+        g.setColor(PROGRESS_FILL);
+        g.fillRect(0, barY, (int) Math.round(width * fraction), barHeight);
+        g.dispose();
+        return icon;
     }
 
     private void setIcon(java.awt.Image image) {
@@ -325,7 +384,7 @@ public final class TrayManager {
         });
     }
 
-    private BufferedImage artworkIcon(Image artwork) {
+    private BufferedImage composeBase(Image artwork) {
         BufferedImage source = toBufferedImage(artwork);
         if (source == null) {
             return defaultIcon;

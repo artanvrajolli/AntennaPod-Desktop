@@ -37,6 +37,32 @@ public class TrayIconTest {
                 new Color(icon.getRGB(8, 13), true).getAlpha() == 0);
     }
 
+    @Test
+    public void testProgressBarFillsPlayedRun() {
+        BufferedImage icon = TrayManager.withProgress(artwork(16, 16, Color.BLUE), 0.5);
+        assertEquals(16, icon.getWidth());
+        assertEquals(16, icon.getHeight());
+        Color played = new Color(icon.getRGB(2, 15), true);
+        assertEquals(0x1F, played.getRed());
+        assertEquals(0xEB, played.getBlue());
+        Color rest = new Color(icon.getRGB(13, 15), true);
+        assertEquals(0, rest.getRed());
+        assertTrue("unplayed run stays dark", rest.getBlue() < 128);
+        // above the bar the icon is untouched
+        assertEquals(255, new Color(icon.getRGB(8, 8), true).getBlue());
+    }
+
+    @Test
+    public void testProgressBarEmptyAndFull() {
+        Color empty = new Color(TrayManager.withProgress(artwork(16, 16, Color.BLUE), 0)
+                .getRGB(8, 15), true);
+        assertEquals(0, empty.getRed());
+        assertTrue(empty.getBlue() < 128);
+        Color full = new Color(TrayManager.withProgress(artwork(16, 16, Color.BLUE), 1)
+                .getRGB(8, 15), true);
+        assertEquals(0xEB, full.getBlue());
+    }
+
     private static BufferedImage artwork(int width, int height, Color color) {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         java.awt.Graphics2D g = image.createGraphics();
