@@ -171,7 +171,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Region seekPulse;
     private boolean showRemainingTime;
     private double lastVolume;
-    private final Map<Long, Integer> downloadProgress = new HashMap<>();
+    /** Written by the downloader's worker threads and read by the cells on the FX thread. */
+    private final Map<Long, Integer> downloadProgress = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<Long, Long> feedLastPlayed = new HashMap<>();
     private final Set<Long> syncedItemIds = new HashSet<>();
     private final java.util.concurrent.atomic.AtomicBoolean syncRunning =
@@ -187,6 +188,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private ComboBox<String> sortBox;
     private boolean sortBoxProgrammatic;
     private Feed selectedFeed;
+    /** The still-loading artwork the seek accent already waits for. */
+    private Image seekAccentPendingImage;
+    /** Bumped by every episode load, so only the newest one is shown when loads overlap. */
+    private long episodeLoadGeneration;
     private volatile long loadingMediaId = -1;
     private final TrayManager trayManager = new TrayManager();
     private boolean trayActive;
@@ -1757,7 +1762,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void loadEpisodes(Feed feed) {
+        if (!Platform.isFxApplicationThread()) {
+            Platform.runLater(() -> loadEpisodes(feed));
+            return;
+        }
         selectedFeed = feed;
+        long load = ++episodeLoadGeneration;
         background.submit(() -> {
             try {
                 Feed full = database.getFeed(feed.getId());
@@ -1766,6 +1776,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                         ? new ArrayList<>(full.getItems()) : new ArrayList<>();
                 EpisodeSorter.sort(items, prefs.sortCode);
                 Platform.runLater(() -> {
+                    if (load != episodeLoadGeneration) {
+                        // a big feed that finished loading after a small one clicked since would
+                        // otherwise replace it, leaving one feed highlighted and another listed
+                        return;
+                    }
                     feedTitleLabel.setText(full.getTitle() != null ? full.getTitle() : full.getDownloadUrl());
                     sortBoxProgrammatic = true;
                     try {
@@ -1806,10 +1821,19 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 List<FeedItem> added = feedUpdater.refresh(feed);
                 autoDownloadNew(feed, added);
                 setStatus("Refreshed " + feed.getTitle() + ": " + added.size() + " new episodes");
-                loadEpisodes(feed);
+                reloadEpisodesIfShowing(feed);
                 Platform.runLater(feedList::refresh);
             } catch (Exception e) {
                 setStatus("Refresh failed: " + e.getMessage());
+            }
+        });
+    }
+
+    /** Reloads the episode list if it still shows this feed; the user may have moved on. */
+    private void reloadEpisodesIfShowing(Feed feed) {
+        Platform.runLater(() -> {
+            if (selectedFeed != null && selectedFeed.getId() == feed.getId()) {
+                loadEpisodes(selectedFeed);
             }
         });
     }
@@ -3631,11 +3655,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     public void onFinished(long mediaId, File file) {
         downloadProgress.remove(mediaId);
         setStatus("Download finished: " + file.getName());
-        Platform.runLater(episodeList::refresh);
-        Feed selected = feedList.getSelectionModel().getSelectedItem();
-        if (selected != null) {
-            loadEpisodes(selected);
-        }
+        Platform.runLater(() -> {
+            episodeList.refresh();
+            Feed selected = feedList.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                loadEpisodes(selected);
+            }
+        });
     }
 
     @Override
@@ -3982,8 +4008,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             return;
         }
         if (artwork.getProgress() < 1) {
-            // still loading: tint once the pixels are there, unless the episode changed meanwhile
+            // still loading: tint once the pixels are there, unless the episode changed meanwhile.
+            // Every state change comes back here while it loads; one listener per image is enough.
+            if (artwork == seekAccentPendingImage) {
+                return;
+            }
             Image pending = artwork;
+            seekAccentPendingImage = pending;
             pending.progressProperty().addListener((obs, oldProgress, progress) -> {
                 if (progress.doubleValue() >= 1 && wanted.equals(seekAccentUrl)) {
                     if (pending.isError()) {
@@ -4320,13 +4351,20 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         } catch (Exception e) {
             // ignore
         }
-        downloader.shutdown();
+        // a second instance exits from start() before any of these exist
+        if (downloader != null) {
+            downloader.shutdown();
+        }
         if (episodeCache != null) {
             episodeCache.shutdown();
         }
-        background.shutdownNow();
+        if (background != null) {
+            background.shutdownNow();
+        }
         try {
-            database.close();
+            if (database != null) {
+                database.close();
+            }
         } catch (Exception e) {
             // ignore
         }

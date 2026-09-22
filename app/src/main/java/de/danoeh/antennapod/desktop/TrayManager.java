@@ -71,6 +71,8 @@ public final class TrayManager {
     private BufferedImage defaultIcon;
     private java.awt.Image currentIcon;
     private Image pendingArtwork;
+    /** The artwork of the latest update; a load that finishes later only counts if it is this one. */
+    private volatile Image wantedArtwork;
     /** The tray icon without the progress fill, rebuilt when the artwork changes. */
     private BufferedImage iconBase;
     /** Last position/duration reported, so the icon fill can follow playback. */
@@ -287,6 +289,7 @@ public final class TrayManager {
                     : "AntennaPod Desktop";
             trayIcon.setToolTip(truncate(tooltip, 120));
         });
+        wantedArtwork = artwork;
         applyArtwork(artwork);
     }
 
@@ -321,7 +324,8 @@ public final class TrayManager {
                     && artwork != pendingArtwork) {
                 pendingArtwork = artwork;
                 artwork.progressProperty().addListener((obs, oldProgress, progress) -> {
-                    if (progress.doubleValue() >= 1 && !artwork.isError()) {
+                    // the episode may have changed while this loaded; its art must not come back
+                    if (progress.doubleValue() >= 1 && !artwork.isError() && artwork == wantedArtwork) {
                         applyArtwork(artwork);
                     }
                 });
