@@ -140,6 +140,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private boolean sliderDragging;
     private long lastProgressRefreshMs;
     private static final String PROJECT_URL = "https://github.com/artanvrajolli/AntennaPod-Desktop";
+    /** What the synced-position marker means, shown when hovering it in the seek bar or a row. */
+    private static final String SYNCED_TIP = "Position synced from another device";
     private static final int SYNCED_MARKER_MIN_GAP_MS = 30000;
     private static final double SYNCED_MARKER_WIDTH = 3;
     private static final double SLIDER_THUMB_DIAMETER = 14;
@@ -1230,7 +1232,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         ghostMarker = new StackPane();
         ghostMarker.getStyleClass().add("ghost-marker");
-        ghostMarker.setMouseTransparent(true);
+        // pickable so the tooltip below has something to hover; it is only 3px wide,
+        // so the seek slider underneath keeps all but that sliver
+        ghostMarker.setMouseTransparent(false);
+        Tooltip.install(ghostMarker, new Tooltip(SYNCED_TIP));
         ghostMarker.setVisible(false);
         ghostMarker.setPrefSize(3, 14);
         ghostMarker.setMinSize(3, 14);
@@ -4358,6 +4363,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             if (hasSynced) {
                 Region ghost = new Region();
                 ghost.getStyleClass().add("episode-progress-synced");
+                Tooltip.install(ghost, new Tooltip(SYNCED_TIP));
                 ghost.setMinSize(3, 3);
                 ghost.setPrefSize(3, 3);
                 ghost.setMaxSize(3, 3);
