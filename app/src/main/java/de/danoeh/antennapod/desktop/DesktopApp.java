@@ -1227,7 +1227,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         return order;
     }
 
-    /** Double-clicking a subscription starts it: the top playable episode in its own order. */
+    /**
+     * Double-clicking a subscription resumes its latest in-progress episode, or starts the
+     * top playable one in its own order when nothing is in progress.
+     */
     private void playFeed(Feed feed) {
         setStatus("Starting \"" + feed.getTitle() + "\"…");
         background.submit(() -> {
@@ -1237,19 +1240,48 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 List<FeedItem> items = full.getItems() != null
                         ? new ArrayList<>(full.getItems()) : new ArrayList<>();
                 EpisodeSorter.sort(items, prefs.sortCode);
-                for (FeedItem item : items) {
-                    if (item.getMedia() != null) {
-                        FeedItem first = item;
-                        Platform.runLater(() -> playback.play(first, items));
-                        setStatus("Playing \"" + first.getTitle() + "\"");
-                        return;
+                FeedItem start = latestInProgress(items);
+                if (start == null) {
+                    for (FeedItem item : items) {
+                        if (item.getMedia() != null) {
+                            start = item;
+                            break;
+                        }
                     }
                 }
-                setStatus("Nothing playable in this subscription");
+                if (start == null) {
+                    setStatus("Nothing playable in this subscription");
+                    return;
+                }
+                FeedItem first = start;
+                Platform.runLater(() -> playback.play(first, items));
+                setStatus("Playing \"" + first.getTitle() + "\"");
             } catch (Exception e) {
                 setStatus("Could not start subscription: " + e.getMessage());
             }
         });
+    }
+
+    /** The most recently played unfinished episode, or null when none is in progress. */
+    static FeedItem latestInProgress(List<FeedItem> items) {
+        FeedItem latest = null;
+        long latestTime = -1;
+        for (FeedItem item : items) {
+            if (item == null || item.getMedia() == null || item.isPlayed()) {
+                continue;
+            }
+            int position = item.getMedia().getPosition();
+            int duration = item.getMedia().getDuration();
+            if (position <= 0 || (duration > 0 && position >= duration)) {
+                continue;
+            }
+            long playedAt = item.getMedia().getLastPlayedTimeStatistics();
+            if (latest == null || playedAt > latestTime) {
+                latest = item;
+                latestTime = playedAt;
+            }
+        }
+        return latest;
     }
 
     private void applyEpisodeFilter() {
