@@ -270,6 +270,13 @@
     -fx-pref-height: 6;
 }
 
+/* Roomier toolbar buttons: roughly a quarter bigger than the default control size. */
+.tool-bar .button,
+.tool-bar .menu-button {
+    -fx-font-size: 16px;
+    -fx-padding: 6 12 6 12;
+}
+
 .slider:disabled .track {
     -fx-background-color: #d8d8d8;
 }
