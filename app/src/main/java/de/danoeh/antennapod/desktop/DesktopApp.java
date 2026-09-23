@@ -2744,7 +2744,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         VBox.setVgrow(tabs, Priority.ALWAYS);
         HBox savedBar = new HBox(savedLabel);
         savedBar.setPadding(new Insets(6, 12, 10, 12));
-        showSidebar("Settings", new VBox(tabs, savedBar));
+        showModal("Settings", new VBox(tabs, savedBar));
     }
 
     /** A fresh grid for one settings tab. */
