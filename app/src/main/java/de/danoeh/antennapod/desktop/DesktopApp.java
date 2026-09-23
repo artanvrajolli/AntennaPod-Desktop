@@ -3918,9 +3918,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private void updatePlayPauseButton() {
         if (playPauseButton != null) {
-            String accent = seekAccent != null ? seekAccent : "-fx-accent";
             playPauseButton.setGraphic(Icons.accent(playback != null && playback.isPlaying()
-                    ? Icons.pause(26) : Icons.play(26), accent));
+                    ? Icons.pause(26) : Icons.play(26)));
         }
     }
 
@@ -4169,7 +4168,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         boolean tinted = seekAccent != null || !Objects.equals(paintedAccent, "-fx-accent");
         seekAccent = null;
         styleSeekThumb();
-        updatePlayPauseButton();
         paintedVolumePercent = -1;
         paintVolumeTrack();
         if (!tinted || seekSlider == null) {
@@ -4190,7 +4188,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         seekAccent = color;
         styleSeekThumb();
-        updatePlayPauseButton();
         paintedVolumePercent = -1;
         paintVolumeTrack();
         paintedPlayedPercent = -1;

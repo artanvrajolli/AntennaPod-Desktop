@@ -55,12 +55,7 @@ public final class Icons {
 
     /** Tints an icon with the theme accent, marking it as the primary action. */
     public static Node accent(Node icon) {
-        return accent(icon, "-fx-accent");
-    }
-
-    /** Tints an icon with an explicit color, e.g. the artwork accent of what is playing. */
-    public static Node accent(Node icon, String color) {
-        icon.setStyle("-fx-background-color: " + color + ";");
+        icon.setStyle("-fx-background-color: -fx-accent;");
         return icon;
     }
 
