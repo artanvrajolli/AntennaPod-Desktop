@@ -28,10 +28,10 @@ inside `core`.
   `WindowChrome` (the app-drawn title bar; the stage is undecorated),
   `WindowsTaskbar` + `ThumbBar` (ITaskbarList3 via JNA: taskbar progress and
   the media buttons under the taskbar thumbnail), `MediaKeys` (the keyboard's
-  media keys), `TaskbarIcon` (the playing episode's artwork drawn into the
+  media keys),   `TaskbarIcon` (the playing episode's artwork drawn into the
   window icon), `ThemeManager`/`SystemTheme`, `ImageCache`, `Icons`, `Launcher`
   (entry point / main class), `SeekAccent` (artwork colour for the seek bar).
-  16 test classes in `app/src/test`.
+  17 test classes in `app/src/test`.
 
 ## Build, test, run
 
@@ -72,6 +72,14 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   other apps. Use these
   to isolate a fault before changing the native code.
 - `core` must not depend on JavaFX; UI code lives in `app`.
+- Toolbar keeps only primary actions direct (subscribe, search, refresh, sync);
+  views live under the Library menu, occasional actions under More.
+- The episode list scrolls the playing episode into the middle on open and on
+  episode switches, once per episode, without touching the selection.
+- Each subscription keeps its own episode sort, defaulting to newest-first;
+  reads of legacy `sort_code` values fall back to newest, never null.
+- Buttons behind background work (subscribe, search, refresh, sync-now,
+  test-login) show a spinner and disable until done.
 - Episode state is written through the narrow `DesktopDatabase` writers
   (`updatePlaybackState`, `setMediaDownloaded`, `clearMediaDownload`,
   `setMediaCacheFile`, `updateMediaFromFeed`). The player, downloader, cache
