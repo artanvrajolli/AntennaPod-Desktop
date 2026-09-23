@@ -526,15 +526,18 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         urlField.setPromptText("Feed URL to subscribe…");
         urlField.setPrefWidth(280);
         Button subscribeButton = new Button("Subscribe", Icons.add());
-        subscribeButton.setOnAction(event -> subscribe(urlField.getText().trim()));
+        subscribeButton.setOnAction(event -> startSubscribe(subscribeButton, urlField.getText()));
         TextField searchField = new TextField();
         searchField.setPromptText("Search podcasts…");
         searchField.setPrefWidth(220);
         Button searchButton = new Button("Search", Icons.search());
-        searchButton.setOnAction(event -> search(searchField.getText().trim()));
-        searchField.setOnAction(event -> search(searchField.getText().trim()));
+        searchButton.setOnAction(event -> startSearch(searchButton, searchField.getText()));
+        searchField.setOnAction(event -> startSearch(searchButton, searchField.getText()));
         Button refreshAllButton = new Button("Refresh all", Icons.refresh());
-        refreshAllButton.setOnAction(event -> refreshAll());
+        refreshAllButton.setOnAction(event -> {
+            setStatus("Refreshing all podcasts…");
+            spinWhile(refreshAllButton, this::doRefreshAll);
+        });
         Button syncButton = new Button("Sync", Icons.sync());
         this.syncButton = syncButton;
         updateSyncButtonTooltip();
@@ -566,6 +569,36 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         return item;
     }
 
+    /**
+     * Runs background work with a spinner in the button that started it, so long operations
+     * show on the control itself rather than only as a status line.
+     */
+    private void spinWhile(Button button, Runnable work) {
+        Node original = showButtonSpinner(button);
+        background.submit(() -> {
+            try {
+                work.run();
+            } finally {
+                Platform.runLater(() -> hideButtonSpinner(button, original));
+            }
+        });
+    }
+
+    private static Node showButtonSpinner(Button button) {
+        Node original = button.getGraphic();
+        ProgressIndicator spinner = new ProgressIndicator(-1);
+        spinner.setPrefSize(16, 16);
+        spinner.setMaxSize(16, 16);
+        button.setGraphic(spinner);
+        button.setDisable(true);
+        return original;
+    }
+
+    private static void hideButtonSpinner(Button button, Node original) {
+        button.setGraphic(original);
+        button.setDisable(false);
+    }
+
     private VBox buildFeedPane() {
         feedFilterField = new TextField();
         feedFilterField.setPromptText("Search subscriptions");
@@ -583,7 +616,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         refreshButton.setOnAction(event -> {
             Feed selected = feedList.getSelectionModel().getSelectedItem();
             if (selected != null) {
-                refreshFeed(selected);
+                setStatus("Refreshing " + selected.getTitle() + "…");
+                spinWhile(refreshButton, () -> doRefreshFeed(selected));
             }
         });
         Button settingsButton = new Button("Feed settings");
@@ -1870,30 +1904,43 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             return;
         }
         setStatus("Subscribing to " + url + "…");
-        background.submit(() -> {
-            try {
-                Feed feed = feedUpdater.subscribe(url);
-                setStatus("Subscribed to " + feed.getTitle());
-                reloadFeeds(feed.getId());
-            } catch (Exception e) {
-                setStatus("Subscribe failed: " + e.getMessage());
-            }
-        });
+        background.submit(() -> doSubscribe(url));
+    }
+
+    private void startSubscribe(Button button, String rawUrl) {
+        String url = rawUrl.trim();
+        if (url.isEmpty()) {
+            return;
+        }
+        setStatus("Subscribing to " + url + "…");
+        spinWhile(button, () -> doSubscribe(url));
+    }
+
+    private void doSubscribe(String url) {
+        try {
+            Feed feed = feedUpdater.subscribe(url);
+            setStatus("Subscribed to " + feed.getTitle());
+            reloadFeeds(feed.getId());
+        } catch (Exception e) {
+            setStatus("Subscribe failed: " + e.getMessage());
+        }
     }
 
     private void refreshFeed(Feed feed) {
         setStatus("Refreshing " + feed.getTitle() + "…");
-        background.submit(() -> {
-            try {
-                List<FeedItem> added = feedUpdater.refresh(feed);
-                autoDownloadNew(feed, added);
-                setStatus("Refreshed " + feed.getTitle() + ": " + added.size() + " new episodes");
-                reloadEpisodesIfShowing(feed);
-                refreshFeedCounts();
-            } catch (Exception e) {
-                setStatus("Refresh failed: " + e.getMessage());
-            }
-        });
+        background.submit(() -> doRefreshFeed(feed));
+    }
+
+    private void doRefreshFeed(Feed feed) {
+        try {
+            List<FeedItem> added = feedUpdater.refresh(feed);
+            autoDownloadNew(feed, added);
+            setStatus("Refreshed " + feed.getTitle() + ": " + added.size() + " new episodes");
+            reloadEpisodesIfShowing(feed);
+            refreshFeedCounts();
+        } catch (Exception e) {
+            setStatus("Refresh failed: " + e.getMessage());
+        }
     }
 
     /** Reloads the episode list if it still shows this feed; the user may have moved on. */
@@ -1927,32 +1974,34 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private void refreshAll() {
         setStatus("Refreshing all podcasts…");
-        background.submit(() -> {
-            try {
-                List<FeedUpdater.RefreshResult> results = feedUpdater.refreshAll();
-                int total = 0;
-                int errors = 0;
-                for (FeedUpdater.RefreshResult result : results) {
-                    if (result.error != null) {
-                        errors++;
-                    } else {
-                        total += result.newEpisodes.size();
-                        autoDownloadNew(result.feed, result.newEpisodes);
-                    }
+        background.submit(this::doRefreshAll);
+    }
+
+    private void doRefreshAll() {
+        try {
+            List<FeedUpdater.RefreshResult> results = feedUpdater.refreshAll();
+            int total = 0;
+            int errors = 0;
+            for (FeedUpdater.RefreshResult result : results) {
+                if (result.error != null) {
+                    errors++;
+                } else {
+                    total += result.newEpisodes.size();
+                    autoDownloadNew(result.feed, result.newEpisodes);
                 }
-                setStatus("Refresh done: " + total + " new episodes"
-                        + (errors > 0 ? ", " + errors + " failed" : ""));
-                refreshFeedCounts();
-                Platform.runLater(() -> {
-                    Feed selected = feedList.getSelectionModel().getSelectedItem();
-                    if (selected != null) {
-                        loadEpisodes(selected);
-                    }
-                });
-            } catch (Exception e) {
-                setStatus("Refresh failed: " + e.getMessage());
             }
-        });
+            setStatus("Refresh done: " + total + " new episodes"
+                    + (errors > 0 ? ", " + errors + " failed" : ""));
+            refreshFeedCounts();
+            Platform.runLater(() -> {
+                Feed selected = feedList.getSelectionModel().getSelectedItem();
+                if (selected != null) {
+                    loadEpisodes(selected);
+                }
+            });
+        } catch (Exception e) {
+            setStatus("Refresh failed: " + e.getMessage());
+        }
     }
 
     private void unsubscribe(Feed feed) {
@@ -2858,27 +2907,31 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         testButton.setOnAction(event -> {
             save.run();
             syncStatus.setText("Testing login…");
+            Node original = showButtonSpinner(testButton);
             background.submit(() -> {
                 try {
                     syncManager.testLogin();
                     Platform.runLater(() -> syncStatus.setText("Login successful"));
                 } catch (Exception e) {
                     Platform.runLater(() -> syncStatus.setText("Login failed: " + e.getMessage()));
+                } finally {
+                    Platform.runLater(() -> hideButtonSpinner(testButton, original));
                 }
             });
         });
         Button syncNowButton = new Button("Sync now");
         syncNowButton.setOnAction(event -> {
             save.run();
+            Node[] original = new Node[1];
             runSync(
                     () -> {
-                        syncNowButton.setDisable(true);
+                        original[0] = showButtonSpinner(syncNowButton);
                         syncStatus.setText("Syncing…");
                         setStatus("Syncing…");
                     },
                     message -> {
                         syncStatus.setText(message);
-                        syncNowButton.setDisable(false);
+                        hideButtonSpinner(syncNowButton, original[0]);
                     });
         });
         Button devicesButton = new Button("Import from another device…");
@@ -3122,16 +3175,27 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             return;
         }
         setStatus("Searching for \"" + query + "…");
-        background.submit(() -> {
-            try {
-                List<PodcastSearchResult> results =
-                        new CombinedSearcher().search(query).blockingGet();
-                Platform.runLater(() -> showSearchResults(query, results));
-                setStatus("Found " + results.size() + " results for \"" + query + "\"");
-            } catch (Exception e) {
-                setStatus("Search failed: " + e.getMessage());
-            }
-        });
+        background.submit(() -> doSearch(query));
+    }
+
+    private void startSearch(Button button, String rawQuery) {
+        String query = rawQuery.trim();
+        if (query.isEmpty()) {
+            return;
+        }
+        setStatus("Searching for \"" + query + "…");
+        spinWhile(button, () -> doSearch(query));
+    }
+
+    private void doSearch(String query) {
+        try {
+            List<PodcastSearchResult> results =
+                    new CombinedSearcher().search(query).blockingGet();
+            Platform.runLater(() -> showSearchResults(query, results));
+            setStatus("Found " + results.size() + " results for \"" + query + "\"");
+        } catch (Exception e) {
+            setStatus("Search failed: " + e.getMessage());
+        }
     }
 
     private void showSearchResults(String query, List<PodcastSearchResult> results) {
