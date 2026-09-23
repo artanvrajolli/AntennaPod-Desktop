@@ -614,6 +614,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 loadEpisodes(newFeed);
             }
         });
+        feedList.setOnMouseClicked(event -> {
+            if (event.getClickCount() == 2) {
+                Feed selected = feedList.getSelectionModel().getSelectedItem();
+                if (selected != null) {
+                    playFeed(selected);
+                }
+            }
+        });
         Button refreshButton = new Button("Refresh");
         refreshButton.setOnAction(event -> {
             Feed selected = feedList.getSelectionModel().getSelectedItem();
@@ -1176,8 +1184,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         episodeList.setOnMouseClicked(event -> {
             if (event.getClickCount() == 2) {
                 FeedItem selected = episodeList.getSelectionModel().getSelectedItem();
-                if (selected != null) {
-                    showEpisodeDetails(selected);
+                if (selected != null && selected.getMedia() != null) {
+                    playback.play(selected, playbackOrder());
+                    setStatus("Playing \"" + selected.getTitle() + "\"");
                 }
             }
         });
@@ -1216,6 +1225,31 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         List<FeedItem> order = new ArrayList<>(visibleEpisodes);
         EpisodeSorter.sort(order, EpisodeSorter.OLDEST);
         return order;
+    }
+
+    /** Double-clicking a subscription starts it: the top playable episode in its own order. */
+    private void playFeed(Feed feed) {
+        setStatus("Starting \"" + feed.getTitle() + "\"…");
+        background.submit(() -> {
+            try {
+                Feed full = database.getFeed(feed.getId());
+                FeedPrefs prefs = database.getFeedPrefs(feed.getId());
+                List<FeedItem> items = full.getItems() != null
+                        ? new ArrayList<>(full.getItems()) : new ArrayList<>();
+                EpisodeSorter.sort(items, prefs.sortCode);
+                for (FeedItem item : items) {
+                    if (item.getMedia() != null) {
+                        FeedItem first = item;
+                        Platform.runLater(() -> playback.play(first, items));
+                        setStatus("Playing \"" + first.getTitle() + "\"");
+                        return;
+                    }
+                }
+                setStatus("Nothing playable in this subscription");
+            } catch (Exception e) {
+                setStatus("Could not start subscription: " + e.getMessage());
+            }
+        });
     }
 
     private void applyEpisodeFilter() {
