@@ -73,6 +73,8 @@ public final class DesktopDatabase implements AutoCloseable {
                     + "exclude_filter TEXT DEFAULT '', min_duration INTEGER DEFAULT -1, "
                     + "sort_code TEXT DEFAULT 'newest')");
         }
+        // databases from before per-feed sort carry no sort_code column at all
+        ensureColumn("feed_preferences", "sort_code", "TEXT DEFAULT 'newest'");
         ensureColumn("feed_items", "favorite", "INTEGER DEFAULT 0");
         ensureColumn("feed_media", "last_played_history", "INTEGER DEFAULT 0");
         ensureColumn("feed_items", "transcript_url", "TEXT");
@@ -1034,7 +1036,8 @@ public final class DesktopDatabase implements AutoCloseable {
                     prefs.includeFilter = rs.getString("include_filter");
                     prefs.excludeFilter = rs.getString("exclude_filter");
                     prefs.minDurationSec = rs.getInt("min_duration");
-                    prefs.sortCode = rs.getString("sort_code");
+                    String sortCode = rs.getString("sort_code");
+                    prefs.sortCode = sortCode != null ? sortCode : "newest";
                 }
                 return prefs;
             }

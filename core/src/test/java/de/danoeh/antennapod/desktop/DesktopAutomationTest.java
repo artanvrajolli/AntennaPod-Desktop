@@ -65,6 +65,17 @@ public class DesktopAutomationTest {
     }
 
     @Test
+    public void testNullSortCodeFallsBackToNewest() throws Exception {
+        // rows written before per-feed sort carry NULL; they must read as the default,
+        // never as a null that breaks the sort control
+        FeedPrefs prefs = database.getFeedPrefs(feedId);
+        assertEquals("newest", prefs.sortCode);
+        prefs.sortCode = null;
+        database.saveFeedPrefs(prefs);
+        assertEquals("newest", database.getFeedPrefs(feedId).sortCode);
+    }
+
+    @Test
     public void testAutoDownloadDecisions() {
         FeedPrefs prefs = new FeedPrefs(feedId);
         assertFalse(Automation.shouldAutoDownload(item("News today", 600), prefs, false));

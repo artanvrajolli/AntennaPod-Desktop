@@ -2301,6 +2301,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private static String sortLabel(String code) {
+        if (code == null) {
+            return "Newest first";
+        }
         switch (code) {
             case "oldest": return "Oldest first";
             case "shortest": return "Shortest first";
