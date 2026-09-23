@@ -142,9 +142,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Slider volumeSlider;
     /** The volume slider's track node, looked up once the skin exists, for its fill. */
     private Node volumeTrack;
-    /** Painted volume stops, so the track is only restyled on visible movement. */
+    /** Painted volume stop, so the track is only restyled on visible movement. */
     private double paintedVolumePercent = -1;
-    private String paintedVolumeAccent;
     private ComboBox<String> speedBox;
     private Button silenceButton;
     private ProgressIndicator loadingSpinner;
@@ -3843,7 +3842,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
     }
 
-    /** Paints the volume slider's own fill, wearing the same accent as the seek bar. */
+    /** Paints the volume slider's fill in neutral grey, leaving the accent to the seek bar. */
     private void paintVolumeTrack() {
         if (volumeSlider == null) {
             return;
@@ -3854,19 +3853,18 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (volumeTrack == null) {
             return;
         }
-        String accent = seekAccent != null ? seekAccent : "-fx-accent";
         double percent = clampTrackPercent(volumeSlider.getValue() * 100.0);
-        if (Math.abs(percent - paintedVolumePercent) < 1
-                && Objects.equals(accent, paintedVolumeAccent)) {
+        if (Math.abs(percent - paintedVolumePercent) < 1) {
             return;
         }
         paintedVolumePercent = percent;
-        paintedVolumeAccent = accent;
-        String rest = ThemeManager.isDark() ? "#5f5f5f" : "#c9c9c9";
+        boolean dark = ThemeManager.isDark();
+        String fill = dark ? "#8d8d8d" : "#9e9e9e";
+        String rest = dark ? "#5f5f5f" : "#c9c9c9";
         volumeTrack.setStyle(String.format(Locale.US,
                 "-fx-background-color: linear-gradient(to right, %s 0%%, %s %.2f%%,"
                         + " %s %.2f%%, %s 100%%);",
-                accent, accent, percent, rest, percent, rest));
+                fill, fill, percent, rest, percent, rest));
     }
 
     @Override
