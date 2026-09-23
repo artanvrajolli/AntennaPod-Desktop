@@ -20,7 +20,7 @@ import javafx.scene.image.WritableImage;
  */
 final class TaskbarIcon {
     /** How much of the icon's edge the artwork takes up, leaving the app icon as a frame. */
-    static final double ARTWORK_FRACTION = 0.65;
+    static final double ARTWORK_FRACTION = 0.75;
     /** The size the artwork is loaded at: enough for the largest icon's inset. */
     static final int ARTWORK_SIZE = 256;
     /** Fills the inset behind artwork that does not cover it, so the app icon cannot show through. */
