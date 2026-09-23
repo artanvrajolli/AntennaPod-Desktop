@@ -553,8 +553,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 toolbarMenuItem("Export…", Icons.upload(), this::exportOpml),
                 toolbarMenuItem("Settings", Icons.settings(), this::showSettings),
                 toolbarMenuItem("GitHub project page", Icons.github(), this::openProjectPage));
+        // inputs stay left, actions sit at the far right
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
         return new ToolBar(urlField, subscribeButton, searchField, searchButton,
-                refreshAllButton, syncButton, libraryMenu, moreMenu);
+                spacer, refreshAllButton, syncButton, libraryMenu, moreMenu);
     }
 
     private static MenuItem toolbarMenuItem(String text, Node icon, Runnable action) {
