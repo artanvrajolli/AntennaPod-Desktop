@@ -52,6 +52,8 @@ import javafx.scene.control.ToolBar;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -91,6 +93,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private VBox sidebarContent;
     private Label feedTitleLabel;
     private Label statusLabel;
+    /** Seconds a status message stays solid before fading out. */
+    private static final int STATUS_FADE_SECONDS = 60;
+    private PauseTransition statusFadeDelay;
+    private FadeTransition statusFadeOut;
     private Label nowPlayingLabel;
     private ImageView nowPlayingArt;
     private StackPane artPlaceholder;
@@ -1519,6 +1525,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         statusLabel = new Label("Ready");
         statusLabel.setMinWidth(Region.USE_PREF_SIZE);
         statusLabel.setMaxWidth(220);
+        statusLabel.setStyle("-fx-cursor: hand;");
+        statusLabel.setOnMouseClicked(event -> {
+            // the status line carries error detail worth pasting into a bug report
+            ClipboardContent content = new ClipboardContent();
+            content.putString(statusLabel.getText());
+            Clipboard.getSystemClipboard().setContent(content);
+        });
 
         VBox controlsColumn = new VBox(6, titleRow, scrubRow, controlArea);
         controlsColumn.setAlignment(Pos.BOTTOM_LEFT);
@@ -1843,15 +1856,38 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
     }
 
+    /**
+     * Shows a status message, fading it out a minute later so stale notes stop shouting.
+     * A new message restores full opacity and restarts the minute.
+     */
     private void setStatus(String message) {
         Platform.runLater(() -> {
             statusLabel.setText(message);
+            String tip = message + "\n\nClick to copy";
             if (statusLabel.getTooltip() == null) {
-                statusLabel.setTooltip(new Tooltip(message));
+                statusLabel.setTooltip(new Tooltip(tip));
             } else {
-                statusLabel.getTooltip().setText(message);
+                statusLabel.getTooltip().setText(tip);
             }
+            statusLabel.setOpacity(1);
+            restartStatusFade();
         });
+    }
+
+    private void restartStatusFade() {
+        if (statusFadeOut != null) {
+            statusFadeOut.stop();
+        }
+        if (statusFadeDelay == null) {
+            statusFadeDelay = new PauseTransition(Duration.seconds(STATUS_FADE_SECONDS));
+            statusFadeDelay.setOnFinished(event -> {
+                statusFadeOut = new FadeTransition(Duration.millis(1000), statusLabel);
+                statusFadeOut.setFromValue(1);
+                statusFadeOut.setToValue(0);
+                statusFadeOut.play();
+            });
+        }
+        statusFadeDelay.playFromStart();
     }
 
     /**
