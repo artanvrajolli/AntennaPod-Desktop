@@ -1,6 +1,6 @@
 # AGENTS.md — AntennaPod Desktop
 
-Guidance for coding agents working in this repository. Current version: **0.2.3**.
+Guidance for coding agents working in this repository. Current version: **0.2.4**.
 
 ## What this is
 
