@@ -608,7 +608,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         feedList.setPrefWidth(280);
         feedList.setCellFactory(list -> new FeedCell());
         feedList.getSelectionModel().selectedItemProperty().addListener((obs, oldFeed, newFeed) -> {
-            if (newFeed != null) {
+            if (newFeed != null && (selectedFeed == null || selectedFeed.getId() != newFeed.getId())) {
+                // same subscription re-selected after a background reload keeps showing
+                // what it shows; only a different one loads
                 loadEpisodes(newFeed);
             }
         });
@@ -1821,11 +1823,23 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     feedLastPlayed.clear();
                     feedLastPlayed.putAll(lastPlayed);
                     FeedSorter.sortByLastPlayed(all, lastPlayed);
+                    // replacing the items drops the selection (fresh instances), so the
+                    // wanted subscription is remembered by id: an explicit one wins,
+                    // otherwise whatever the user has open stays open
+                    Long keepId = selectFeedId;
+                    if (keepId == null) {
+                        Feed selected = feedList.getSelectionModel().getSelectedItem();
+                        if (selected != null) {
+                            keepId = selected.getId();
+                        } else if (selectedFeed != null) {
+                            keepId = selectedFeed.getId();
+                        }
+                    }
                     feeds.setAll(all);
                     feedList.refresh();
-                    if (selectFeedId != null) {
+                    if (keepId != null) {
                         for (Feed feed : all) {
-                            if (feed.getId() == selectFeedId) {
+                            if (feed.getId() == keepId) {
                                 feedList.getSelectionModel().select(feed);
                                 break;
                             }
