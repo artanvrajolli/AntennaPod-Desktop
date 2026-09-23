@@ -18,12 +18,20 @@ if not defined JAVA_HOME (
     )
 )
 
+:run
 call gradlew.bat :app:run %*
 
 if errorlevel 1 (
     echo.
     echo [ERROR] Gradle run failed. See output above.
-    pause
 )
 
+echo.
+echo Press R to restart the app, or Q to quit.
+choice /c RQ /n >nul
+if errorlevel 2 goto :done
+echo.
+goto :run
+
+:done
 endlocal
