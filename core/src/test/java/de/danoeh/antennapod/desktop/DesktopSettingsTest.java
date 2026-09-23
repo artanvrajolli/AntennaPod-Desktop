@@ -16,6 +16,7 @@ public class DesktopSettingsTest {
     private int volumeBoostDb;
     private boolean skipSilence;
     private double defaultVolume;
+    private double feedSplitPosition;
     private boolean autoDownloadDefault;
     private boolean autoDeleteDefault;
     private boolean episodeCacheEnabled;
@@ -38,6 +39,7 @@ public class DesktopSettingsTest {
         volumeBoostDb = DesktopPreferences.getVolumeBoostDb();
         skipSilence = DesktopPreferences.getSkipSilence();
         defaultVolume = DesktopPreferences.getDefaultVolume();
+        feedSplitPosition = DesktopPreferences.getFeedSplitPosition();
         autoDownloadDefault = DesktopPreferences.getAutoDownloadDefault();
         autoDeleteDefault = DesktopPreferences.getAutoDeleteDefault();
         episodeCacheEnabled = DesktopPreferences.getEpisodeCacheEnabled();
@@ -61,6 +63,7 @@ public class DesktopSettingsTest {
         DesktopPreferences.setVolumeBoostDb(volumeBoostDb);
         DesktopPreferences.setSkipSilence(skipSilence);
         DesktopPreferences.setDefaultVolume(defaultVolume);
+        DesktopPreferences.setFeedSplitPosition(feedSplitPosition);
         DesktopPreferences.setAutoDownloadDefault(autoDownloadDefault);
         DesktopPreferences.setAutoDeleteDefault(autoDeleteDefault);
         DesktopPreferences.setEpisodeCacheEnabled(episodeCacheEnabled);
@@ -161,6 +164,18 @@ public class DesktopSettingsTest {
         assertEquals("auto", DesktopPreferences.getThemeMode());
         DesktopPreferences.setThemeMode("light");
         assertEquals("light", DesktopPreferences.getThemeMode());
+    }
+
+    @Test
+    public void testFeedSplitPositionRoundTripsAndClamps() {
+        DesktopPreferences.setFeedSplitPosition(0.4);
+        assertEquals(0.4, DesktopPreferences.getFeedSplitPosition(), 0.001);
+        DesktopPreferences.setFeedSplitPosition(-1);
+        assertEquals(0.05, DesktopPreferences.getFeedSplitPosition(), 0.001);
+        DesktopPreferences.setFeedSplitPosition(99);
+        assertEquals(0.8, DesktopPreferences.getFeedSplitPosition(), 0.001);
+        Preferences.userNodeForPackage(DesktopPreferences.class).remove("feedSplitPosition");
+        assertEquals(0.25, DesktopPreferences.getFeedSplitPosition(), 0.001);
     }
 
     @Test

@@ -41,6 +41,7 @@ import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.Slider;
+import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
@@ -295,8 +296,18 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
         BorderPane root = new BorderPane();
         root.setTop(buildToolbar());
-        root.setLeft(buildFeedPane());
-        root.setCenter(buildEpisodePane());
+        VBox feedPane = buildFeedPane();
+        feedPane.setMinWidth(180);
+        VBox episodePane = buildEpisodePane();
+        episodePane.setMinWidth(320);
+        // the divider between the two lists drags horizontally, so the subscriptions
+        // can be widened or narrowed; where it is left is remembered across restarts
+        SplitPane listsSplit = new SplitPane(feedPane, episodePane);
+        listsSplit.setDividerPositions(DesktopPreferences.getFeedSplitPosition());
+        listsSplit.getDividers().get(0).positionProperty().addListener(
+                (obs, oldPosition, newPosition) ->
+                        DesktopPreferences.setFeedSplitPosition(newPosition.doubleValue()));
+        root.setCenter(listsSplit);
         root.setRight(buildSidebar());
         root.setBottom(buildPlayerBar());
 

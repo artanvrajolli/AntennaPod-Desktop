@@ -250,6 +250,15 @@ public final class DesktopPreferences {
         PREFS.putDouble("defaultVolume", volume);
     }
 
+    public static double getFeedSplitPosition() {
+        double value = PREFS.getDouble("feedSplitPosition", 0.25);
+        return value >= 0.05 && value <= 0.8 ? value : 0.25;
+    }
+
+    public static void setFeedSplitPosition(double value) {
+        PREFS.putDouble("feedSplitPosition", Math.max(0.05, Math.min(0.8, value)));
+    }
+
     public static int getSkipIntroSec() {
         return PREFS.getInt("skipIntroSec", 0);
     }
