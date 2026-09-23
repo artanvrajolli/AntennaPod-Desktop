@@ -341,7 +341,9 @@ final class ThumbBar {
         Graphics2D g = image.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setColor(ink);
-        double pad = size * 0.28;
+        // the shell fixes the button size, so the glyphs fill the icon instead of
+        // sitting small inside it
+        double pad = size * 0.16;
         double left = pad;
         double right = size - pad;
         double top = pad;
