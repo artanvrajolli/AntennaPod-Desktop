@@ -4699,13 +4699,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             if (downloaded) {
                 meta.append(" · Downloaded");
                 downloadButton.setText("Delete");
+                downloadButton.setGraphic(Icons.remove());
             } else if (media != null && downloader.isDownloading(media.getId())) {
                 Integer percent = downloadProgress.get(media.getId());
                 meta.append(" · Downloading")
                         .append(percent != null && percent >= 0 ? " " + percent + "%" : "…");
                 downloadButton.setText("Cancel");
+                downloadButton.setGraphic(Icons.stop());
             } else {
                 downloadButton.setText("Download");
+                downloadButton.setGraphic(Icons.download());
             }
             downloadButton.setDisable(media == null || media.getDownloadUrl() == null);
             FeedMedia current = playback.getCurrentMedia();
