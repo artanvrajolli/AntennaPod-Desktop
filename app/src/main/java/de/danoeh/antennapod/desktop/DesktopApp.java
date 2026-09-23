@@ -95,6 +95,19 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Label statusLabel;
     /** Seconds a status message stays solid before fading out. */
     private static final int STATUS_FADE_SECONDS = 60;
+    /** Status history behind the Settings logs tab; newest first, capped. */
+    private static final int MAX_STATUS_LOG = 500;
+    private final java.util.Deque<StatusEntry> statusLog = new java.util.ArrayDeque<>();
+
+    private static final class StatusEntry {
+        final long timeMs;
+        final String text;
+
+        StatusEntry(long timeMs, String text) {
+            this.timeMs = timeMs;
+            this.text = text;
+        }
+    }
     private PauseTransition statusFadeDelay;
     private FadeTransition statusFadeOut;
     private Label nowPlayingLabel;
@@ -1528,9 +1541,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         statusLabel.setStyle("-fx-cursor: hand;");
         statusLabel.setOnMouseClicked(event -> {
             // the status line carries error detail worth pasting into a bug report
-            ClipboardContent content = new ClipboardContent();
-            content.putString(statusLabel.getText());
-            Clipboard.getSystemClipboard().setContent(content);
+            copyText(statusLabel.getText());
         });
 
         VBox controlsColumn = new VBox(6, titleRow, scrubRow, controlArea);
@@ -1861,6 +1872,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
      * A new message restores full opacity and restarts the minute.
      */
     private void setStatus(String message) {
+        synchronized (statusLog) {
+            statusLog.addFirst(new StatusEntry(System.currentTimeMillis(), message));
+            while (statusLog.size() > MAX_STATUS_LOG) {
+                statusLog.removeLast();
+            }
+        }
         Platform.runLater(() -> {
             statusLabel.setText(message);
             String tip = message + "\n\nClick to copy";
@@ -2710,6 +2727,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         proxyPass.setText(DesktopPreferences.getProxyPassword());
         grid.add(proxyPass, 1, row++);
         tabs.getTabs().add(settingsTab("Network", grid));
+        tabs.getTabs().add(buildLogsTab());
 
         Label savedLabel = new Label("Changes are saved automatically.");
         savedLabel.setWrapText(true);
@@ -2790,6 +2808,51 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         grid.setVgap(8);
         grid.setPadding(new Insets(12));
         return grid;
+    }
+
+    /** Copies text to the system clipboard for pasting into bug reports. */
+    private static void copyText(String text) {
+        ClipboardContent content = new ClipboardContent();
+        content.putString(text != null ? text : "");
+        Clipboard.getSystemClipboard().setContent(content);
+    }
+
+    /** The Settings logs tab: the status history, newest first, easy to copy out. */
+    private Tab buildLogsTab() {
+        List<String> lines = new ArrayList<>();
+        java.text.SimpleDateFormat stamp = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        synchronized (statusLog) {
+            for (StatusEntry entry : statusLog) {
+                lines.add(stamp.format(new Date(entry.timeMs)) + "  " + entry.text);
+            }
+        }
+        ObservableList<String> items = FXCollections.observableArrayList(lines);
+        ListView<String> list = new ListView<>(items);
+        list.setOnMouseClicked(event -> {
+            if (event.getClickCount() == 2) {
+                String selected = list.getSelectionModel().getSelectedItem();
+                if (selected != null) {
+                    copyText(selected);
+                    setStatus("Log line copied to clipboard");
+                }
+            }
+        });
+        Label hint = new Label("Newest first · double-click a row to copy it");
+        hint.getStyleClass().add("muted-label");
+        Button copyAll = new Button("Copy all");
+        copyAll.setOnAction(event -> {
+            copyText(String.join("\n", items));
+            setStatus("Log copied to clipboard (" + items.size() + " rows)");
+        });
+        HBox header = new HBox(8, hint, copyAll);
+        header.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(hint, Priority.ALWAYS);
+        VBox pane = new VBox(8, header, list);
+        pane.setPadding(new Insets(12));
+        VBox.setVgrow(list, Priority.ALWAYS);
+        Tab tab = new Tab("Logs", pane);
+        tab.setClosable(false);
+        return tab;
     }
 
     /** Wraps one settings grid in a scrolling, fixed (non-closable) tab. */
