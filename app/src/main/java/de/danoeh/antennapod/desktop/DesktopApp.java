@@ -4490,6 +4490,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private class EpisodeCell extends ListCell<FeedItem> {
+        /** Fits "Download" plus its icon at the default control size, with room to spare. */
+        private static final double DOWNLOAD_BUTTON_WIDTH = 104;
         private final Label titleLabel = new Label();
         private final Label metaLabel = new Label();
         private final Label syncBadge = new Label("SYNCED");
@@ -4530,6 +4532,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             for (Region control : fixedControls) {
                 control.setMinWidth(Region.USE_PREF_SIZE);
             }
+            // "Download" is wider than "Delete" — pin the width to the wider text so the
+            // buttons after it never shift when a download finishes
+            downloadButton.setMinWidth(DOWNLOAD_BUTTON_WIDTH);
+            downloadButton.setPrefWidth(DOWNLOAD_BUTTON_WIDTH);
+            downloadButton.setMaxWidth(DOWNLOAD_BUTTON_WIDTH);
             syncBadge.setTooltip(
                     new Tooltip("Appeared in the last sync's episode actions"));
             syncBadge.setVisible(false);
