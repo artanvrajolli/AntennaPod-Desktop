@@ -189,6 +189,11 @@ public final class Icons {
                 + capsule(150, 160, 218, 160, 22));
     }
 
+    /** Three dots in a row, for the overflow menu holding the secondary actions. */
+    public static Node more() {
+        return icon(circle(64, 128, 22) + circle(128, 128, 22) + circle(192, 128, 22));
+    }
+
     public static Node stats() {
         return icon(rect(40, 136, 46, 80, 14) + rect(105, 88, 46, 128, 14) + rect(170, 44, 46, 172, 14));
     }

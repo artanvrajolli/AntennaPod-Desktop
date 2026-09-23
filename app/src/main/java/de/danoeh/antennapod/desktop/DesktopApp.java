@@ -35,6 +35,8 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.ListView;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.ProgressBar;
@@ -533,30 +535,32 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         searchField.setOnAction(event -> search(searchField.getText().trim()));
         Button refreshAllButton = new Button("Refresh all", Icons.refresh());
         refreshAllButton.setOnAction(event -> refreshAll());
-        Button queueButton = new Button("Queue", Icons.queue());
-        queueButton.setOnAction(event -> showQueue());
-        Button importButton = new Button("Import", Icons.download());
-        importButton.setOnAction(event -> importOpml());
-        Button exportButton = new Button("Export", Icons.upload());
-        exportButton.setOnAction(event -> exportOpml());
         Button syncButton = new Button("Sync", Icons.sync());
         this.syncButton = syncButton;
         updateSyncButtonTooltip();
         syncButton.setOnAction(event -> showSyncDialog());
-        Button favoritesButton = new Button("Favorites", Icons.favorite());
-        favoritesButton.setOnAction(event -> showFavorites());
-        Button historyButton = new Button("History", Icons.history());
-        historyButton.setOnAction(event -> showHistory());
-        Button statsButton = new Button("Stats", Icons.stats());
-        statsButton.setOnAction(event -> showStatistics());
-        Button settingsButton = new Button("Settings", Icons.settings());
-        settingsButton.setOnAction(event -> showSettings());
-        Button githubButton = new Button("GitHub", Icons.github());
-        githubButton.setTooltip(new Tooltip("Open the project page on GitHub"));
-        githubButton.setOnAction(event -> openProjectPage());
-        return new ToolBar(urlField, subscribeButton, searchField, searchButton, refreshAllButton,
-                queueButton, importButton, exportButton, syncButton, favoritesButton,
-                historyButton, statsButton, settingsButton, githubButton);
+        // the everyday views live one click away under Library; the occasional
+        // actions under More — fourteen top-level controls was a wall of buttons
+        MenuButton libraryMenu = new MenuButton("Library", Icons.queue());
+        libraryMenu.getItems().addAll(
+                toolbarMenuItem("Queue", Icons.queue(), this::showQueue),
+                toolbarMenuItem("Favorites", Icons.favorite(), this::showFavorites),
+                toolbarMenuItem("History", Icons.history(), this::showHistory),
+                toolbarMenuItem("Stats", Icons.stats(), this::showStatistics));
+        MenuButton moreMenu = new MenuButton("More", Icons.more());
+        moreMenu.getItems().addAll(
+                toolbarMenuItem("Import…", Icons.download(), this::importOpml),
+                toolbarMenuItem("Export…", Icons.upload(), this::exportOpml),
+                toolbarMenuItem("Settings", Icons.settings(), this::showSettings),
+                toolbarMenuItem("GitHub project page", Icons.github(), this::openProjectPage));
+        return new ToolBar(urlField, subscribeButton, searchField, searchButton,
+                refreshAllButton, syncButton, libraryMenu, moreMenu);
+    }
+
+    private static MenuItem toolbarMenuItem(String text, Node icon, Runnable action) {
+        MenuItem item = new MenuItem(text, icon);
+        item.setOnAction(event -> action.run());
+        return item;
     }
 
     private VBox buildFeedPane() {
