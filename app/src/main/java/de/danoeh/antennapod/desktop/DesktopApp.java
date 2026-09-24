@@ -951,22 +951,74 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     launchInstaller(installer);
                 });
             } catch (Exception e) {
+                android.util.Log.e("DesktopApp", "Update download failed", e);
+                String friendly = friendlyUpdateError(e);
                 Platform.runLater(() -> {
                     progress.setVisible(false);
                     progress.setManaged(false);
-                    status.setText("Update failed: " + e.getMessage()
-                            + ". You can download it from the release page instead.");
+                    status.setText("Update failed: " + friendly
+                            + " You can retry or download it from the release page instead.");
                     install.setDisable(false);
                     later.setDisable(false);
                     skip.setDisable(false);
-                    install.setText("Open release page");
-                    install.setOnAction(open -> {
-                        getHostServices().showDocument(release.pageUrl);
-                        closeTopModal();
+                    install.setText("Retry");
+                    install.setDefaultButton(true);
+                    install.setOnAction(retry -> {
+                        install.setDisable(true);
+                        later.setDisable(true);
+                        skip.setDisable(true);
+                        progress.setVisible(true);
+                        progress.setManaged(true);
+                        progress.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
+                        status.setText("Downloading " + release.installerName + "\u2026");
+                        downloadAndInstall(release, progress, status, install, later, skip);
                     });
+                    ensureOpenReleasePageButton(release, install);
                 });
             }
         });
+    }
+
+    /**
+     * Adds an "Open release page" button next to Retry after a failed download, so a repeated
+     * failure still leaves a way out. Added once; later failures reuse it.
+     */
+    private void ensureOpenReleasePageButton(UpdateChecker.Release release, Button install) {
+        if (!(install.getParent() instanceof HBox buttons)) {
+            return;
+        }
+        for (Node child : buttons.getChildren()) {
+            if ("openReleasePage".equals(child.getUserData())) {
+                return;
+            }
+        }
+        Button page = new Button("Open release page");
+        page.setUserData("openReleasePage");
+        page.setOnAction(open -> {
+            getHostServices().showDocument(release.pageUrl);
+            closeTopModal();
+        });
+        buttons.getChildren().add(1, page);
+    }
+
+    /**
+     * What the update dialog shows for a download failure. A bare file-system path (what a
+     * locked {@code .part} file used to surface as) tells the user nothing, so it becomes
+     * actionable text; anything else passes through.
+     */
+    static String friendlyUpdateError(Exception e) {
+        String message = e == null ? null : e.getMessage();
+        if (message == null || message.isBlank() || looksLikeUpdatePath(message)) {
+            return "could not save the update file (it may be locked by an antivirus scan).";
+        }
+        return message.endsWith(".") ? message.substring(0, message.length() - 1) + "." : message;
+    }
+
+    private static boolean looksLikeUpdatePath(String message) {
+        String trimmed = message.trim();
+        return trimmed.endsWith(".part")
+                || trimmed.matches("(?i)^[a-z]:\\\\.*")
+                || trimmed.matches("^/[^\\n]*");
     }
 
     /**

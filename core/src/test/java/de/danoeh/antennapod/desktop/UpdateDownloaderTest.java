@@ -169,4 +169,41 @@ public class UpdateDownloaderTest {
         File file = UpdateDownloader.download(release("/setup.exe", PAYLOAD), null);
         assertEquals(PAYLOAD, file.length());
     }
+
+    @Test
+    public void testAFlakyServerIsRetried() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        server.createContext("/flaky.exe", exchange -> {
+            if (calls.getAndIncrement() == 0) {
+                exchange.sendResponseHeaders(500, -1);
+                exchange.close();
+                return;
+            }
+            byte[] payload = new byte[PAYLOAD];
+            for (int i = 0; i < payload.length; i++) {
+                payload[i] = (byte) i;
+            }
+            exchange.sendResponseHeaders(200, payload.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(payload);
+            }
+        });
+        File file = UpdateDownloader.download(release("/flaky.exe", PAYLOAD), null);
+        assertTrue(file.isFile());
+        assertEquals(PAYLOAD, file.length());
+        assertEquals(2, calls.get());
+    }
+
+    @Test
+    public void testAFailedDownloadLeavesNoTempFilesAndNoBarePath() {
+        try {
+            UpdateDownloader.download(release("/missing.exe", PAYLOAD), null);
+            fail("a 404 must not produce a file");
+        } catch (IOException expected) {
+            assertFalse("the user must never see a bare .part path",
+                    expected.getMessage().endsWith(".part"));
+        }
+        File[] left = UpdateDownloader.updateDir().listFiles();
+        assertEquals(0, left == null ? 0 : left.length);
+    }
 }
