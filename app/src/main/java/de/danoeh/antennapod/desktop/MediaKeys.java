@@ -31,6 +31,11 @@ import javafx.application.Platform;
  * <p>A hotkey belongs to one process at a time. If another player already holds one, claiming it
  * fails and that key is left alone rather than fought over; {@link #claimed()} says which ones
  * this actually got. {@code -Dantennapod.desktop.mediakeys=false} claims nothing at all.
+ *
+ * <p>This is the fallback for when the system media card is off. With the card on, Windows
+ * itself routes each press to whichever player is currently active, so claiming keys here
+ * would steal them from other players — and fire twice, once from the hotkey and once from
+ * the card. The app therefore only starts this when the card is disabled.
  */
 final class MediaKeys {
     interface Callbacks {

@@ -70,8 +70,10 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   unsubclassed, `-Dantennapod.desktop.tray=false` disables the tray,
   `-Dantennapod.desktop.icon=false` keeps the plain app icon on the taskbar
   instead of drawing the playing episode's artwork into it,
-  `-Dantennapod.desktop.mediakeys=false` leaves the keyboard's media keys to
-  other apps, `-Dantennapod.desktop.smtc=false` hides the episode from the
+  `-Dantennapod.desktop.mediakeys=false` ignores the keyboard's media keys (they
+  otherwise follow the active player through the media card; with the card off
+  they fall back to claimed hotkeys),
+  `-Dantennapod.desktop.smtc=false` hides the episode from the
   Windows volume flyout and media card. Use these
   to isolate a fault before changing the native code.
 - `core` must not depend on JavaFX; UI code lives in `app`.

@@ -411,7 +411,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         smtc.attach(stage, new SmtcManager.Callbacks() {
             @Override
             public void onPlay() {
-                Platform.runLater(() -> {
+                onCardButton(() -> {
                     if (!playback.isPlaying()) {
                         playback.togglePlayPause();
                     }
@@ -420,22 +420,22 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
             @Override
             public void onPause() {
-                Platform.runLater(playback::pause);
+                onCardButton(playback::pause);
             }
 
             @Override
             public void onStop() {
-                Platform.runLater(playback::stop);
+                onCardButton(playback::stop);
             }
 
             @Override
             public void onNext() {
-                Platform.runLater(playback::playNext);
+                onCardButton(playback::playNext);
             }
 
             @Override
             public void onPrevious() {
-                Platform.runLater(playback::playPrevious);
+                onCardButton(playback::playPrevious);
             }
         });
         startMediaKeys();
@@ -1893,8 +1893,32 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
      * this the keys only ever reached whatever player claimed them first. A key another player
      * already holds is left with them rather than fought over.
      */
+    /**
+     * Runs a system media card press on the application thread, unless media keys are switched
+     * off — the one switch covers both transports, so the settings checkbox keeps working now
+     * that presses arrive through the card instead of claimed hotkeys.
+     */
+    private void onCardButton(Runnable action) {
+        if (!DesktopPreferences.getMediaKeysEnabled()) {
+            return;
+        }
+        Platform.runLater(() -> {
+            try {
+                action.run();
+            } catch (Throwable t) {
+                t.printStackTrace();
+            }
+        });
+    }
+
     private void startMediaKeys() {
         if (!MediaKeys.isEnabled() || !DesktopPreferences.getMediaKeysEnabled()) {
+            return;
+        }
+        if (SmtcManager.isEnabled()) {
+            // Presses arrive through the system media card, which Windows routes to whichever
+            // player is currently active — this episode while it plays, the other app while it
+            // does. Claiming the keys here would steal them from other players and fire twice.
             return;
         }
         mediaKeys = new MediaKeys(new MediaKeys.Callbacks() {
@@ -2739,9 +2763,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 "Let the keyboard's media keys control playback from any window");
         mediaKeysBox.setSelected(DesktopPreferences.getMediaKeysEnabled());
         mediaKeysBox.setDisable(!MediaKeys.isEnabled());
-        mediaKeysBox.setTooltip(new Tooltip("Play/pause, next, previous and stop. Windows gives "
-                + "each of these keys to one app at a time, so turning this off hands them back "
-                + "to another player."));
+        mediaKeysBox.setTooltip(new Tooltip("Play/pause, next, previous and stop. Key presses "
+                + "follow whichever player is currently active through the system media card, "
+                + "so turning this off just ignores them here and leaves them to other players."));
         grid.add(mediaKeysBox, 0, row++, 2, 1);
         grid.add(sectionLabel("Updates"), 0, row++, 2, 1);
         Label versionLabel = new Label("Version " + appVersion());
