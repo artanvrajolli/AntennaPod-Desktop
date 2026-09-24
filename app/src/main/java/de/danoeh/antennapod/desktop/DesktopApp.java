@@ -3367,6 +3367,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             try {
                 SyncManager.SyncResult result = syncManager.sync();
                 DesktopPreferences.setLastSyncTime(System.currentTimeMillis());
+                // An episode can finish (or be marked) while this sync was in flight. Its action
+                // was queued too late for this round, so line up another one: the local state is
+                // already written, and the queued action uploads on the follow-up.
+                try {
+                    if (!database.getQueuedSyncActions().isEmpty()) {
+                        scheduleAutoSync();
+                    }
+                } catch (Exception ignored) {
+                    // the queued actions stay queued for the next trigger
+                }
                 String message = syncResultText(result);
                 String summary = result.playedItemIds.isEmpty()
                         ? "Sync finished"

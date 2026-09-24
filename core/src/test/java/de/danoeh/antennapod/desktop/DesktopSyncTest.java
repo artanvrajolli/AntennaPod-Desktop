@@ -479,6 +479,49 @@ public class DesktopSyncTest {
     }
 
     @Test
+    public void testFinishQueuedDuringSyncIsNotOverwrittenByOlderRemoteAction() throws Exception {
+        FeedUpdater updater = new FeedUpdater(database);
+        Feed feed = updater.subscribe(baseUrl + "/local.xml");
+        Feed stored = database.getFeed(feed.getId());
+        FeedItem item = stored.getItems().get(0);
+        item.setFeed(stored);
+        item.getMedia().setDuration(600000);
+        item.getMedia().setPosition(600000);
+        database.updatePlaybackState(item.getMedia());
+
+        // an older remote position, e.g. the phone was halfway through the episode
+        EpisodeAction staleRemote = new EpisodeAction.Builder(
+                feed.getDownloadUrl(), item.getMedia().getDownloadUrl(), EpisodeAction.Action.PLAY)
+                .timestamp(new Date(System.currentTimeMillis() - 60000))
+                .guid(item.getItemIdentifier())
+                .started(0).position(120).total(600).build();
+        FakeSyncService racingFake = new FakeSyncService() {
+            @Override
+            public EpisodeActionChanges getEpisodeActionChanges(long lastSync) {
+                // the episode finishes on this device while the sync is downloading
+                try {
+                    item.setPlayed(true);
+                    database.setItemState(item.getId(), item.getPlayState());
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                new TestSyncManager(database, updater, this).recordPlayedState(item, true);
+                return super.getEpisodeActionChanges(lastSync);
+            }
+        };
+        racingFake.remoteActions.add(staleRemote);
+
+        SyncManager.SyncResult result = new TestSyncManager(database, updater, racingFake).sync();
+
+        assertEquals("the stale remote position must not touch the finished episode",
+                0, result.actionsApplied);
+        assertEquals(600000, database.getMedia(item.getMedia().getId()).getPosition());
+        assertTrue(database.getItem(item.getId()).isPlayed());
+        assertEquals("the finish stays queued for the next sync",
+                1, database.getQueuedSyncActions().size());
+    }
+
+    @Test
     public void testActionFilterPrefersNewerLocalAction() {
         EpisodeAction remote = new EpisodeAction.Builder("podcast", "episode", EpisodeAction.Action.PLAY)
                 .timestamp(new Date(1000)).started(0).position(10).total(100).build();

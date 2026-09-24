@@ -269,9 +269,19 @@ public class SyncManager {
         long lastSync = Long.parseLong(database.getSyncState(STATE_ACTION_TIMESTAMP, "0"));
         EpisodeActionChanges changes = service.getEpisodeActionChanges(lastSync);
         database.setSyncState(STATE_ACTION_TIMESTAMP, String.valueOf(changes.getTimestamp()));
+        // An episode can finish on this device while the upload above is in flight. That finish
+        // is queued after the snapshot this sync uploaded, so without re-reading it an older
+        // remote position would overwrite the just-finished state. The local finish wins; the
+        // queued action uploads on the next sync.
+        List<EpisodeAction> effectiveLocal = new ArrayList<>(localActions);
+        try {
+            effectiveLocal.addAll(toEpisodeActions(database.getQueuedSyncActions()));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         Map<Pair<String, String>, EpisodeAction> overriding =
                 EpisodeActionFilter.getRemoteActionsOverridingLocalActions(
-                        changes.getEpisodeActions(), localActions);
+                        changes.getEpisodeActions(), effectiveLocal);
         int applied = 0;
         for (EpisodeAction action : overriding.values()) {
             if (applyPlayAction(action, changedIds, playedIds, unplayedIds)) {
