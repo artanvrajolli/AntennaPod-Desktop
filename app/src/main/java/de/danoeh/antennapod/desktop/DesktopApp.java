@@ -408,6 +408,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         });
         // the episode in the Windows volume flyout, with the same transport vocabulary
+        smtc.setErrorReporter(message -> setStatus("Media card: " + message));
         smtc.attach(stage, new SmtcManager.Callbacks() {
             @Override
             public void onPlay() {

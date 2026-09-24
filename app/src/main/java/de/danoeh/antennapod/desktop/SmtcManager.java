@@ -138,6 +138,8 @@ public final class SmtcManager {
     private volatile long buttonToken;
     private volatile boolean buttonRegistered;
     private volatile Callbacks callbacks;
+    private volatile java.util.function.Consumer<String> errorReporter;
+    private volatile String lastReportedError;
     private volatile int lastTimelineMs = -1;
     private volatile int lastDurationMs = -1;
     // set before attach completes, applied once the controls exist
@@ -164,6 +166,30 @@ public final class SmtcManager {
     }
 
     /**
+     * Where one-line failure notes go (the app shows them in the status log). Failures are also
+     * printed to the console; this just makes them visible where the app runs without one.
+     * Each distinct message is reported once, so a persistent failure does not flood the log.
+     */
+    public void setErrorReporter(java.util.function.Consumer<String> reporter) {
+        this.errorReporter = reporter;
+    }
+
+    private void reportError(String message) {
+        try {
+            if (message.equals(lastReportedError)) {
+                return;
+            }
+            lastReportedError = message;
+            java.util.function.Consumer<String> reporter = errorReporter;
+            if (reporter != null) {
+                reporter.accept(message);
+            }
+        } catch (Throwable ignored) {
+            // reporting must never break playback
+        }
+    }
+
+    /**
      * Fetches the transport controls for the window and hooks up the card buttons. Call once the
      * stage is showing: the window has to exist before it can be found.
      */
@@ -177,14 +203,17 @@ public final class SmtcManager {
             try {
                 HWND window = awaitWindow(title);
                 if (window == null) {
+                    reportError("app window not found");
                     return;
                 }
                 int hr = ComBase.INSTANCE.RoInitialize(RO_INIT_MULTITHREADED);
                 if (hr < 0) {
+                    reportError("WinRT unavailable (" + hr + ")");
                     return;
                 }
                 Pointer factory = getActivationFactory(CLASS_CONTROLS, IID_INTEROP);
                 if (factory == null) {
+                    reportError("media controls unavailable");
                     return;
                 }
                 Pointer controlsPtr;
@@ -194,6 +223,7 @@ public final class SmtcManager {
                     release(factory);
                 }
                 if (controlsPtr == null) {
+                    reportError("no media controls for this window");
                     return;
                 }
                 controls = new Controls(controlsPtr);
@@ -224,6 +254,7 @@ public final class SmtcManager {
                 }
             } catch (Throwable t) {
                 // an unavailable shell interface is not worth breaking playback over
+                reportError("attach failed: " + t.getMessage());
                 t.printStackTrace();
             }
         });
@@ -245,6 +276,7 @@ public final class SmtcManager {
                 }
                 pushEpisode(title, artist, album, artwork);
             } catch (Throwable t) {
+                reportError("episode update failed: " + t.getMessage());
                 t.printStackTrace();
             }
         });
@@ -264,6 +296,7 @@ public final class SmtcManager {
                 }
                 pushStatus(status);
             } catch (Throwable t) {
+                reportError("status update failed: " + t.getMessage());
                 t.printStackTrace();
             }
         });

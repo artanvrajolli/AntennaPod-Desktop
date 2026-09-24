@@ -1,8 +1,10 @@
 package de.danoeh.antennapod.desktop;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import com.sun.jna.Pointer;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -179,6 +181,138 @@ public class ThemeSceneTest {
         }
     }
 
+    /**
+     * The media card through the same path the app uses at startup: a real window, the real
+     * attach, then metadata read back through a fresh fetch for that window. Checked in this
+     * class because it needs the same toolkit session.
+     */
+    private static void verifySmtcCard() throws Exception {
+        CountDownLatch attached = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        AtomicReference<Stage> stageRef = new AtomicReference<>();
+        AtomicReference<SmtcManager> smtcRef = new AtomicReference<>();
+        Platform.runLater(() -> {
+            try {
+                Stage stage = new Stage();
+                // undecorated, like the app's own custom-chrome window in production
+                stage.initStyle(javafx.stage.StageStyle.UNDECORATED);
+                stage.setTitle("smtc-app-test");
+                stage.setScene(new Scene(new StackPane(new Label("smtc")), 200, 100));
+                stage.show();
+                stageRef.set(stage);
+                SmtcManager smtc = new SmtcManager();
+                smtcRef.set(smtc);
+                smtc.attach(stage, new SmtcManager.Callbacks() {
+                    public void onPlay() {
+                    }
+
+                    public void onPause() {
+                    }
+
+                    public void onStop() {
+                    }
+
+                    public void onNext() {
+                    }
+
+                    public void onPrevious() {
+                    }
+                });
+                smtc.setEpisode("Typical Story II", "Glum Aleks", "AntennaPod Desktop", null);
+                smtc.setStatus(true, true);
+            } catch (Throwable t) {
+                failure.set(t);
+            } finally {
+                attached.countDown();
+            }
+        });
+        assertTrue("Timed out showing the stage", attached.await(15, TimeUnit.SECONDS));
+        if (failure.get() != null) {
+            throw new AssertionError(failure.get());
+        }
+        // off the FX thread: the card belongs to the window by now, read it back
+        SmtcManager.ComBase.INSTANCE.RoInitialize(1);
+        try {
+            String title = "";
+            int status = -1;
+            long waited = 0;
+            while (waited < 20_000 && (title.isEmpty() || status != SmtcManager.STATUS_PLAYING)) {
+                Thread.sleep(200);
+                waited += 200;
+                title = readCardTitle();
+                status = readCardStatus();
+            }
+            assertEquals("Typical Story II", title);
+            assertEquals(SmtcManager.STATUS_PLAYING, status);
+        } finally {
+            SmtcManager.ComBase.INSTANCE.RoUninitialize();
+            CountDownLatch hidden = new CountDownLatch(1);
+            SmtcManager smtc = smtcRef.get();
+            if (smtc != null) {
+                smtc.shutdown();
+            }
+            Platform.runLater(() -> {
+                if (stageRef.get() != null) {
+                    stageRef.get().hide();
+                }
+                hidden.countDown();
+            });
+            hidden.await(10, TimeUnit.SECONDS);
+        }
+    }
+
+    private static com.sun.jna.Pointer cardControls() {
+        com.sun.jna.platform.win32.WinDef.HWND window =
+                WindowsTaskbar.findWindow("smtc-app-test");
+        org.junit.Assert.assertNotNull("test window not found", window);
+        Pointer factory = SmtcManager.getActivationFactory(
+                SmtcManager.CLASS_CONTROLS, SmtcManager.IID_INTEROP);
+        org.junit.Assert.assertNotNull(factory);
+        try {
+            return SmtcManager.getForWindow(factory, window);
+        } finally {
+            SmtcManager.release(factory);
+        }
+    }
+
+    private static String readCardTitle() {
+        Pointer controls = cardControls();
+        if (controls == null) {
+            return "";
+        }
+        try {
+            Pointer updater = new SmtcManager.Controls(controls).getDisplayUpdater();
+            try {
+                Pointer music = new SmtcManager.DisplayUpdater(updater).getMusicProperties();
+                try {
+                    return new SmtcManager.MusicProps(music).getTitle();
+                } finally {
+                    SmtcManager.release(music);
+                }
+            } finally {
+                SmtcManager.release(updater);
+            }
+        } catch (Throwable t) {
+            return "";
+        } finally {
+            SmtcManager.release(controls);
+        }
+    }
+
+    private static int readCardStatus() {
+        Pointer controls = cardControls();
+        if (controls == null) {
+            return -1;
+        }
+        try {
+            return new SmtcManager.Controls(controls).getPlaybackStatus();
+        } catch (Throwable t) {
+            return -1;
+        } finally {
+            SmtcManager.release(controls);
+        }
+    }
+
     @Test
     public void testNewWindowsReceiveActiveTheme() throws Exception {
         String previousMode = DesktopPreferences.getThemeMode();
@@ -215,6 +349,9 @@ public class ThemeSceneTest {
         DesktopPreferences.setThemeMode(previousMode);
         if (failure.get() != null) {
             throw new AssertionError(failure.get());
+        }
+        if (System.getProperty("os.name", "").toLowerCase(java.util.Locale.US).contains("win")) {
+            verifySmtcCard();
         }
     }
 }
