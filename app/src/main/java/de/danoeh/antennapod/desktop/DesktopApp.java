@@ -42,6 +42,7 @@ import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SelectionMode;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Slider;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
@@ -575,6 +576,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 toolbarMenuItem("Export…", Icons.upload(), this::exportOpml),
                 toolbarMenuItem("Settings", Icons.settings(), this::showSettings),
                 toolbarMenuItem("GitHub project page", Icons.github(), this::openProjectPage));
+        if (isDevBuild()) {
+            // helpers for running from source: never part of an installed build
+            moreMenu.getItems().addAll(new SeparatorMenuItem(),
+                    toolbarMenuItem("Reload everything", Icons.refresh(), this::reloadAll),
+                    toolbarMenuItem("Open project folder", Icons.folder(), this::openProjectDir));
+        }
         // inputs stay left, actions sit at the far right
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -1081,6 +1088,60 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         } catch (Exception e) {
             setStatus("Could not open the browser: " + e.getMessage());
         }
+    }
+
+    /** Whether this is a run from source, with no released version to compare against. */
+    static boolean isDevBuild() {
+        return !UpdateChecker.isComparable(appVersion());
+    }
+
+    /**
+     * Dev-only: re-reads everything from the database and redraws the lists, so the UI picks up
+     * the latest stored state without restarting the app.
+     */
+    private void reloadAll() {
+        reloadFeeds(null);
+        Feed open = selectedFeed;
+        if (open != null) {
+            loadEpisodes(open);
+        } else {
+            episodeList.refresh();
+        }
+        refreshFeedCounts();
+        updateSyncButtonTooltip();
+        setStatus("Reloaded everything from the database");
+    }
+
+    /** Dev-only: opens the project folder (the working directory when run from source). */
+    private void openProjectDir() {
+        File dir = projectDir(new File(System.getProperty("user.dir", ".")));
+        if (dir == null) {
+            setStatus("Not a project checkout: " + System.getProperty("user.dir", "."));
+            return;
+        }
+        try {
+            getHostServices().showDocument(dir.toURI().toString());
+            setStatus("Opened " + dir);
+        } catch (Exception e) {
+            setStatus("Could not open the project folder: " + e.getMessage());
+        }
+    }
+
+    /**
+     * The checkout {@code workingDir} belongs to, or null when it is not one. Kept separate so it
+     * can be tested without starting the UI.
+     */
+    static File projectDir(File workingDir) {
+        try {
+            File dir = workingDir.getCanonicalFile();
+            if (new File(dir, "settings.gradle").isFile()
+                    || new File(dir, "gradlew.bat").isFile()) {
+                return dir;
+            }
+        } catch (Exception ignored) {
+            // not a usable directory
+        }
+        return null;
     }
 
     private static final String APP_NAME = "AntennaPod Desktop";

@@ -228,6 +228,12 @@ public final class Icons {
         return icon(ring(110, 110, 64, BAR) + capsule(156, 156, 212, 212, 28));
     }
 
+    /** A folder silhouette: the tab reads at small sizes, the body carries the weight. */
+    public static Node folder() {
+        return icon(polygon(true,
+                40, 92, 40, 64, 104, 64, 120, 92, 216, 92, 216, 200, 40, 200));
+    }
+
     /** Eight-tooth gear: a solid body, radial teeth and a punched centre. */
     public static Node settings() {
         StringBuilder teeth = new StringBuilder();
