@@ -30,6 +30,16 @@ public class DevMenuTest {
     }
 
     @Test
+    public void testProjectDirFindsTheCheckoutAboveAModuleDir() throws Exception {
+        // Gradle runs the app with the working directory set to the app module
+        File root = tempFolder.getRoot();
+        Files.writeString(new File(root, "settings.gradle").toPath(), "");
+        File module = new File(root, "app");
+        assertTrue(module.mkdir());
+        assertEquals(root.getCanonicalFile(), DesktopApp.projectDir(module));
+    }
+
+    @Test
     public void testProjectDirAcceptsTheWrapperAlone() throws Exception {
         File root = tempFolder.getRoot();
         Files.writeString(new File(root, "gradlew.bat").toPath(), "");

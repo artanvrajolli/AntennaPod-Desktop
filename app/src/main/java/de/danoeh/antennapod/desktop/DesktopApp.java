@@ -614,7 +614,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (isDevBuild()) {
             // helpers for running from source: never part of an installed build
             moreMenu.getItems().addAll(new SeparatorMenuItem(),
-                    toolbarMenuItem("Reload everything", Icons.refresh(), this::reloadAll),
+                    toolbarMenuItem("Reload latest build", Icons.refresh(), this::reloadAll),
                     toolbarMenuItem("Open project folder", Icons.folder(), this::openProjectDir));
         }
         // inputs stay left, actions sit at the far right
@@ -1131,20 +1131,28 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     /**
-     * Dev-only: re-reads everything from the database and redraws the lists, so the UI picks up
-     * the latest stored state without restarting the app.
+     * Dev-only: restarts the app from source through the Gradle wrapper, so the running app is
+     * the latest build — the wrapper rebuilds whatever changed before it launches. Runs the new
+     * copy in its own window first, then gets out of the way like handing over to the installer.
      */
     private void reloadAll() {
-        reloadFeeds(null);
-        Feed open = selectedFeed;
-        if (open != null) {
-            loadEpisodes(open);
-        } else {
-            episodeList.refresh();
+        File root = projectDir(new File(System.getProperty("user.dir", ".")));
+        if (root == null) {
+            setStatus("Not a project checkout: " + System.getProperty("user.dir", "."));
+            return;
         }
-        refreshFeedCounts();
-        updateSyncButtonTooltip();
-        setStatus("Reloaded everything from the database");
+        try {
+            new ProcessBuilder("cmd.exe", "/c", "start", "AntennaPod Desktop",
+                    "gradlew.bat", ":app:run")
+                    .directory(root)
+                    .start();
+        } catch (Exception e) {
+            setStatus("Could not reload: " + e.getMessage());
+            return;
+        }
+        trayManager.remove();
+        trayActive = false;
+        shutdown();
     }
 
     /** Dev-only: opens the project folder (the working directory when run from source). */
@@ -1163,15 +1171,20 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     /**
-     * The checkout {@code workingDir} belongs to, or null when it is not one. Kept separate so it
-     * can be tested without starting the UI.
+     * The checkout {@code workingDir} sits in, or null when it is not one. Gradle runs the app
+     * with the working directory set to the {@code app} module, so the parents are walked up
+     * until the wrapper or the settings file shows up. Kept separate so it can be tested
+     * without starting the UI.
      */
     static File projectDir(File workingDir) {
         try {
             File dir = workingDir.getCanonicalFile();
-            if (new File(dir, "settings.gradle").isFile()
-                    || new File(dir, "gradlew.bat").isFile()) {
-                return dir;
+            while (dir != null) {
+                if (new File(dir, "settings.gradle").isFile()
+                        || new File(dir, "gradlew.bat").isFile()) {
+                    return dir;
+                }
+                dir = dir.getParentFile();
             }
         } catch (Exception ignored) {
             // not a usable directory
