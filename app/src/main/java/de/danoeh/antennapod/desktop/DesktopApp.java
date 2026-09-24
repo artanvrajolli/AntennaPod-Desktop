@@ -77,6 +77,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private EpisodeDownloader downloader;
     private EpisodeCache episodeCache;
     private final WindowsTaskbar windowsTaskbar = new WindowsTaskbar();
+    private final SmtcManager smtc = new SmtcManager();
+    /** The episode the system media card last heard about, so artwork fetches stay with it. */
+    private volatile long smtcMediaId = -1;
+    private volatile File smtcArtworkFile;
     private MediaKeys mediaKeys;
     private PlaybackManager playback;
     private ExecutorService background;
@@ -401,6 +405,37 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             @Override
             public void onSilenceSkipping(boolean enabled) {
                 setSilenceSkipping(enabled);
+            }
+        });
+        // the episode in the Windows volume flyout, with the same transport vocabulary
+        smtc.attach(stage, new SmtcManager.Callbacks() {
+            @Override
+            public void onPlay() {
+                Platform.runLater(() -> {
+                    if (!playback.isPlaying()) {
+                        playback.togglePlayPause();
+                    }
+                });
+            }
+
+            @Override
+            public void onPause() {
+                Platform.runLater(playback::pause);
+            }
+
+            @Override
+            public void onStop() {
+                Platform.runLater(playback::stop);
+            }
+
+            @Override
+            public void onNext() {
+                Platform.runLater(playback::playNext);
+            }
+
+            @Override
+            public void onPrevious() {
+                Platform.runLater(playback::playPrevious);
             }
         });
         startMediaKeys();
@@ -4139,6 +4174,65 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     /**
+     * Keeps the system media card on the playing episode: metadata goes out on episode switches,
+     * status on every state change, and artwork follows once its download lands. The card itself
+     * is updated on its own thread, so this never waits for Windows.
+     */
+    private void updateSmtcCard(FeedMedia current) {
+        if (current == null || current.getItem() == null) {
+            smtcMediaId = -1;
+            smtcArtworkFile = null;
+            smtc.setStatus(false, false);
+            return;
+        }
+        String title = current.getItem().getTitle();
+        String artist = smtcArtist(current);
+        String album = smtcAlbum(current);
+        if (current.getId() != smtcMediaId) {
+            smtcMediaId = current.getId();
+            smtcArtworkFile = null;
+            smtc.setEpisode(title, artist, album, null);
+            fetchSmtcArtwork(current, title, artist, album, nowPlayingArtUrl(current));
+        }
+        smtc.setStatus(true, playback.isPlaying());
+    }
+
+    private static String smtcArtist(FeedMedia media) {
+        FeedItem item = media.getItem();
+        if (item.getFeed() != null && item.getFeed().getAuthor() != null
+                && !item.getFeed().getAuthor().isBlank()) {
+            return item.getFeed().getAuthor();
+        }
+        return media.getFeedTitle() != null ? media.getFeedTitle() : "";
+    }
+
+    private static String smtcAlbum(FeedMedia media) {
+        return media.getFeedTitle() != null ? media.getFeedTitle() : "";
+    }
+
+    /** Artwork for the card, downloaded in the background: the shell only reads local files. */
+    private void fetchSmtcArtwork(FeedMedia media, String title, String artist, String album,
+            String artUrl) {
+        if (artUrl == null || artUrl.isEmpty() || background == null) {
+            return;
+        }
+        long mediaId = media.getId();
+        background.submit(() -> {
+            try {
+                File art = SmtcArtwork.fetch(artUrl,
+                        new File(DesktopPreferences.getCacheDir(), "smtc-art"), mediaId);
+                if (art == null || smtcMediaId != mediaId) {
+                    return;
+                }
+                smtcArtworkFile = art;
+                smtc.setEpisode(title, artist, album, art);
+            } catch (Exception e) {
+                // the card simply shows without artwork
+            }
+        });
+    }
+
+    /**
      * Draws the artwork of whatever is playing into the middle of the window icon, which is the
      * icon Windows shows on the taskbar button. Goes back to the plain app icon when there is no
      * artwork to draw, or nothing is playing.
@@ -4260,6 +4354,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         paintVolumeTrack();
         FeedMedia current = playback.getCurrentMedia();
         windowsTaskbar.setPlaybackState(current != null, playback.isPlaying());
+        updateSmtcCard(current);
         if (current == null) {
             updateBufferBar(0, 0);
         } else if (playback.isPlayingFromFile()) {
@@ -4574,6 +4669,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     @Override
     public void onPositionChanged(int positionMs, int durationMs) {
         windowsTaskbar.setProgress(positionMs, durationMs);
+        smtc.setTimeline(positionMs, durationMs);
         if (sliderDragging) {
             return;
         }
@@ -4744,6 +4840,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         try {
             windowsTaskbar.shutdown();
+        } catch (Exception e) {
+            // ignore
+        }
+        try {
+            smtc.shutdown();
         } catch (Exception e) {
             // ignore
         }

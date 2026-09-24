@@ -28,10 +28,12 @@ inside `core`.
   `WindowChrome` (the app-drawn title bar; the stage is undecorated),
   `WindowsTaskbar` + `ThumbBar` (ITaskbarList3 via JNA: taskbar progress and
   the media buttons under the taskbar thumbnail), `MediaKeys` (the keyboard's
-  media keys),   `TaskbarIcon` (the playing episode's artwork drawn into the
+  media keys), `SmtcManager` + `SmtcArtwork` (the episode in the Windows volume
+  flyout and media card via WinRT SMTC), `TaskbarIcon` (the playing episode's
+  artwork drawn into the
   window icon), `ThemeManager`/`SystemTheme`, `ImageCache`, `Icons`, `Launcher`
   (entry point / main class), `SeekAccent` (artwork colour for the seek bar).
-  17 test classes in `app/src/test`.
+  18 test classes in `app/src/test`.
 
 ## Build, test, run
 
@@ -69,7 +71,8 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   `-Dantennapod.desktop.icon=false` keeps the plain app icon on the taskbar
   instead of drawing the playing episode's artwork into it,
   `-Dantennapod.desktop.mediakeys=false` leaves the keyboard's media keys to
-  other apps. Use these
+  other apps, `-Dantennapod.desktop.smtc=false` hides the episode from the
+  Windows volume flyout and media card. Use these
   to isolate a fault before changing the native code.
 - `core` must not depend on JavaFX; UI code lives in `app`.
 - Toolbar keeps only primary actions direct (subscribe, search, refresh, sync);
