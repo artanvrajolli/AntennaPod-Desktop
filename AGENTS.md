@@ -124,3 +124,54 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   installer that closes itself. Keep the file in step if the JDK's template
   changes; jpackage says `Using custom package resource [Main WiX project file]`
   when it picks it up. WiX 3 is needed to build an installer locally.
+
+## Handoff for next (admin) session - installer branding (pending)
+
+Pending user request: put the app icon on the setup exe and theme the setup
+wizard to the project theme.
+
+Current state:
+- `packaging/windows/package.ps1` already passes `--icon icons/app.ico`,
+  `--resource-dir packaging/windows`,
+  `--win-per-user-install --win-menu --win-shortcut --win-dir-chooser`, plus
+  `--win-upgrade-uuid`. That covers the app exe, Start-menu shortcut, and the
+  ARP icon (via `main.wxs` `JpARPPRODUCTICON` from `$(var.JpIcon)`).
+- NOT yet branded: the setup bootstrapper exe (jpackage emits it from
+  `msiwrapper.exe`) and the WiX wizard bitmaps (banner/dialog; license RTF if
+  ever added).
+- `icons/app.ico` is the multi-resolution gradient-mesh icon built by
+  `icons/generate-icons.ps1`; runtime PNGs live in
+  `app/src/main/resources/icons/`.
+- `packaging/windows/main.wxs` = JDK 21 default `main.wxs` + the exit-dialog
+  "Start AntennaPod Desktop" checkbox. `package.ps1` is the only place to
+  change jpackage options so CI and local stay identical.
+
+Findings from the non-admin session (no local installer build yet):
+- `gradlew :app:installDist` works; `release/AntennaPod-Desktop/` holds the
+  staged app image with `AntennaPod-Desktop.exe`.
+- `jpackage --type exe` fails here with "Can not find WiX tools
+  (light.exe, candle.exe)".
+- choco `wixtoolset --version 3.14.1` failed (DotNet3.5 lock / permissions);
+  winget `WiXToolset.WiXToolset 3.14.1.8722` needs admin + NetFx3. Current user
+  is non-admin, so the WiX install was deferred.
+- JDK 21.0.10 jpackage internals were extracted via `jimage extract` to
+  `%LOCALAPPDATA%\Temp\opencode\jpkg2\jdk.jpackage\...`: default resources are
+  `main.wxs`, `overrides.wxi`, `JavaApp.ico`, `msiwrapper.exe`,
+  `wixhelper.dll`; `WinMsiBundler` references `installerIcon`/`JpIcon` and
+  `RESOURCE_DIR`/`getResourceDir` with `main.wxs`/`overrides.wxi`. Default
+  `main.wxs` only wires `JpIcon` to the ARP icon. Open question: confirm
+  whether `--icon` also stamps `msiwrapper.exe`, or whether a custom WiX
+  variable/resource is needed for the setup exe icon and for
+  `WixUIDialogBmp`/`WixUIBannerBmp`.
+
+Next steps for the admin session:
+1. Install WiX 3.14.1 (winget `WiXToolset.WiXToolset --version 3.14.1.8722` or
+   choco `wixtoolset`), ensure `candle.exe`/`light.exe` are on PATH.
+2. Run `gradlew :core:test :app:test :app:installDist`, then
+   `pwsh packaging/windows/package.ps1 -Version <from app/build.gradle>` and
+   inspect the setup exe icon plus every wizard screen.
+3. Add branding assets under `packaging/windows/` (wizard banner/dialog BMPs
+   in project theme) and wire them via `main.wxs` (WiX variables) and/or
+   `package.ps1 --resource-dir` so CI and local ship the same installer.
+4. Rebuild the installer locally to validate, then commit + push to `main`.
+5. Delete stale `%LOCALAPPDATA%\Temp\opencode\jpkg*` dirs if still present.
