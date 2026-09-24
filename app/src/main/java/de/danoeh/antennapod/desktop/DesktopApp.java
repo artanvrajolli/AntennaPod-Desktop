@@ -94,6 +94,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private TextField feedFilterField;
     private TextField episodeFilterField;
     private VBox sidebar;
+    private SplitPane listsSplit;
+    private VBox feedPane;
+    private VBox episodePane;
+    private BorderPane appRoot;
+    private boolean dividerDragging;
+    private boolean sidebarLayoutAdjusting;
+    private int sidebarLayoutRequest;
     private Label sidebarTitle;
     private VBox sidebarContent;
     private Label feedTitleLabel;
@@ -322,17 +329,30 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
         BorderPane root = new BorderPane();
         root.setTop(buildToolbar());
-        VBox feedPane = buildFeedPane();
+        feedPane = buildFeedPane();
         feedPane.setMinWidth(180);
-        VBox episodePane = buildEpisodePane();
+        episodePane = buildEpisodePane();
         episodePane.setMinWidth(320);
         // the divider between the two lists drags horizontally, so the subscriptions
         // can be widened or narrowed; where it is left is remembered across restarts
-        SplitPane listsSplit = new SplitPane(feedPane, episodePane);
+        listsSplit = new SplitPane(feedPane, episodePane);
         listsSplit.setDividerPositions(DesktopPreferences.getFeedSplitPosition());
+        SplitPane.Divider divider = listsSplit.getDividers().get(0);
         listsSplit.getDividers().get(0).positionProperty().addListener(
-                (obs, oldPosition, newPosition) ->
-                        DesktopPreferences.setFeedSplitPosition(newPosition.doubleValue()));
+                (obs, oldPosition, newPosition) -> {
+                    if (dividerDragging && !sidebarLayoutAdjusting) {
+                        DesktopPreferences.setFeedSplitPosition(newPosition.doubleValue());
+                    }
+                });
+        listsSplit.addEventHandler(MouseEvent.MOUSE_PRESSED, event -> {
+            double dividerX = divider.getPosition() * listsSplit.getWidth();
+            if (Math.abs(event.getX() - dividerX) <= 4) {
+                dividerDragging = true;
+            }
+        });
+        listsSplit.addEventHandler(MouseEvent.MOUSE_RELEASED, event -> dividerDragging = false);
+        listsSplit.addEventHandler(MouseEvent.MOUSE_EXITED, event -> dividerDragging = false);
+        appRoot = root;
         root.setCenter(listsSplit);
         root.setRight(buildSidebar());
         root.setBottom(buildPlayerBar());
@@ -808,8 +828,55 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (content instanceof Region) {
             VBox.setVgrow(content, Priority.ALWAYS);
         }
+        preserveFeedWidthBeforeSidebarChange();
         sidebar.setVisible(true);
         sidebar.setManaged(true);
+    }
+
+    static void restoreFeedWidth(SplitPane listsSplit, Region feedPane, Region episodePane,
+            double feedWidth) {
+        if (listsSplit == null || feedPane == null || episodePane == null || feedWidth <= 0) {
+            return;
+        }
+        double dividerWidth = Math.max(0,
+                listsSplit.getWidth() - feedPane.getWidth() - episodePane.getWidth());
+        double available = listsSplit.getWidth() - dividerWidth;
+        if (available <= 0) {
+            return;
+        }
+        double minimum = feedPane.getMinWidth();
+        double maximum = Math.max(minimum, available - episodePane.getMinWidth());
+        double target = Math.max(minimum, Math.min(maximum, feedWidth));
+        listsSplit.setDividerPositions(target / available);
+    }
+
+    private void preserveFeedWidthBeforeSidebarChange() {
+        if (listsSplit == null || feedPane == null || episodePane == null) {
+            return;
+        }
+        double feedWidth = feedPane.getWidth();
+        if (feedWidth <= 0) {
+            double available = listsSplit.getWidth();
+            if (available > 0) {
+                feedWidth = listsSplit.getDividers().get(0).getPosition() * available;
+            }
+        }
+        final double preservedWidth = feedWidth;
+        sidebarLayoutAdjusting = true;
+        int request = ++sidebarLayoutRequest;
+        Platform.runLater(() -> {
+            if (request == sidebarLayoutRequest && appRoot != null) {
+                try {
+                    appRoot.applyCss();
+                    appRoot.layout();
+                    restoreFeedWidth(listsSplit, feedPane, episodePane, preservedWidth);
+                } finally {
+                    sidebarLayoutAdjusting = false;
+                }
+            } else {
+                sidebarLayoutAdjusting = false;
+            }
+        });
     }
 
     private void showModal(String title, Node content) {
@@ -1259,10 +1326,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void hideSidebar() {
-        if (!sidebar.isVisible()) {
+        if (!sidebar.isVisible() && !sidebar.isManaged()) {
             return;
         }
         sidebarContent.getChildren().clear();
+        preserveFeedWidthBeforeSidebarChange();
         sidebar.setVisible(false);
         sidebar.setManaged(false);
         ThemeManager.applySavedMode();

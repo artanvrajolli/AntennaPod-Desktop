@@ -11,7 +11,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import javafx.application.Platform;
 import javafx.scene.Scene;
 import javafx.scene.control.Label;
+import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
+import javafx.scene.control.SplitPane;
 import javafx.stage.Stage;
 import org.junit.AfterClass;
 import org.junit.Assume;
@@ -313,6 +316,61 @@ public class ThemeSceneTest {
         }
     }
 
+    private static void verifySidebarSplitWidth() {
+        double savedPosition = DesktopPreferences.getFeedSplitPosition();
+        Stage stage = null;
+        try {
+            VBox feedPane = new VBox();
+            feedPane.setMinWidth(180);
+            VBox episodePane = new VBox();
+            episodePane.setMinWidth(320);
+            SplitPane split = new SplitPane(feedPane, episodePane);
+            split.setDividerPositions(savedPosition);
+            VBox sidebar = new VBox();
+            sidebar.setPrefWidth(460);
+            sidebar.setMinWidth(340);
+            sidebar.setVisible(false);
+            sidebar.setManaged(false);
+            BorderPane root = new BorderPane();
+            root.setCenter(split);
+            root.setRight(sidebar);
+            stage = new Stage();
+            stage.setScene(new Scene(root, 1100, 700));
+            stage.show();
+            root.applyCss();
+            root.layout();
+            double originalWidth = feedPane.getWidth();
+
+            sidebar.setVisible(true);
+            sidebar.setManaged(true);
+            root.applyCss();
+            root.layout();
+            DesktopApp.restoreFeedWidth(split, feedPane, episodePane, originalWidth);
+            root.applyCss();
+            root.layout();
+
+            sidebar.setVisible(false);
+            sidebar.setManaged(false);
+            root.applyCss();
+            root.layout();
+            DesktopApp.restoreFeedWidth(split, feedPane, episodePane, originalWidth);
+            root.applyCss();
+            root.layout();
+
+            assertEquals("sidebar toggle must restore the subscription width",
+                    originalWidth, feedPane.getWidth(), 1.0);
+            assertTrue("the episode pane must keep its minimum width",
+                    episodePane.getWidth() >= episodePane.getMinWidth());
+            assertEquals("layout corrections must not overwrite the saved divider",
+                    savedPosition, DesktopPreferences.getFeedSplitPosition(), 0.001);
+        } finally {
+            if (stage != null) {
+                stage.hide();
+            }
+            DesktopPreferences.setFeedSplitPosition(savedPosition);
+        }
+    }
+
     @Test
     public void testNewWindowsReceiveActiveTheme() throws Exception {
         String previousMode = DesktopPreferences.getThemeMode();
@@ -323,6 +381,7 @@ public class ThemeSceneTest {
             try {
                 verifyTrayControls();
                 verifyWindowChrome();
+                verifySidebarSplitWidth();
                 DesktopPreferences.setThemeMode(ThemeManager.MODE_DARK);
                 ThemeManager.init();
                 stage = new Stage();
