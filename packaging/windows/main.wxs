@@ -103,6 +103,18 @@
     <UIRef Id="JpUI"/>
 
     <!--
+      Themed wizard bitmaps (packaging/windows/banner.bmp + dialog.bmp, built by
+      generate-installer-bitmaps.ps1). The paths come from the APOD_BITMAP_DIR
+      environment variable, which package.ps1 points at this directory: WiX
+      resolves $(env.VAR) at candle time to an absolute path, and light.exe
+      embeds the files (resource-dir extras are NOT copied to the per-build
+      config dir, so a relative path cannot work). Sizes are WiX-mandated:
+      banner 493x58, dialog 493x312, 24-bit BMP.
+    -->
+    <WixVariable Id="WixUIBannerBmp" Value="$(env.APOD_BITMAP_DIR)/banner.bmp"/>
+    <WixVariable Id="WixUIDialogBmp" Value="$(env.APOD_BITMAP_DIR)/dialog.bmp"/>
+
+    <!--
       The installer ended on its progress bar: it closed itself the moment it was done, with
       nothing said and nothing to click. The wizard's own exit dialog, which the dir chooser
       option brings in, ends it properly, and this puts the one thing missing from that page on

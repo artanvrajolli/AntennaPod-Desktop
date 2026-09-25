@@ -61,6 +61,12 @@ if ($SkipInstaller) { return }
 # --win-dir-chooser brings in the wizard whose exit page carries the "start the
 # app" checkbox from packaging/windows/main.wxs; without it jpackage builds a
 # progress-only installer that closes itself.
+# The wizard bitmaps (WixUIBannerBmp/WixUIDialogBmp in main.wxs) resolve via
+# the APOD_BITMAP_DIR env var, pointed here at the resource dir: WiX expands
+# $(env.VAR) at candle time to an absolute path, which survives jpackage's
+# per-build temp dirs (resource-dir extras are NOT copied to its config dir,
+# so a relative bitmap path cannot work). Absolute, so CI and local agree.
+$env:APOD_BITMAP_DIR = (Resolve-Path (Join-Path $PSScriptRoot '.')).Path
 $setup = "AntennaPod-Desktop-Setup-$Version.exe"
 Remove-Item -Recurse -Force installer -ErrorAction SilentlyContinue
 Remove-Item -Force $setup -ErrorAction SilentlyContinue
