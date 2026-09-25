@@ -296,24 +296,12 @@ public class SmtcManagerTest {
                     timelineProps.putPosition(120_000L * 10_000L);
                     controls2.updateTimelineProperties(timelineProps.getPointer());
                     assertEquals(120_000L * 10_000L, timelineProps.getPosition());
-                    // the seek handler the card drags against: accepted, then unregistered.
-                    // A session without app identity refuses it with E_NOTIMPL; the
-                    // timeline still shows there, it just cannot be dragged.
+                    // the seek handler the card drags against: accepted, then unregistered
                     SmtcManager seekOwner = new SmtcManager();
                     try {
                         SmtcManager.SeekSink seekSink = seekOwner.new SeekSink();
-                        long seekToken;
-                        try {
-                            seekToken = controls2
-                                    .addPlaybackPositionChangeRequested(seekSink.pointer());
-                        } catch (RuntimeException e) {
-                            if (e.getMessage() != null && e.getMessage().contains("-2147467231")) {
-                                System.out.println(
-                                        "SMTC seek registration refused (E_NOTIMPL); skipping");
-                                return;
-                            }
-                            throw e;
-                        }
+                        long seekToken = controls2
+                                .addPlaybackPositionChangeRequested(seekSink.pointer());
                         assertTrue(seekToken != 0);
                         controls2.removePlaybackPositionChangeRequested(seekToken);
                     } finally {

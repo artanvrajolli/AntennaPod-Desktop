@@ -74,8 +74,18 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   otherwise follow the active player through the media card; with the card off
   they fall back to claimed hotkeys),
   `-Dantennapod.desktop.smtc=false` hides the episode from the
-  Windows volume flyout and media card. Use these
+  Windows volume flyout and media card,
+  `-Dantennapod.desktop.appid=false` leaves the process without an explicit
+  AppUserModelID (taskbar group, toasts and the media card fall back to
+  exe-path identity). Use these
   to isolate a fault before changing the native code.
+- App identity is `AntennaPod.AntennaPodDesktop`, claimed on the process by
+  `AppIdentity` (first thing in `Launcher`) and stamped as
+  `System.AppUserModel.ID` on the installed shortcuts by the `ApodStampAumid`
+  custom action in `main.wxs` (payload: `packaging/windows/stamp-shortcuts.ps1`,
+  embedded base64; re-encode as its header says after changing it). Keep the id
+  in step in both places and never version it, or pinned shortcuts group apart
+  from the running window.
 - `core` must not depend on JavaFX; UI code lives in `app`.
 - Toolbar keeps only primary actions direct (subscribe, search, refresh, sync);
   views live under the Library menu, occasional actions under More.
