@@ -17,8 +17,10 @@ import javafx.scene.layout.Priority;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.Separator;
 import javafx.scene.control.Slider;
 import javafx.scene.control.Tooltip;
+import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
@@ -64,7 +66,11 @@ public final class TrayManager {
     private Stage controlsWindow;
     private CheckBox silenceToggle;
     private Button playPauseButton;
+    private HBox transportRow;
     private Label nowPlayingLabel;
+    private Label feedLabel;
+    private ImageView artworkView;
+    private Image defaultArtwork;
     private Label positionLabel;
     private Slider progressSlider;
     private boolean traySeeking;
@@ -143,17 +149,36 @@ public final class TrayManager {
 
     VBox buildControls(Callbacks callbacks) {
         this.callbacks = callbacks;
+        defaultArtwork = loadDefaultArtwork();
+        artworkView = new ImageView(defaultArtwork);
+        artworkView.setFitWidth(48);
+        artworkView.setFitHeight(48);
+        artworkView.setPreserveRatio(true);
+        artworkView.setSmooth(true);
         nowPlayingLabel = new Label("Nothing playing");
         nowPlayingLabel.setWrapText(true);
-        nowPlayingLabel.setMaxWidth(260);
+        nowPlayingLabel.setMaxWidth(212);
+        nowPlayingLabel.setStyle("-fx-font-weight: bold;");
+        feedLabel = new Label("");
+        feedLabel.setMaxWidth(212);
+        feedLabel.getStyleClass().add("muted-label");
+        feedLabel.setVisible(false);
+        feedLabel.setManaged(false);
+        VBox titles = new VBox(2, nowPlayingLabel, feedLabel);
+        titles.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(titles, Priority.ALWAYS);
+        HBox header = new HBox(10, artworkView, titles);
+        header.setAlignment(Pos.CENTER_LEFT);
         playPauseButton = control(Icons.accent(Icons.play()), "Play", callbacks::onPlayPause);
-        HBox transport = new HBox(8,
+        playPauseButton.setMinSize(44, 36);
+        transportRow = new HBox(8,
                 control(Icons.previous(), "Previous episode", callbacks::onPrevious),
                 control(Icons.replay10(), "Skip back", callbacks::onSkipBack),
                 playPauseButton,
                 control(Icons.forward30(), "Skip forward", callbacks::onSkipForward),
                 control(Icons.next(), "Next episode", callbacks::onNext));
-        transport.setAlignment(Pos.CENTER);
+        transportRow.setAlignment(Pos.CENTER);
+        transportRow.setDisable(true);
         positionLabel = new Label("");
         positionLabel.getStyleClass().add("muted-label");
         progressSlider = new Slider(0, 1, 0);
@@ -170,6 +195,7 @@ public final class TrayManager {
         progressRow.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(progressSlider, Priority.ALWAYS);
         Button show = new Button("Show AntennaPod");
+        show.setDefaultButton(true);
         show.setOnAction(event -> {
             hideControls();
             callbacks.onShow();
@@ -188,10 +214,23 @@ public final class TrayManager {
         options.setAlignment(Pos.CENTER_LEFT);
         HBox actions = new HBox(8, show, exit);
         actions.setAlignment(Pos.CENTER);
-        VBox panel = new VBox(12, nowPlayingLabel, transport, progressRow, options, actions);
+        VBox panel = new VBox(10, header, new Separator(), transportRow, progressRow,
+                new Separator(), options, actions);
         panel.setPadding(new Insets(14));
-        panel.setPrefWidth(288);
+        panel.setPrefWidth(300);
         return panel;
+    }
+
+    private static Image loadDefaultArtwork() {
+        try (java.io.InputStream stream =
+                     TrayManager.class.getResourceAsStream("/icons/app-icon-32.png")) {
+            if (stream != null) {
+                return new Image(stream);
+            }
+        } catch (Exception e) {
+            // the header simply shows no artwork
+        }
+        return null;
     }
 
     /** Keeps the tray's own toggle in step when silence skipping is switched elsewhere. */
@@ -272,6 +311,15 @@ public final class TrayManager {
     }
 
     public void update(boolean playing, String nowPlaying, Image artwork) {
+        update(playing, nowPlaying, null, artwork);
+    }
+
+    /**
+     * Refreshes the tray popup and tooltip: transport, header (episode + subscription +
+     * artwork) and the icon's artwork. The transport row stays disabled until an episode
+     * is loaded, so the empty popup cannot drive a player that has nothing to play.
+     */
+    public void update(boolean playing, String nowPlaying, String feedTitle, Image artwork) {
         if (trayIcon == null) {
             return;
         }
@@ -279,18 +327,32 @@ public final class TrayManager {
         playPauseButton.setGraphic(Icons.accent(playing ? Icons.pause() : Icons.play()));
         playPauseButton.setAccessibleText(playing ? "Pause" : "Play");
         playPauseButton.getTooltip().setText(playing ? "Pause" : "Play");
+        transportRow.setDisable(!hasEpisode);
         nowPlayingLabel.setText(hasEpisode ? truncate(nowPlaying, 100) : "Nothing playing");
+        boolean hasFeed = hasEpisode && feedTitle != null && !feedTitle.isBlank();
+        feedLabel.setText(hasFeed ? truncate(feedTitle.trim(), 60) : "");
+        feedLabel.setVisible(hasFeed);
+        feedLabel.setManaged(hasFeed);
+        artworkView.setImage(artworkImageOrDefault(artwork));
         EventQueue.invokeLater(() -> {
             if (trayIcon == null) {
                 return;
             }
             String tooltip = hasEpisode
                     ? (playing ? "Playing: " : "Paused: ") + nowPlaying
+                            + (hasFeed ? " — " + feedTitle.trim() : "")
                     : "AntennaPod Desktop";
             trayIcon.setToolTip(truncate(tooltip, 120));
         });
         wantedArtwork = artwork;
         applyArtwork(artwork);
+    }
+
+    private Image artworkImageOrDefault(Image artwork) {
+        if (artwork != null && !artwork.isError() && artwork.getProgress() >= 1) {
+            return artwork;
+        }
+        return defaultArtwork;
     }
 
     public void remove() {
@@ -327,6 +389,9 @@ public final class TrayManager {
                     // the episode may have changed while this loaded; its art must not come back
                     if (progress.doubleValue() >= 1 && !artwork.isError() && artwork == wantedArtwork) {
                         applyArtwork(artwork);
+                        if (artworkView != null) {
+                            artworkView.setImage(artwork);
+                        }
                     }
                 });
             }

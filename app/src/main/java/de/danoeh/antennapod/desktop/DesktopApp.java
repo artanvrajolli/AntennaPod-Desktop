@@ -4564,7 +4564,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         updateTaskbarIcon(nowPlayingArtUrl(current));
         updatePlayPauseButton();
         if (trayActive) {
-            trayManager.update(playback.isPlaying(), title,
+            trayManager.update(playback.isPlaying(), title, smtcFeedTitle(current),
                     nowPlayingArt != null ? nowPlayingArt.getImage() : null);
         }
         episodeList.refresh();

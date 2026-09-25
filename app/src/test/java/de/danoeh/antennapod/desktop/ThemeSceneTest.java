@@ -61,8 +61,20 @@ public class ThemeSceneTest {
                 actions.add("silence:" + enabled);
             }
         });
-        javafx.scene.layout.HBox transport = (javafx.scene.layout.HBox) panel.getChildren().get(1);
+        // header (artwork + titles), transport, progress — each behind a separator
+        javafx.scene.layout.HBox header = (javafx.scene.layout.HBox) panel.getChildren().get(0);
+        org.junit.Assert.assertEquals(2, header.getChildren().size());
+        javafx.scene.layout.VBox titles =
+                (javafx.scene.layout.VBox) header.getChildren().get(1);
+        org.junit.Assert.assertEquals("Nothing playing",
+                ((javafx.scene.control.Label) titles.getChildren().get(0)).getText());
+        org.junit.Assert.assertTrue(panel.getChildren().get(1)
+                instanceof javafx.scene.control.Separator);
+        javafx.scene.layout.HBox transport = (javafx.scene.layout.HBox) panel.getChildren().get(2);
         org.junit.Assert.assertEquals(5, transport.getChildren().size());
+        // nothing loaded yet: the transport row stays disabled with the player idle
+        assertTrue(transport.isDisable());
+        transport.setDisable(false);
         for (javafx.scene.Node node : transport.getChildren()) {
             javafx.scene.control.Button button = (javafx.scene.control.Button) node;
             assertTrue(button.getText().isEmpty());
@@ -70,7 +82,7 @@ public class ThemeSceneTest {
             org.junit.Assert.assertNotNull(button.getTooltip());
             button.fire();
         }
-        javafx.scene.layout.HBox progressRow = (javafx.scene.layout.HBox) panel.getChildren().get(2);
+        javafx.scene.layout.HBox progressRow = (javafx.scene.layout.HBox) panel.getChildren().get(3);
         javafx.scene.control.Slider progressSlider =
                 (javafx.scene.control.Slider) progressRow.getChildren().get(1);
         org.junit.Assert.assertTrue(progressSlider.isDisable());
@@ -80,7 +92,9 @@ public class ThemeSceneTest {
         progressSlider.setValue(120000);
         progressSlider.getOnMousePressed().handle(null);
         progressSlider.getOnMouseReleased().handle(null);
-        javafx.scene.layout.HBox options = (javafx.scene.layout.HBox) panel.getChildren().get(3);
+        org.junit.Assert.assertTrue(panel.getChildren().get(4)
+                instanceof javafx.scene.control.Separator);
+        javafx.scene.layout.HBox options = (javafx.scene.layout.HBox) panel.getChildren().get(5);
         javafx.scene.control.CheckBox silence =
                 (javafx.scene.control.CheckBox) options.getChildren().get(0);
         org.junit.Assert.assertEquals("Skip silence", silence.getText());
@@ -91,7 +105,7 @@ public class ThemeSceneTest {
         // switched in the window instead: the tray toggle has to follow
         manager.updateSilenceSkipping(false);
         assertFalse(silence.isSelected());
-        javafx.scene.layout.HBox footer = (javafx.scene.layout.HBox) panel.getChildren().get(4);
+        javafx.scene.layout.HBox footer = (javafx.scene.layout.HBox) panel.getChildren().get(6);
         for (javafx.scene.Node node : footer.getChildren()) {
             ((javafx.scene.control.Button) node).fire();
         }
