@@ -844,16 +844,23 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (listsSplit == null || feedPane == null || episodePane == null || feedWidth <= 0) {
             return;
         }
+        double splitWidth = listsSplit.getWidth();
+        if (splitWidth <= 0) {
+            return;
+        }
         double dividerWidth = Math.max(0,
-                listsSplit.getWidth() - feedPane.getWidth() - episodePane.getWidth());
-        double available = listsSplit.getWidth() - dividerWidth;
+                splitWidth - feedPane.getWidth() - episodePane.getWidth());
+        double available = splitWidth - dividerWidth;
         if (available <= 0) {
             return;
         }
         double minimum = feedPane.getMinWidth();
         double maximum = Math.max(minimum, available - episodePane.getMinWidth());
         double target = Math.max(minimum, Math.min(maximum, feedWidth));
-        listsSplit.setDividerPositions(target / available);
+        // divider positions are fractions of the full split width, while the feed pane ends
+        // half a divider short of its stop - dividing by the divider-less width undershot by
+        // ~2px per toggle and the list kept shrinking with every sidebar open/close
+        listsSplit.setDividerPositions((target + dividerWidth / 2) / splitWidth);
     }
 
     private void preserveFeedWidthBeforeSidebarChange() {
