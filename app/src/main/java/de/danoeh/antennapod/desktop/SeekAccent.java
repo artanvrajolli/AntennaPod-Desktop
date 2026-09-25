@@ -379,6 +379,49 @@ final class SeekAccent {
         return String.format(Locale.US, "#%02x%02x%02x", rgb[0], rgb[1], rgb[2]);
     }
 
+    /**
+     * Perceived brightness of a hex color, 0 (black) to 255 (white). Decides when the raw
+     * dominant color needs a contrasting outline to stay visible on the seek track.
+     */
+    static int brightness(String hex) {
+        int r = Integer.parseInt(hex.substring(1, 3), 16);
+        int g = Integer.parseInt(hex.substring(3, 5), 16);
+        int b = Integer.parseInt(hex.substring(5, 7), 16);
+        return (int) Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    }
+
+    /** Below this the accent reads as near-black; above {@link #LIGHT_THRESHOLD} near-white. */
+    static final int DARK_THRESHOLD = 60;
+    static final int LIGHT_THRESHOLD = 195;
+    /** Hairline drawn around the seek track when the accent would melt into the theme. */
+    static final String DARK_THEME_OUTLINE = "rgba(236,236,236,0.9)";
+    static final String LIGHT_THEME_OUTLINE = "rgba(40,40,40,0.75)";
+
+    /**
+     * The contrasting outline the seek track needs for this accent in this theme, or null when
+     * the accent already stands clear: a near-black fill in the dark theme gets a light
+     * hairline, a near-white fill in the light theme a dark one. Unparseable colors (the
+     * theme's own {@code -fx-accent}) need none.
+     */
+    static String outlineFor(boolean dark, String hex) {
+        if (hex == null) {
+            return null;
+        }
+        int brightness;
+        try {
+            brightness = brightness(hex);
+        } catch (RuntimeException e) {
+            return null;
+        }
+        if (dark && brightness < DARK_THRESHOLD) {
+            return DARK_THEME_OUTLINE;
+        }
+        if (!dark && brightness > LIGHT_THRESHOLD) {
+            return LIGHT_THEME_OUTLINE;
+        }
+        return null;
+    }
+
     private static int clamp(int value) {
         return Math.max(0, Math.min(255, value));
     }

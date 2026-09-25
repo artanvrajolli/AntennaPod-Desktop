@@ -120,6 +120,26 @@ public class SeekAccentTest {
     }
 
     @Test
+    public void testBrightnessAnchors() {
+        assertTrue(SeekAccent.brightness("#0c0c0c") < 20);
+        assertTrue(SeekAccent.brightness("#f4f4f4") > 235);
+        int grey = SeekAccent.brightness("#8c8c8c");
+        assertTrue("mid grey sits in the middle, got " + grey, grey > 120 && grey < 160);
+    }
+
+    @Test
+    public void testOutlineForExtremes() {
+        assertEquals(SeekAccent.DARK_THEME_OUTLINE, SeekAccent.outlineFor(true, "#0c0c0c"));
+        assertEquals(SeekAccent.LIGHT_THEME_OUTLINE, SeekAccent.outlineFor(false, "#f4f4f4"));
+        assertNull("white on dark needs none", SeekAccent.outlineFor(true, "#f4f4f4"));
+        assertNull("black on light needs none", SeekAccent.outlineFor(false, "#0c0c0c"));
+        assertNull("mid red needs none either way", SeekAccent.outlineFor(true, "#c81e1e"));
+        assertNull("mid red needs none either way", SeekAccent.outlineFor(false, "#c81e1e"));
+        assertNull(SeekAccent.outlineFor(true, null));
+        assertNull("the theme blue is already visible", SeekAccent.outlineFor(true, "-fx-accent"));
+    }
+
+    @Test
     public void testEpisodeImageBeatsSubscriptionFallback() {
         // documents the selection rule the player bar follows: the episode's own image is
         // sampled, and the subscription image is only the fallback when it is missing

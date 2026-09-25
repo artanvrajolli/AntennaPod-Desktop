@@ -161,6 +161,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private String seekAccentUrl = "";
     /** The accent the track was last painted with, so a new cover repaints even at 0%. */
     private String paintedAccent;
+    /** The track outline and theme last painted; a theme switch repaints even at 0%. */
+    private String paintedOutline;
+    private boolean paintedDark;
     /**
      * The playing episode the list was last scrolled to. Scrolling happens once per episode,
      * so pausing or buffering never yanks the list back after the user scrolled away.
@@ -4700,11 +4703,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             paintedPlayedPercent = -1;
             paintedBufferedPercent = -1;
             paintedAccent = null;
+            paintedOutline = null;
             return;
         }
         paintedPlayedPercent = -1;
         paintedBufferedPercent = -1;
         paintedAccent = null;
+        paintedOutline = null;
         paintSeekTrack((int) seekSlider.getValue(), lastBufferedMs, (int) seekSlider.getMax());
     }
 
@@ -4726,7 +4731,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     /**
      * Tints the thumb dot with the artwork accent; clears it back to the theme blue. A flat
      * fill loses the depth Modena's layered thumb brings, so the tinted dot gets its own
-     * white ring and drop shadow to read on any track behind it, in either theme.
+     * contrasting ring and drop shadow to read on any track behind it, in either theme:
+     * a dark ring for a near-white fill in the light theme, a white ring otherwise.
      */
     private void styleSeekThumb() {
         if (seekSlider == null) {
@@ -4739,7 +4745,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             return;
         }
         if (seekAccent != null) {
-            seekThumb.setStyle("-fx-background-color: rgba(255,255,255,0.95), " + seekAccent + ";"
+            boolean dark = ThemeManager.isDark();
+            String ring = SeekAccent.LIGHT_THEME_OUTLINE.equals(SeekAccent.outlineFor(dark, seekAccent))
+                    ? "rgba(30,30,30,0.9)" : "rgba(255,255,255,0.95)";
+            seekThumb.setStyle("-fx-background-color: " + ring + ", " + seekAccent + ";"
                     + " -fx-background-insets: 0, 1.5;"
                     + " -fx-background-radius: 1em;"
                     + " -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.55), 5, 0.3, 0, 1);");
@@ -4764,27 +4773,41 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             paintedPlayedPercent = -1;
             paintedBufferedPercent = -1;
             paintedAccent = null;
+            paintedOutline = null;
             return;
         }
         String accent = seekAccent != null ? seekAccent : "-fx-accent";
+        boolean dark = ThemeManager.isDark();
+        String outline = SeekAccent.outlineFor(dark, accent);
         double played = clampTrackPercent(positionMs * 100.0 / durationMs);
         double buffered = Math.max(clampTrackPercent(bufferedMs * 100.0 / durationMs), played);
         if (Math.abs(played - paintedPlayedPercent) < 0.5
                 && Math.abs(buffered - paintedBufferedPercent) < 0.5
-                && Objects.equals(accent, paintedAccent)) {
+                && Objects.equals(accent, paintedAccent)
+                && Objects.equals(outline, paintedOutline)
+                && dark == paintedDark) {
             // position ticks arrive many times a second; only restyle on visible movement
             return;
         }
         paintedPlayedPercent = played;
         paintedBufferedPercent = buffered;
         paintedAccent = accent;
-        boolean dark = ThemeManager.isDark();
+        paintedOutline = outline;
+        paintedDark = dark;
         String fetched = dark ? "#8d8d8d" : "#9e9e9e";
         String rest = dark ? "#5f5f5f" : "#c9c9c9";
-        seekTrack.setStyle(String.format(Locale.US,
+        StringBuilder style = new StringBuilder(String.format(Locale.US,
                 "-fx-background-color: linear-gradient(to right, %s 0%%, %s %.2f%%,"
                         + " %s %.2f%%, %s %.2f%%, %s %.2f%%, %s 100%%);",
                 accent, accent, played, fetched, played, fetched, buffered, rest, buffered, rest));
+        if (outline != null) {
+            // an extreme accent would melt into the theme around it, so the whole track
+            // gets a contrasting hairline; it hugs the 3px track radius from the outside
+            style.append("-fx-border-color: ").append(outline).append(';')
+                    .append("-fx-border-width: 1;")
+                    .append("-fx-border-radius: 3.5;");
+        }
+        seekTrack.setStyle(style.toString());
         styleSeekThumb();
     }
 
