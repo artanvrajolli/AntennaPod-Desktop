@@ -732,6 +732,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         javafx.scene.control.MenuItem refresh =
                 new javafx.scene.control.MenuItem("Refresh");
         refresh.setOnAction(event -> refreshFeed(feed));
+        javafx.scene.control.MenuItem markSeen =
+                new javafx.scene.control.MenuItem("Mark all as seen");
+        markSeen.setOnAction(event -> markFeedSeen(feed));
         javafx.scene.control.MenuItem settings =
                 new javafx.scene.control.MenuItem("Feed settings");
         settings.setOnAction(event -> showFeedSettings(feed));
@@ -739,7 +742,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 new javafx.scene.control.MenuItem("Unsubscribe");
         unsubscribe.setStyle("-fx-text-fill: #d9534f;");
         unsubscribe.setOnAction(event -> unsubscribe(feed));
-        menu.getItems().addAll(refresh, settings,
+        menu.getItems().addAll(refresh, markSeen, settings,
                 new javafx.scene.control.SeparatorMenuItem(), unsubscribe);
         return menu;
     }
@@ -2403,6 +2406,23 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 reloadFeeds(null);
             } catch (Exception e) {
                 setStatus("Unsubscribe failed: " + e.getMessage());
+            }
+        });
+    }
+
+    private void markFeedSeen(Feed feed) {
+        background.submit(() -> {
+            try {
+                int cleared = database.clearNewFlags(feed.getId());
+                if (cleared == 0) {
+                    setStatus("No new episodes in " + feed.getTitle());
+                } else {
+                    setStatus("Marked seen: " + episodeCountText(cleared));
+                }
+                reloadEpisodesIfShowing(feed);
+                refreshFeedCounts();
+            } catch (Exception e) {
+                setStatus("Could not mark episodes as seen: " + e.getMessage());
             }
         });
     }

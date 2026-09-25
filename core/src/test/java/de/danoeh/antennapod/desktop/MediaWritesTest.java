@@ -258,6 +258,26 @@ public class MediaWritesTest {
     }
 
     @Test
+    public void testSubscribeStoresUnplayedAndRefreshFlagsOnlyArrivals() throws Exception {
+        feedXml = rss(item("ep-1", "Episode", baseUrl + "/media.mp3?id=1"));
+        FeedUpdater updater = new FeedUpdater(database);
+        Feed feed = updater.subscribe(baseUrl + "/feed.xml");
+
+        for (FeedItem stored : database.getItemsOfFeed(feed.getId())) {
+            assertEquals(FeedItem.UNPLAYED, stored.getPlayState());
+        }
+        assertEquals(0, database.countNew(feed.getId()));
+
+        feedXml = rss(item("ep-2", "New arrival", baseUrl + "/media.mp3?id=2"),
+                item("ep-1", "Episode", baseUrl + "/media.mp3?id=1"));
+        List<FeedItem> added = updater.refresh(feed);
+
+        assertEquals(1, added.size());
+        assertTrue(added.get(0).isNew());
+        assertEquals(1, database.countNew(feed.getId()));
+    }
+
+    @Test
     public void testFailedSubscribeLeavesNothingBehind() throws Exception {
         feedXml = rss(item("ep-1", "Episode", baseUrl + "/media.mp3?id=1"));
         // make storing the episode's media fail halfway through the subscribe

@@ -63,12 +63,15 @@ public final class FeedUpdater {
         downloaded.setDownloadUrl(finalUrl);
         // all or nothing: a failure halfway used to leave the feed with part of its episodes,
         // and the next attempt found it "already subscribed" and kept it that way
+        // NEW means "arrived after the subscription was stored". The back catalogue
+        // of a fresh subscription is not news, so subscribe stores UNPLAYED;
+        // only refresh() flags arrivals as NEW.
         database.inTransaction(() -> {
             database.insertFeed(downloaded);
             for (FeedItem item : distinctItems(downloaded.getItems())) {
                 item.setFeedId(downloaded.getId());
                 item.setFeed(downloaded);
-                item.setNew();
+                item.setPlayState(FeedItem.UNPLAYED);
                 long itemId = database.insertItem(downloaded.getId(), item);
                 if (item.getMedia() != null) {
                     item.getMedia().setItemId(itemId);

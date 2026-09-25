@@ -328,6 +328,22 @@ public final class DesktopDatabase implements AutoCloseable {
         }
     }
 
+    /**
+     * Clears the NEW flag of a feed's unseen episodes, leaving played state alone.
+     * A "seen" marker is local only, so unlike applyPlayedState it records no sync action.
+     *
+     * @return how many episodes were marked seen
+     */
+    public synchronized int clearNewFlags(long feedId) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "UPDATE feed_items SET state = ? WHERE feed_id = ? AND state = ?")) {
+            stmt.setInt(1, FeedItem.UNPLAYED);
+            stmt.setLong(2, feedId);
+            stmt.setInt(3, FeedItem.NEW);
+            return stmt.executeUpdate();
+        }
+    }
+
     public synchronized List<FeedItem> getItemsOfFeed(long feedId) throws SQLException {
         List<FeedItem> items = new ArrayList<>();
         try (PreparedStatement stmt = connection.prepareStatement(

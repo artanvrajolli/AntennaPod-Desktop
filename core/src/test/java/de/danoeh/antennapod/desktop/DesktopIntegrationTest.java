@@ -95,7 +95,11 @@ public class DesktopIntegrationTest {
         FeedItem first = stored.getItems().get(0);
         assertNotNull(first.getMedia());
         assertTrue(first.getMedia().getDownloadUrl().startsWith(baseUrl));
-        assertTrue(first.isNew());
+        assertEquals("a fresh subscription's back catalogue is not news",
+                FeedItem.UNPLAYED, first.getPlayState());
+        assertTrue(!first.isNew());
+        assertEquals(0, database.countNew(feed.getId()));
+        assertEquals(2, database.countUnplayed(feed.getId()));
 
         java.util.List<FeedItem> added = updater.refresh(stored);
         assertEquals(0, added.size());

@@ -62,4 +62,31 @@ public class DesktopNewCountTest {
         assertEquals(0, database.countNew(feed.getId()));
         assertEquals(1, database.countNew(other.getId()));
     }
+
+    @Test
+    public void testClearNewFlagsMarksSeenButKeepsPlayed() throws Exception {
+        FeedItem unseen = new FeedItem();
+        unseen.setTitle("Unseen Episode");
+        unseen.setNew();
+        database.insertItem(feed.getId(), unseen);
+
+        FeedItem alsoUnseen = new FeedItem();
+        alsoUnseen.setTitle("Also Unseen");
+        alsoUnseen.setNew();
+        database.insertItem(feed.getId(), alsoUnseen);
+
+        FeedItem played = new FeedItem();
+        played.setTitle("Played Episode");
+        played.setPlayed(true);
+        database.insertItem(feed.getId(), played);
+
+        assertEquals(2, database.clearNewFlags(feed.getId()));
+        assertEquals(0, database.countNew(feed.getId()));
+        assertEquals(2, database.countUnplayed(feed.getId()));
+        for (FeedItem item : database.getItemsOfFeed(feed.getId())) {
+            assertEquals(false, item.isNew());
+        }
+
+        assertEquals("nothing left to clear", 0, database.clearNewFlags(feed.getId()));
+    }
 }
