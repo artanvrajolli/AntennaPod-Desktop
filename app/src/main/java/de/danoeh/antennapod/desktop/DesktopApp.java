@@ -5357,6 +5357,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             HBox row = new HBox(8, art, texts, newBadge, loadingBadge, syncBadge, playButton,
                     downloadButton, queueButton, favoriteButton, infoButton, playedButton);
             row.setPadding(new Insets(4));
+            if (item.isPlayed()) {
+                row.getStyleClass().add("episode-row-played");
+            }
             if (isCurrent) {
                 row.getStyleClass().add("episode-row-current");
             }

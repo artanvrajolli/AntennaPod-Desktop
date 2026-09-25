@@ -55,6 +55,18 @@
     -fx-background-radius: 0;
 }
 
+.episode-row-played {
+    -fx-opacity: 0.55;
+}
+
+.list-cell:filled:selected .episode-row-played {
+    -fx-opacity: 0.85;
+}
+
+.episode-row-played.episode-row-current {
+    -fx-opacity: 1.0;
+}
+
 .sidebar {
     -fx-background-color: -fx-background;
     -fx-border-color: -fx-box-border;
