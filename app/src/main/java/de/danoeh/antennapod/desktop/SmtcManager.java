@@ -716,6 +716,13 @@ public final class SmtcManager {
         }
 
         static Pointer createHString(String text) {
+            if (text == null || text.isEmpty()) {
+                // an empty WinRT string is a null handle by design: the API reports
+                // success yet hands back NULL, which the old null check mistook for a
+                // failure ("WindowsCreateString failed: 0") on episodes with no
+                // artist or album. Skip the call; null is already the empty string.
+                return null;
+            }
             byte[] utf16 = text.getBytes(StandardCharsets.UTF_16LE);
             Memory buffer = new Memory(utf16.length + 2);
             buffer.write(0, utf16, 0, utf16.length);

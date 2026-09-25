@@ -121,6 +121,14 @@ public class SmtcManagerTest {
     }
 
     @Test
+    public void testEmptyHStringIsNull() {
+        // an empty WinRT string is a null handle by design, so no API call happens:
+        // this runs everywhere, unlike the round-trip below
+        assertNull(SmtcManager.WinRt.createHString(""));
+        assertNull(SmtcManager.WinRt.createHString(null));
+    }
+
+    @Test
     public void testHStringRoundTrip() {
         Assume.assumeTrue(isWindows());
         int hr = SmtcManager.ComBase.INSTANCE.RoInitialize(1);
