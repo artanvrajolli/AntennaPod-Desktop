@@ -89,4 +89,33 @@ public class DesktopNewCountTest {
 
         assertEquals("nothing left to clear", 0, database.clearNewFlags(feed.getId()));
     }
+
+    @Test
+    public void testClearAllNewFlagsAcrossFeeds() throws Exception {
+        Feed other = new Feed("http://example.com/other.xml", null, "Other Feed");
+        database.insertFeed(other);
+
+        FeedItem first = new FeedItem();
+        first.setTitle("First Unseen");
+        first.setNew();
+        database.insertItem(feed.getId(), first);
+
+        FeedItem second = new FeedItem();
+        second.setTitle("Second Unseen");
+        second.setNew();
+        database.insertItem(other.getId(), second);
+
+        FeedItem played = new FeedItem();
+        played.setTitle("Played Episode");
+        played.setPlayed(true);
+        database.insertItem(other.getId(), played);
+
+        assertEquals(2, database.clearAllNewFlags());
+        assertEquals(0, database.countNew(feed.getId()));
+        assertEquals(0, database.countNew(other.getId()));
+        assertEquals(1, database.countUnplayed(feed.getId()));
+        assertEquals(1, database.countUnplayed(other.getId()));
+
+        assertEquals("nothing left to clear", 0, database.clearAllNewFlags());
+    }
 }

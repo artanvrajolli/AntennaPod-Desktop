@@ -631,6 +631,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 toolbarMenuItem("Stats", Icons.stats(), this::showStatistics));
         MenuButton moreMenu = new MenuButton("More", Icons.more());
         moreMenu.getItems().addAll(
+                toolbarMenuItem("Mark all as seen", Icons.check(), this::markAllSeen),
                 toolbarMenuItem("Import…", Icons.download(), this::importOpml),
                 toolbarMenuItem("Export…", Icons.upload(), this::exportOpml),
                 toolbarMenuItem("Settings", Icons.settings(), this::showSettings),
@@ -2430,6 +2431,25 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     setStatus("Marked seen: " + episodeCountText(cleared));
                 }
                 reloadEpisodesIfShowing(feed);
+                refreshFeedCounts();
+            } catch (Exception e) {
+                setStatus("Could not mark episodes as seen: " + e.getMessage());
+            }
+        });
+    }
+
+    private void markAllSeen() {
+        background.submit(() -> {
+            try {
+                int cleared = database.clearAllNewFlags();
+                if (cleared == 0) {
+                    setStatus("No new episodes");
+                } else {
+                    setStatus("Marked seen: " + episodeCountText(cleared));
+                }
+                if (selectedFeed != null) {
+                    reloadEpisodesIfShowing(selectedFeed);
+                }
                 refreshFeedCounts();
             } catch (Exception e) {
                 setStatus("Could not mark episodes as seen: " + e.getMessage());
