@@ -461,6 +461,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             public void onPrevious() {
                 onCardButton(playback::playPrevious);
             }
+
+            @Override
+            public void onSeek(int positionMs) {
+                onCardButton(() -> playback.seek(positionMs));
+            }
         });
         startMediaKeys();
         boolean trayEnabled = !"false".equalsIgnoreCase(

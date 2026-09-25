@@ -24,7 +24,8 @@ import javafx.stage.Stage;
 
 /**
  * The episode in the Windows volume flyout and quick-settings media card: title, artist, artwork,
- * playback status and position, with working play/pause/stop/previous/next buttons.
+ * playback status and a seekable position bar, with working
+ * play/pause/stop/previous/next buttons.
  *
  * <p>JavaFX plays the audio but never tells Windows about it, so this talks to the System Media
  * Transport Controls directly. There is no WinRT binding in JNA, so every interface below is
@@ -51,6 +52,9 @@ public final class SmtcManager {
         void onNext();
 
         void onPrevious();
+
+        /** A drag of the card's own seek bar, as milliseconds from the start of the episode. */
+        void onSeek(int positionMs);
     }
 
     // ------------------------------------------------------------------ interface ids
@@ -137,6 +141,9 @@ public final class SmtcManager {
     private volatile ButtonSink buttonSink;
     private volatile long buttonToken;
     private volatile boolean buttonRegistered;
+    private volatile SeekSink seekSink;
+    private volatile long seekToken;
+    private volatile boolean seekRegistered;
     private volatile Callbacks callbacks;
     private volatile java.util.function.Consumer<String> errorReporter;
     private volatile String lastReportedError;
@@ -241,6 +248,20 @@ public final class SmtcManager {
                 buttonSink = new ButtonSink();
                 buttonToken = controls.addButtonPressed(buttonSink.pointer());
                 buttonRegistered = buttonToken != 0;
+                if (controls2 != null) {
+                    // Registering for position changes is what turns the card's
+                    // timeline from a readout into a bar the listener can drag.
+                    // Some sessions refuse it (E_NOTIMPL without app identity):
+                    // the timeline still shows, it just cannot be dragged.
+                    seekSink = new SeekSink();
+                    try {
+                        seekToken = controls2.addPlaybackPositionChangeRequested(seekSink.pointer());
+                        seekRegistered = seekToken != 0;
+                    } catch (Throwable t) {
+                        seekRegistered = false;
+                        reportError("card seeking unavailable: " + t.getMessage());
+                    }
+                }
                 controls.putIsEnabled(true);
                 PendingEpisode pending = pendingEpisode;
                 pendingEpisode = null;
@@ -359,6 +380,15 @@ public final class SmtcManager {
                     buttonRegistered = false;
                 }
                 buttonSink = null;
+                if (controls2 != null && seekRegistered && seekSink != null) {
+                    try {
+                        controls2.removePlaybackPositionChangeRequested(seekToken);
+                    } catch (Throwable ignored) {
+                        // shutting down anyway
+                    }
+                    seekRegistered = false;
+                }
+                seekSink = null;
                 if (controls != null) {
                     try {
                         controls.putIsEnabled(false);
@@ -421,6 +451,28 @@ public final class SmtcManager {
         } catch (Throwable t) {
             t.printStackTrace();
         }
+    }
+
+    /** A drag of the card's seek bar, on the system's own thread: route it out, never work here. */
+    private void onSystemSeek(long requestedTicks) {
+        Callbacks target = callbacks;
+        if (target == null) {
+            return;
+        }
+        try {
+            target.onSeek(ticksToMs(requestedTicks));
+        } catch (Throwable t) {
+            t.printStackTrace();
+        }
+    }
+
+    /** WinRT TimeSpans count 100ns ticks; the player counts milliseconds. */
+    static int ticksToMs(long ticks) {
+        if (ticks <= 0) {
+            return 0;
+        }
+        long millis = ticks / TICKS_PER_MS;
+        return millis > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) millis;
     }
 
     private void pushStatus(int status) {
@@ -930,6 +982,39 @@ public final class SmtcManager {
         void updateTimelineProperties(Pointer timeline) {
             call(12, timeline);
         }
+
+        long addPlaybackPositionChangeRequested(Pointer handler) {
+            Memory token = new Memory(8);
+            Object[] full = new Object[]{getPointer(), handler, token};
+            HRESULT hr = (HRESULT) _invokeNativeObject(13, full, HRESULT.class);
+            if (hr.intValue() < 0) {
+                throw new RuntimeException(
+                        "add_PlaybackPositionChangeRequested failed: " + hr.intValue());
+            }
+            return token.getLong(0);
+        }
+
+        void removePlaybackPositionChangeRequested(long token) {
+            call(14, token);
+        }
+    }
+
+    /** The args of a seek request: the position the listener dragged the bar to. */
+    static final class PositionArgs extends WinRtObject {
+        PositionArgs(Pointer instance) {
+            super(instance);
+        }
+
+        long getRequestedPosition() {
+            Memory out = new Memory(8);
+            Object[] full = new Object[]{getPointer(), out};
+            HRESULT hr = (HRESULT) _invokeNativeObject(6, full, HRESULT.class);
+            if (hr.intValue() < 0) {
+                throw new RuntimeException(
+                        "get_RequestedPlaybackPosition failed: " + hr.intValue());
+            }
+            return out.getLong(0);
+        }
     }
 
     static final class DisplayUpdater extends WinRtObject {
@@ -1194,6 +1279,93 @@ public final class SmtcManager {
                     return S_OK;
                 }
                 onSystemButton(button.getValue());
+                return S_OK;
+            } catch (Throwable t) {
+                t.printStackTrace();
+                return S_OK;
+            }
+        }
+    }
+
+    /**
+     * TypedEventHandler&lt;SystemMediaTransportControls,
+     * PlaybackPositionChangeRequestedEventArgs&gt;: the delegate id Windows asks for when the
+     * seek handler is registered (observed from the OS itself during registration).
+     */
+    private static final String IID_SEEK_HANDLER =
+            "44e34f15-bdc0-50a7-ace4-39e91fb753f1";
+
+    /**
+     * The seek handler as native code sees it: the same four-slot delegate vtable as the button
+     * sink, invoking with the drag target instead of a button id.
+     */
+
+    final class SeekSink {
+        interface QueryFn extends StdCallCallback {
+            int apply(Pointer self, Pointer riid, PointerByReference ppv);
+        }
+
+        interface RefFn extends StdCallCallback {
+            int apply(Pointer self);
+        }
+
+        interface InvokeFn extends StdCallCallback {
+            int apply(Pointer self, Pointer sender, Pointer args);
+        }
+
+        private final QueryFn queryFn = this::queryInterface;
+        private final RefFn addRefFn = this::addRef;
+        private final RefFn releaseFn = this::release;
+        private final InvokeFn invokeFn = this::invoke;
+        private final AtomicInteger refs = new AtomicInteger(1);
+        private final Memory vtable = new Memory(4L * Native.POINTER_SIZE);
+        private final Memory self = new Memory(Native.POINTER_SIZE);
+        private final byte[] unknownId = guidBytes(IID_IUNKNOWN);
+        private final byte[] inspectableId = guidBytes(IID_IINSPECTABLE);
+        private final byte[] handlerId = guidBytes(IID_SEEK_HANDLER);
+
+        SeekSink() {
+            vtable.setPointer(0, CallbackReference.getFunctionPointer(queryFn));
+            vtable.setPointer(Native.POINTER_SIZE, CallbackReference.getFunctionPointer(addRefFn));
+            vtable.setPointer(2L * Native.POINTER_SIZE, CallbackReference.getFunctionPointer(releaseFn));
+            vtable.setPointer(3L * Native.POINTER_SIZE, CallbackReference.getFunctionPointer(invokeFn));
+            self.setPointer(0, vtable);
+        }
+
+        Pointer pointer() {
+            return self;
+        }
+
+        private int queryInterface(Pointer self, Pointer riid, PointerByReference ppv) {
+            try {
+                byte[] id = riid.getByteArray(0, 16);
+                if (matches(id, unknownId) || matches(id, inspectableId) || matches(id, handlerId)) {
+                    refs.incrementAndGet();
+                    ppv.setValue(self);
+                    return S_OK;
+                }
+                ppv.setValue(null);
+                return E_NOINTERFACE;
+            } catch (Throwable t) {
+                return E_NOINTERFACE;
+            }
+        }
+
+        private int addRef(Pointer self) {
+            return refs.incrementAndGet();
+        }
+
+        private int release(Pointer self) {
+            return refs.decrementAndGet();
+        }
+
+        private int invoke(Pointer self, Pointer sender, Pointer args) {
+            try {
+                if (args == null) {
+                    return S_OK;
+                }
+                long ticks = new PositionArgs(args).getRequestedPosition();
+                onSystemSeek(ticks);
                 return S_OK;
             } catch (Throwable t) {
                 t.printStackTrace();

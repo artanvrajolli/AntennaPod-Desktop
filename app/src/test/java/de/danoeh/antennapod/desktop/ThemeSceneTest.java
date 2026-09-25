@@ -220,6 +220,9 @@ public class ThemeSceneTest {
 
                     public void onPrevious() {
                     }
+
+                    public void onSeek(int positionMs) {
+                    }
                 });
                 smtc.setEpisode("Typical Story II", "Glum Aleks", "AntennaPod Desktop", null);
                 smtc.setStatus(true, true);

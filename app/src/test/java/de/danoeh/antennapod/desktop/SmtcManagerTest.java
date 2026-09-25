@@ -121,6 +121,15 @@ public class SmtcManagerTest {
     }
 
     @Test
+    public void testTicksToMs() {
+        assertEquals(0, SmtcManager.ticksToMs(0));
+        assertEquals(0, SmtcManager.ticksToMs(-5));
+        assertEquals(120_000, SmtcManager.ticksToMs(120_000L * 10_000L));
+        assertEquals(1, SmtcManager.ticksToMs(15_000L));
+        assertEquals(Integer.MAX_VALUE, SmtcManager.ticksToMs(Long.MAX_VALUE));
+    }
+
+    @Test
     public void testEmptyHStringIsNull() {
         // an empty WinRT string is a null handle by design, so no API call happens:
         // this runs everywhere, unlike the round-trip below
@@ -287,6 +296,29 @@ public class SmtcManagerTest {
                     timelineProps.putPosition(120_000L * 10_000L);
                     controls2.updateTimelineProperties(timelineProps.getPointer());
                     assertEquals(120_000L * 10_000L, timelineProps.getPosition());
+                    // the seek handler the card drags against: accepted, then unregistered.
+                    // A session without app identity refuses it with E_NOTIMPL; the
+                    // timeline still shows there, it just cannot be dragged.
+                    SmtcManager seekOwner = new SmtcManager();
+                    try {
+                        SmtcManager.SeekSink seekSink = seekOwner.new SeekSink();
+                        long seekToken;
+                        try {
+                            seekToken = controls2
+                                    .addPlaybackPositionChangeRequested(seekSink.pointer());
+                        } catch (RuntimeException e) {
+                            if (e.getMessage() != null && e.getMessage().contains("-2147467231")) {
+                                System.out.println(
+                                        "SMTC seek registration refused (E_NOTIMPL); skipping");
+                                return;
+                            }
+                            throw e;
+                        }
+                        assertTrue(seekToken != 0);
+                        controls2.removePlaybackPositionChangeRequested(seekToken);
+                    } finally {
+                        seekOwner.shutdown();
+                    }
                 } finally {
                     SmtcManager.release(timeline);
                 }
