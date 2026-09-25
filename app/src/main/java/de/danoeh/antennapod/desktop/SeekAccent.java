@@ -1,9 +1,9 @@
 package de.danoeh.antennapod.desktop;
 
 import java.awt.image.BufferedImage;
-import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import javafx.scene.image.Image;
 import javafx.scene.image.PixelReader;
 
@@ -14,37 +14,27 @@ import javafx.scene.image.PixelReader;
  * (see {@code DesktopApp.nowPlayingArtUrl}); when there is no artwork the slider keeps the
  * theme's own blue ({@code -fx-accent}), so this helper only ever produces a hex color for a
  * real image and returns null when there is nothing usable to sample.
+ *
+ * <p>The color is the artwork's dominant color, extracted the way
+ * <a href="https://lokeshdhakar.com/projects/color-thief/">Color Thief</a> does it: pixels are
+ * quantized to 5 bits per channel and the RGB cube is repeatedly split at the median along its
+ * longest axis until five boxes remain; the most populous box's average wins. Only transparent
+ * pixels are skipped, so the winner is the true dominant color even when it is grey, white or
+ * black - there is deliberately no vivid-boost, no reshaping, and no fallback to the theme
+ * blue. Returns null only when there is nothing usable to sample.
  */
 final class SeekAccent {
-    /** Pixels are quantized to this many bits per channel before they are counted. */
-    private static final int QUANTIZE_SHIFT = 4;
-    /** A bin this saturated counts as vivid; vivid wins over a plain background. */
-    private static final float VIVID_MIN_SATURATION = 0.3f;
-    private static final float VIVID_MIN_VALUE = 0.2f;
-    private static final float VIVID_MAX_VALUE = 0.95f;
-    /** Below this the winner is treated as grey: no tint, the theme blue stays. */
-    private static final float GREY_MAX_SATURATION = 0.25f;
-    /** A vivid run only needs this share of the image to beat a white or black background. */
-    private static final double VIVID_MIN_SHARE = 0.05;
-    private static final int VIVID_MIN_PIXELS = 10;
+    /** Bits kept per channel during quantization, as in Color Thief's RGB quantizer. */
+    private static final int SIG_BITS = 5;
+    private static final int R_SHIFT = 8 - SIG_BITS;
+    private static final int HISTO_SIZE = 1 << (3 * SIG_BITS);
+    private static final int SIG_RANGE = 1 << SIG_BITS;
+    /** Color Thief's dominant-color path quantizes to five colors and takes the largest. */
+    private static final int MAX_COLORS = 5;
+    /** Below this alpha a pixel counts as transparent and is skipped, as in Color Thief. */
+    private static final int ALPHA_THRESHOLD = 125;
     /** Sampled down to about this many pixels, so a 256px cover stays cheap. */
     private static final int MAX_SAMPLED_PIXELS = 4096;
-    /**
-     * Every surface the played run and the thumb sit on, in both themes: the app background
-     * behind the bar plus the fetched and unplayed runs of the track. An accent has to stand
-     * clear of all of them, so a cover that only offers a matching grey gets no tint at all.
-     */
-    static final int[][] BACKGROUNDS = {
-            {0x1E, 0x1E, 0x1E},
-            {0x5F, 0x5F, 0x5F},
-            {0x8D, 0x8D, 0x8D},
-            {0xEC, 0xEC, 0xEC},
-            {0xC9, 0xC9, 0xC9},
-            {0x9E, 0x9E, 0x9E},
-            {0xFF, 0xFF, 0xFF},
-    };
-    /** Minimum RGB distance from every background above; below it the theme blue stays. */
-    static final double MIN_BACKGROUND_DISTANCE = 90.0;
 
     private SeekAccent() {
     }
@@ -115,207 +105,281 @@ final class SeekAccent {
     }
 
     /**
-     * Picks the dominant color out of raw ARGB pixels. Transparent pixels are skipped; a vivid
-     * run beats a plain background (white letterboxing, black bars) from a small share on;
-     * otherwise the most common bin wins. Grey winners and anything that would blend into the
-     * track or the app background in either theme give null, so the slider keeps its blue.
+     * Returns the dominant color of raw ARGB pixels as a hex string. Null only when there is
+     * nothing to sample: null or empty input, or every pixel transparent.
      */
     static String fromArgb(int[] pixels) {
         if (pixels == null || pixels.length == 0) {
             return null;
         }
-        Map<Integer, long[]> all = new HashMap<>();
-        Map<Integer, long[]> vivid = new HashMap<>();
-        long total = 0;
-        long vividTotal = 0;
+        int[] histo = new int[HISTO_SIZE];
+        int total = 0;
         for (int argb : pixels) {
-            if (((argb >>> 24) & 0xFF) < 128) {
+            if (((argb >>> 24) & 0xFF) < ALPHA_THRESHOLD) {
                 continue;
             }
-            int r = (argb >> 16) & 0xFF;
-            int g = (argb >> 8) & 0xFF;
-            int b = argb & 0xFF;
-            int key = ((r >> QUANTIZE_SHIFT) << 8)
-                    | ((g >> QUANTIZE_SHIFT) << 4)
-                    | (b >> QUANTIZE_SHIFT);
-            accumulate(all, key, r, g, b);
+            histo[colorIndex((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF)]++;
             total++;
-            float[] hsb = rgbToHsb(r, g, b);
-            if (hsb[1] >= VIVID_MIN_SATURATION
-                    && hsb[2] >= VIVID_MIN_VALUE
-                    && hsb[2] <= VIVID_MAX_VALUE) {
-                accumulate(vivid, key, r, g, b);
-                vividTotal++;
-            }
         }
         if (total == 0) {
             return null;
         }
-        Map<Integer, long[]> pool = all;
-        if (vividTotal >= Math.max(VIVID_MIN_PIXELS, total * VIVID_MIN_SHARE)) {
-            pool = vivid;
+        List<VBox> boxes = new ArrayList<>();
+        boxes.add(VBox.tight(histo));
+        while (boxes.size() < MAX_COLORS) {
+            VBox biggest = null;
+            for (VBox box : boxes) {
+                if (box.splittable && box.count > 1
+                        && (biggest == null || box.count > biggest.count)) {
+                    biggest = box;
+                }
+            }
+            if (biggest == null) {
+                break;
+            }
+            VBox[] split = biggest.split(histo);
+            if (split == null) {
+                biggest.splittable = false;
+                continue;
+            }
+            boxes.remove(biggest);
+            boxes.add(split[0]);
+            boxes.add(split[1]);
         }
-        long[] best = null;
-        long bestCount = -1;
-        for (long[] entry : pool.values()) {
-            if (entry[0] > bestCount) {
-                bestCount = entry[0];
-                best = entry;
+        VBox dominant = boxes.get(0);
+        for (VBox box : boxes) {
+            if (box.count > dominant.count) {
+                dominant = box;
             }
         }
-        if (best == null || bestCount <= 0) {
-            return null;
-        }
-        int r = (int) (best[1] / bestCount);
-        int g = (int) (best[2] / bestCount);
-        int b = (int) (best[3] / bestCount);
-        float[] hsb = rgbToHsb(r, g, b);
-        if (hsb[1] < GREY_MAX_SATURATION) {
-            // white, black and grey covers would sit tone-on-tone on the track in one theme
-            // or the other, so they keep the theme blue instead of a matching grey
-            return null;
-        }
-        int[] accent = fitToBackgrounds(hsb[0], hsb[1], hsb[2]);
-        return accent == null ? null : toHex(accent);
+        return toHex(dominant.average(histo));
     }
 
-    private static void accumulate(Map<Integer, long[]> bins, int key, int r, int g, int b) {
-        long[] entry = bins.get(key);
-        if (entry == null) {
-            entry = new long[4];
-            bins.put(key, entry);
-        }
-        entry[0]++;
-        entry[1] += r;
-        entry[2] += g;
-        entry[3] += b;
+    private static int colorIndex(int r, int g, int b) {
+        return ((r >> R_SHIFT) << (2 * SIG_BITS)) | ((g >> R_SHIFT) << SIG_BITS) | (b >> R_SHIFT);
     }
 
-    /**
-     * Makes the sampled color read as a control accent on both themes: it keeps its hue but is
-     * pushed into a vivid, mid-bright band, then nudged darker or lighter until it stands clear
-     * of every track and app background above. Returns null when no brightness does, so the
-     * slider keeps its blue rather than wearing a matching tone.
-     */
-    static int[] adjust(int r, int g, int b) {
-        float[] hsb = rgbToHsb(r, g, b);
-        if (hsb[1] < GREY_MAX_SATURATION) {
-            return null;
-        }
-        return fitToBackgrounds(hsb[0], hsb[1], hsb[2]);
-    }
+    /** One RGB cube under quantization; ranges are inclusive 5-bit channels. */
+    private static final class VBox {
+        int r1;
+        int r2;
+        int g1;
+        int g2;
+        int b1;
+        int b2;
+        int count;
+        boolean splittable = true;
 
-    private static int[] fitToBackgrounds(float hue, float saturation, float value) {
-        saturation = Math.max(saturation, 0.55f);
-        float base = clamp(value, 0.50f, 0.90f);
-        float[] steps = {0f, -0.05f, 0.05f, -0.10f, 0.10f, -0.15f, 0.15f,
-                -0.20f, 0.20f, -0.25f, 0.25f};
-        for (float step : steps) {
-            float candidate = clamp(base + step, 0.35f, 0.95f);
-            int[] rgb = hsbToRgb(hue, saturation, candidate);
-            if (minBackgroundDistance(rgb) >= MIN_BACKGROUND_DISTANCE) {
-                return rgb;
+        /** The smallest box holding every color the histogram saw. */
+        static VBox tight(int[] histo) {
+            VBox box = new VBox();
+            box.r1 = SIG_RANGE - 1;
+            box.g1 = SIG_RANGE - 1;
+            box.b1 = SIG_RANGE - 1;
+            box.r2 = 0;
+            box.g2 = 0;
+            box.b2 = 0;
+            for (int r = 0; r < SIG_RANGE; r++) {
+                for (int g = 0; g < SIG_RANGE; g++) {
+                    for (int b = 0; b < SIG_RANGE; b++) {
+                        if (histo[(r << (2 * SIG_BITS)) | (g << SIG_BITS) | b] > 0) {
+                            if (r < box.r1) {
+                                box.r1 = r;
+                            }
+                            if (r > box.r2) {
+                                box.r2 = r;
+                            }
+                            if (g < box.g1) {
+                                box.g1 = g;
+                            }
+                            if (g > box.g2) {
+                                box.g2 = g;
+                            }
+                            if (b < box.b1) {
+                                box.b1 = b;
+                            }
+                            if (b > box.b2) {
+                                box.b2 = b;
+                            }
+                        }
+                    }
+                }
             }
+            box.count = sum(histo, box);
+            return box;
         }
-        return null;
-    }
 
-    /** Closest any background above comes to this color, as RGB distance. */
-    static double minBackgroundDistance(int[] rgb) {
-        double closest = Double.MAX_VALUE;
-        for (int[] background : BACKGROUNDS) {
-            double dr = rgb[0] - background[0];
-            double dg = rgb[1] - background[1];
-            double db = rgb[2] - background[2];
-            closest = Math.min(closest, Math.sqrt(dr * dr + dg * dg + db * db));
+        /**
+         * Splits at the median along the longest axis, nudged so neither half ends up empty.
+         * Null when the box holds fewer than two pixels or no clean split exists (for example
+         * a solid color, which is already one box).
+         */
+        VBox[] split(int[] histo) {
+            if (count < 2) {
+                return null;
+            }
+            int rw = r2 - r1 + 1;
+            int gw = g2 - g1 + 1;
+            int bw = b2 - b1 + 1;
+            int axis = rw >= gw && rw >= bw ? 0 : gw >= rw && gw >= bw ? 1 : 2;
+            int len = axis == 0 ? rw : axis == 1 ? gw : bw;
+            if (len < 2) {
+                // a single plane (for example a solid color): already one box
+                return null;
+            }
+            int[] partial = new int[len];
+            int run = 0;
+            for (int i = 0; i < len; i++) {
+                run += sliceSum(histo, axis, plane(axis, i));
+                partial[i] = run;
+            }
+            if (run != count || run < 2) {
+                return null;
+            }
+            for (int i = 0; i < len; i++) {
+                if (partial[i] > run / 2) {
+                    int cut = adjustCut(partial, i, len - 1, run);
+                    if (cut < 0) {
+                        return null;
+                    }
+                    VBox first = copy();
+                    VBox second = copy();
+                    if (axis == 0) {
+                        first.r2 = plane(axis, cut);
+                        second.r1 = plane(axis, cut) + 1;
+                    } else if (axis == 1) {
+                        first.g2 = plane(axis, cut);
+                        second.g1 = plane(axis, cut) + 1;
+                    } else {
+                        first.b2 = plane(axis, cut);
+                        second.b1 = plane(axis, cut) + 1;
+                    }
+                    first.count = sum(histo, first);
+                    second.count = sum(histo, second);
+                    if (first.count == 0 || second.count == 0) {
+                        return null;
+                    }
+                    return new VBox[]{first, second};
+                }
+            }
+            return null;
         }
-        return closest;
+
+        /**
+         * Nudges the median cut toward the longer side (as Color Thief does) and then away
+         * from empty planes, so both halves keep pixels. -1 when no clean split exists.
+         */
+        private int adjustCut(int[] partial, int at, int last, int total) {
+            int left = at;
+            int right = last - at;
+            int cut = left <= right ? Math.min(last - 1, at + right / 2) : Math.max(0, at - 1 - left / 2);
+            while (cut < last && partial[cut] == 0) {
+                cut++;
+            }
+            while (cut > 0 && total - partial[cut] == 0 && partial[cut - 1] > 0) {
+                cut--;
+            }
+            if (cut < 0 || cut >= last || partial[cut] == 0 || total - partial[cut] == 0) {
+                for (int d = 0; d < last; d++) {
+                    if (partial[d] > 0 && total - partial[d] > 0) {
+                        return d;
+                    }
+                }
+                return -1;
+            }
+            return cut;
+        }
+
+        /** The box's average color, from 5-bit bin centers back to 8-bit channels. */
+        int[] average(int[] histo) {
+            double rsum = 0;
+            double gsum = 0;
+            double bsum = 0;
+            long ntot = 0;
+            int mult = 1 << R_SHIFT;
+            for (int r = r1; r <= r2; r++) {
+                for (int g = g1; g <= g2; g++) {
+                    for (int b = b1; b <= b2; b++) {
+                        int h = histo[(r << (2 * SIG_BITS)) | (g << SIG_BITS) | b];
+                        if (h > 0) {
+                            ntot += h;
+                            rsum += h * (r + 0.5) * mult;
+                            gsum += h * (g + 0.5) * mult;
+                            bsum += h * (b + 0.5) * mult;
+                        }
+                    }
+                }
+            }
+            if (ntot > 0) {
+                return new int[]{
+                        clamp((int) Math.round(rsum / ntot)),
+                        clamp((int) Math.round(gsum / ntot)),
+                        clamp((int) Math.round(bsum / ntot))};
+            }
+            return new int[]{
+                    (r1 + r2 + 1) * mult / 2,
+                    (g1 + g2 + 1) * mult / 2,
+                    (b1 + b2 + 1) * mult / 2};
+        }
+
+        private int plane(int axis, int i) {
+            return axis == 0 ? r1 + i : axis == 1 ? g1 + i : b1 + i;
+        }
+
+        private int sliceSum(int[] histo, int axis, int coord) {
+            int sum = 0;
+            if (axis == 0) {
+                for (int g = g1; g <= g2; g++) {
+                    for (int b = b1; b <= b2; b++) {
+                        sum += histo[(coord << (2 * SIG_BITS)) | (g << SIG_BITS) | b];
+                    }
+                }
+            } else if (axis == 1) {
+                for (int r = r1; r <= r2; r++) {
+                    for (int b = b1; b <= b2; b++) {
+                        sum += histo[(r << (2 * SIG_BITS)) | (coord << SIG_BITS) | b];
+                    }
+                }
+            } else {
+                for (int r = r1; r <= r2; r++) {
+                    for (int g = g1; g <= g2; g++) {
+                        sum += histo[(r << (2 * SIG_BITS)) | (g << SIG_BITS) | coord];
+                    }
+                }
+            }
+            return sum;
+        }
+
+        private static int sum(int[] histo, VBox box) {
+            int sum = 0;
+            for (int r = box.r1; r <= box.r2; r++) {
+                for (int g = box.g1; g <= box.g2; g++) {
+                    for (int b = box.b1; b <= box.b2; b++) {
+                        sum += histo[(r << (2 * SIG_BITS)) | (g << SIG_BITS) | b];
+                    }
+                }
+            }
+            return sum;
+        }
+
+        private VBox copy() {
+            VBox box = new VBox();
+            box.r1 = r1;
+            box.r2 = r2;
+            box.g1 = g1;
+            box.g2 = g2;
+            box.b1 = b1;
+            box.b2 = b2;
+            box.count = count;
+            return box;
+        }
     }
 
     static String toHex(int[] rgb) {
         return String.format(Locale.US, "#%02x%02x%02x", rgb[0], rgb[1], rgb[2]);
     }
 
-    private static float clamp(float value, float min, float max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
-    private static float[] rgbToHsb(int r, int g, int b) {
-        float rf = r / 255f;
-        float gf = g / 255f;
-        float bf = b / 255f;
-        float max = Math.max(rf, Math.max(gf, bf));
-        float min = Math.min(rf, Math.min(gf, bf));
-        float brightness = max;
-        float saturation = max == 0 ? 0 : (max - min) / max;
-        float hue = 0;
-        if (max != min) {
-            if (max == rf) {
-                hue = (gf - bf) / (max - min);
-            } else if (max == gf) {
-                hue = 2f + (bf - rf) / (max - min);
-            } else {
-                hue = 4f + (rf - gf) / (max - min);
-            }
-            hue /= 6f;
-            if (hue < 0) {
-                hue += 1f;
-            }
-        }
-        return new float[]{hue, saturation, brightness};
-    }
-
-    private static int[] hsbToRgb(float hue, float saturation, float brightness) {
-        float r = 0;
-        float g = 0;
-        float bl = 0;
-        if (saturation == 0) {
-            r = brightness;
-            g = brightness;
-            bl = brightness;
-        } else {
-            float h = (hue - (float) Math.floor(hue)) * 6f;
-            int sector = (int) h;
-            float fraction = h - sector;
-            float p = brightness * (1f - saturation);
-            float q = brightness * (1f - saturation * fraction);
-            float t = brightness * (1f - saturation * (1f - fraction));
-            switch (sector) {
-                case 0:
-                    r = brightness;
-                    g = t;
-                    bl = p;
-                    break;
-                case 1:
-                    r = q;
-                    g = brightness;
-                    bl = p;
-                    break;
-                case 2:
-                    r = p;
-                    g = brightness;
-                    bl = t;
-                    break;
-                case 3:
-                    r = p;
-                    g = q;
-                    bl = brightness;
-                    break;
-                case 4:
-                    r = t;
-                    g = p;
-                    bl = brightness;
-                    break;
-                default:
-                    r = brightness;
-                    g = p;
-                    bl = q;
-                    break;
-            }
-        }
-        return new int[]{
-                Math.max(0, Math.min(255, Math.round(r * 255))),
-                Math.max(0, Math.min(255, Math.round(g * 255))),
-                Math.max(0, Math.min(255, Math.round(bl * 255)))};
+    private static int clamp(int value) {
+        return Math.max(0, Math.min(255, value));
     }
 }

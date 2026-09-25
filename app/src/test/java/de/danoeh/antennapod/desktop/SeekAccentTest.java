@@ -21,7 +21,9 @@ public class SeekAccentTest {
     }
 
     @Test
-    public void testSmallLogoBeatsWhiteBackground() {
+    public void testMostPixelsWinOverSmallLogo() {
+        // dominant means most pixels: a small logo on a white cover yields a near-white
+        // tint, the way Color Thief's most populous box wins
         BufferedImage cover = filled(100, 100, Color.WHITE);
         Graphics2D g = cover.createGraphics();
         g.setColor(new Color(200, 30, 30));
@@ -30,11 +32,12 @@ public class SeekAccentTest {
         String accent = SeekAccent.fromAwt(cover);
         assertNotNull(accent);
         int[] rgb = hexToRgb(accent);
-        assertTrue("the logo color wins, got " + accent, rgb[0] > rgb[1] + 40);
+        assertTrue("the white cover wins, got " + accent,
+                rgb[0] > 200 && rgb[1] > 200 && rgb[2] > 200);
     }
 
     @Test
-    public void testBlackBarsDoNotWinOverContent() {
+    public void testLargerContentWinsOverLetterboxing() {
         BufferedImage frame = new BufferedImage(100, 60, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = frame.createGraphics();
         g.setColor(Color.BLACK);
@@ -45,43 +48,38 @@ public class SeekAccentTest {
         String accent = SeekAccent.fromAwt(frame);
         assertNotNull(accent);
         int[] rgb = hexToRgb(accent);
-        assertTrue("the blue content wins, got " + accent, rgb[2] > rgb[0] + 30);
+        assertTrue("the larger blue content wins, got " + accent, rgb[2] > rgb[0] + 30);
     }
 
     @Test
-    public void testGreyCoversFallBackToDefaultBlue() {
-        // white, black and mid grey would sit tone-on-tone on the track in one theme or the
-        // other, so they get no tint and the slider keeps the theme blue
-        assertNull(SeekAccent.fromAwt(filled(48, 48, new Color(245, 245, 245))));
-        assertNull(SeekAccent.fromAwt(filled(48, 48, new Color(10, 10, 10))));
-        assertNull(SeekAccent.fromAwt(filled(48, 48, new Color(140, 140, 140))));
+    public void testLargerShareWinsTwoTone() {
+        BufferedImage cover = new BufferedImage(100, 100, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = cover.createGraphics();
+        g.setColor(new Color(30, 160, 60));
+        g.fillRect(0, 0, 70, 100);
+        g.setColor(new Color(200, 30, 30));
+        g.fillRect(70, 0, 30, 100);
+        g.dispose();
+        String accent = SeekAccent.fromAwt(cover);
+        assertNotNull(accent);
+        int[] rgb = hexToRgb(accent);
+        assertTrue("the 70% green run wins, got " + accent, rgb[1] > rgb[0] + 40);
     }
 
     @Test
-    public void testAccentNeverMatchesEitherThemeBackground() {
-        Color[] covers = {
-                new Color(220, 30, 30),
-                new Color(30, 120, 200),
-                new Color(30, 160, 60),
-                new Color(230, 140, 20),
-                new Color(130, 60, 180),
-                new Color(20, 160, 160),
-                new Color(200, 180, 20),
-                new Color(200, 60, 140),
-        };
-        for (Color cover : covers) {
-            String accent = SeekAccent.fromAwt(filled(48, 48, cover));
-            assertNotNull("vivid cover keeps a tint: " + cover, accent);
-            double distance = SeekAccent.minBackgroundDistance(hexToRgb(accent));
-            assertTrue("tint stands clear of both themes, got " + accent
-                    + " for " + cover, distance >= SeekAccent.MIN_BACKGROUND_DISTANCE);
-        }
+    public void testGreyWhiteAndBlackKeepTheirColor() {
+        // the raw dominant color is kept even when it is grey, white or black: no vivid
+        // boost and no fallback to the theme blue
+        assertNear(new Color(140, 140, 140),
+                hexToRgb(SeekAccent.fromAwt(filled(48, 48, new Color(140, 140, 140)))), 10);
+        int[] white = hexToRgb(SeekAccent.fromAwt(filled(48, 48, new Color(245, 245, 245))));
+        assertTrue("white cover stays near-white", white[0] > 235 && white[1] > 235 && white[2] > 235);
+        int[] black = hexToRgb(SeekAccent.fromAwt(filled(48, 48, new Color(10, 10, 10))));
+        assertTrue("black cover stays near-black", black[0] < 20 && black[1] < 20 && black[2] < 20);
     }
 
     @Test
-    public void testGreyLogoCoverStillFindsItsColor() {
-        // a mostly-grey cover with a vivid logo still picks the logo, and the logo tint
-        // itself stands clear of both themes
+    public void testSmallLogoLosesToGreyCover() {
         BufferedImage cover = filled(100, 100, new Color(200, 200, 200));
         Graphics2D g = cover.createGraphics();
         g.setColor(new Color(200, 30, 30));
@@ -90,8 +88,8 @@ public class SeekAccentTest {
         String accent = SeekAccent.fromAwt(cover);
         assertNotNull(accent);
         int[] rgb = hexToRgb(accent);
-        assertTrue("the logo color wins, got " + accent, rgb[0] > rgb[1] + 40);
-        assertTrue(SeekAccent.minBackgroundDistance(rgb) >= SeekAccent.MIN_BACKGROUND_DISTANCE);
+        assertTrue("the grey cover wins, got " + accent,
+                rgb[0] > 150 && Math.abs(rgb[0] - rgb[1]) < 30 && Math.abs(rgb[0] - rgb[2]) < 30);
     }
 
     @Test
@@ -143,6 +141,18 @@ public class SeekAccentTest {
         return null;
     }
 
+    private static void assertNear(Color expected, int[] actual, int tolerance) {
+        assertNotNull(actual);
+        assertTrue("expected near " + expected + " but got #" + toHex(actual),
+                Math.abs(expected.getRed() - actual[0]) <= tolerance
+                        && Math.abs(expected.getGreen() - actual[1]) <= tolerance
+                        && Math.abs(expected.getBlue() - actual[2]) <= tolerance);
+    }
+
+    private static String toHex(int[] rgb) {
+        return String.format("%02x%02x%02x", rgb[0], rgb[1], rgb[2]);
+    }
+
     private static BufferedImage filled(int width, int height, Color color) {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = image.createGraphics();
@@ -153,6 +163,7 @@ public class SeekAccentTest {
     }
 
     private static int[] hexToRgb(String hex) {
+        assertNotNull(hex);
         assertEquals(7, hex.length());
         return new int[]{
                 Integer.parseInt(hex.substring(1, 3), 16),

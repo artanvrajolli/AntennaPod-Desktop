@@ -101,6 +101,10 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   `core`.
 - UTF-8 encoding is forced on all compile tasks; keep sources ASCII-safe or
   encoded UTF-8.
+- The seek bar's played run and thumb follow the artwork's dominant color,
+  extracted Color-Thief-style (median-cut quantization, most populous box wins)
+  and kept raw - even grey/white/black. Null only when there is no artwork.
+  Do not reintroduce vivid-boost or theme-blue fallback logic in `SeekAccent`.
 
 ## Releases / CI
 
