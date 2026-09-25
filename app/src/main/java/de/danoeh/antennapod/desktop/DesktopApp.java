@@ -4358,17 +4358,42 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         smtc.setStatus(true, playback.isPlaying());
     }
 
-    private static String smtcArtist(FeedMedia media) {
-        FeedItem item = media.getItem();
-        if (item.getFeed() != null && item.getFeed().getAuthor() != null
-                && !item.getFeed().getAuthor().isBlank()) {
-            return item.getFeed().getAuthor();
-        }
-        return media.getFeedTitle() != null ? media.getFeedTitle() : "";
+    private String smtcArtist(FeedMedia media) {
+        // The card's subtitle: always the subscription name, so the episode's origin is visible.
+        return smtcFeedTitle(media);
     }
 
-    private static String smtcAlbum(FeedMedia media) {
-        return media.getFeedTitle() != null ? media.getFeedTitle() : "";
+    private String smtcAlbum(FeedMedia media) {
+        return smtcFeedTitle(media);
+    }
+
+    /** Subscription name for the card, with a lookup fallback when the item carries no feed. */
+    private String smtcFeedTitle(FeedMedia media) {
+        if (media == null) {
+            return "";
+        }
+        FeedItem item = media.getItem();
+        if (item != null) {
+            if (item.getFeed() != null && item.getFeed().getTitle() != null
+                    && !item.getFeed().getTitle().isBlank()) {
+                return item.getFeed().getTitle();
+            }
+            String viaMedia = media.getFeedTitle();
+            if (viaMedia != null && !viaMedia.isBlank()) {
+                return viaMedia;
+            }
+            long feedId = item.getFeedId();
+            if (feedId != 0 && feeds != null) {
+                for (Feed feed : feeds) {
+                    if (feed != null && feed.getId() == feedId
+                            && feed.getTitle() != null && !feed.getTitle().isBlank()) {
+                        return feed.getTitle();
+                    }
+                }
+            }
+        }
+        String fallback = media.getFeedTitle();
+        return fallback != null ? fallback : "";
     }
 
     /** Artwork for the card, downloaded in the background: the shell only reads local files. */
