@@ -119,6 +119,12 @@ This is the same script the release workflows run. It reads the version from
 Every push to `main` builds and tests automatically; every `v*` tag publishes
 a ready-to-download release.
 
+For [winget](https://github.com/microsoft/winget-pkgs), once a release is
+published, `pwsh packaging/winget/new-manifest.ps1 -Version <version>` writes
+its manifests (the portable zip, with an `antennapod-desktop` command) under
+`packaging/winget/manifests/` and validates them; submit that folder to
+winget-pkgs with a pull request or `wingetcreate submit`.
+
 ## Project structure
 
 - `core/` — ported AntennaPod engine (`model`, feed parser, discovery,

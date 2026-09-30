@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: artanvrajolli.AntennaPodDesktop
+PackageVersion: 0.3.2
+PackageLocale: en-US
+Publisher: artanvrajolli
+PublisherUrl: https://github.com/artanvrajolli
+PublisherSupportUrl: https://github.com/artanvrajolli/AntennaPod-Desktop/issues
+PackageName: AntennaPod Desktop
+PackageUrl: https://github.com/artanvrajolli/AntennaPod-Desktop
+License: GPL-3.0
+LicenseUrl: https://github.com/artanvrajolli/AntennaPod-Desktop/blob/main/LICENSE
+ShortDescription: A Windows port of the open-source AntennaPod podcast manager.
+Description: |-
+  AntennaPod Desktop brings the AntennaPod podcast engine to Windows: subscribe by URL or search,
+  stream or download episodes, keep a queue, and sync subscriptions and positions with
+  gPodder.net or Nextcloud. It integrates with the tray, the taskbar and the media keys.
+Moniker: antennapod
+Tags:
+- podcast
+- podcasts
+- rss
+- audio
+- gpodder
+ReleaseNotesUrl: https://github.com/artanvrajolli/AntennaPod-Desktop/releases/tag/v0.3.2
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

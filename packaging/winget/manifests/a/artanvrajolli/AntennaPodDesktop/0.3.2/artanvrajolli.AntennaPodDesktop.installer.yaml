@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: artanvrajolli.AntennaPodDesktop
+PackageVersion: 0.3.2
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+- RelativeFilePath: AntennaPod-Desktop\AntennaPod-Desktop.exe
+  PortableCommandAlias: antennapod-desktop
+ReleaseDate: 2026-09-25
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/artanvrajolli/AntennaPod-Desktop/releases/download/v0.3.2/AntennaPod-Desktop-Windows.zip
+  InstallerSha256: F9833DF1541ADA59B31573386C068824436AA7F66415AA43F11439773F930E3A
+ManifestType: installer
+ManifestVersion: 1.6.0
