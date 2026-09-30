@@ -21,6 +21,11 @@ From the [**Releases page**](https://github.com/artanvrajolli/AntennaPod-Desktop
 Your data (subscriptions, downloads, playback positions) lives in
 `%APPDATA%\AntennaPod`, so both ways share the same library.
 
+**Backup and restore**: Settings → General → Data → *Back up…* saves the whole
+profile (subscriptions, positions and played state, history, favorites, queue,
+feed settings and logins, every setting) to one zip; *Restore…* replaces the
+profile with one and restarts. Downloaded files are not included.
+
 **Portable mode**: create a folder named `data` next to `AntennaPod-Desktop.exe`
 and the app keeps everything there instead — library, downloads and settings
 (in `data\settings.properties` rather than the registry) — so the whole folder

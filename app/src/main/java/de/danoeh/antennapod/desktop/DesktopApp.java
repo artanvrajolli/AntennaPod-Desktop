@@ -293,7 +293,19 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             });
             return;
         }
+        // a restore chosen in Settings is moved into place now, before the library is opened
+        boolean restored = false;
+        try {
+            restored = ProfileBackup.applyPending(DesktopPreferences.getDataDir());
+        } catch (Exception e) {
+            setStatus("Could not restore the backup: " + e.getMessage());
+        }
         database = new DesktopDatabase(DesktopPreferences.getDatabaseFile());
+        if (restored) {
+            int cleared = database.clearMissingDownloads();
+            setStatus("Backup restored" + (cleared > 0
+                    ? "; " + episodeCountText(cleared) + " downloaded elsewhere will download again" : ""));
+        }
         feedUpdater = new FeedUpdater(database);
         try {
             // before the first refresh, so protected feeds are fetched with their login
@@ -1373,6 +1385,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         return icons;
     }
 
+    /** Set on the instance {@link #restartApp} starts, which waits for its predecessor to exit. */
+    private static final String RESTART_ENV = "ANTENNAPOD_DESKTOP_RESTART";
+
     private boolean acquireInstanceLock() {
         try {
             java.nio.channels.FileChannel channel = java.nio.channels.FileChannel.open(
@@ -1380,6 +1395,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     java.nio.file.StandardOpenOption.CREATE,
                     java.nio.file.StandardOpenOption.WRITE);
             java.nio.channels.FileLock lock = channel.tryLock();
+            // a restart starts us while the old instance is still shutting down: give it a moment
+            for (int wait = 0; lock == null && System.getenv(RESTART_ENV) != null && wait < 60; wait++) {
+                Thread.sleep(250);
+                lock = channel.tryLock();
+            }
             if (lock == null) {
                 channel.close();
                 return false;
@@ -2747,6 +2767,120 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
     }
 
+    private void backUpProfile(Button button) {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Back up AntennaPod Desktop");
+        chooser.setInitialFileName("AntennaPod-backup-"
+                + new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(new Date()) + ".zip");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Backups", "*.zip"));
+        File file = chooser.showSaveDialog(feedList.getScene().getWindow());
+        if (file == null) {
+            return;
+        }
+        setStatus("Backing up to " + file.getName() + "…");
+        spinWhile(button, () -> {
+            try {
+                ProfileBackup.write(database, file, appVersion());
+                setStatus("Backed up to " + file.getAbsolutePath());
+            } catch (Exception e) {
+                setStatus("Backup failed: " + e.getMessage());
+            }
+        });
+    }
+
+    private void restoreProfile(Button button) {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Restore a backup");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Backups", "*.zip"));
+        File file = chooser.showOpenDialog(feedList.getScene().getWindow());
+        if (file == null) {
+            return;
+        }
+        File dataDir = DesktopPreferences.getDataDir();
+        spinWhile(button, () -> {
+            try {
+                ProfileBackup.Info info = ProfileBackup.stage(file, dataDir);
+                Platform.runLater(() -> confirmRestore(file, info, dataDir));
+            } catch (Exception e) {
+                setStatus("Could not restore " + file.getName() + ": " + e.getMessage());
+            }
+        });
+    }
+
+    /** The backup checked out and is staged; applying it takes a restart. */
+    private void confirmRestore(File file, ProfileBackup.Info info, File dataDir) {
+        String made = info.createdMs > 0
+                ? new SimpleDateFormat("d MMM yyyy HH:mm", Locale.US).format(new Date(info.createdMs))
+                : "an unknown date";
+        Label text = new Label("\"" + file.getName() + "\" was made on " + made
+                + (info.appVersion.isEmpty() ? "" : " by version " + info.appVersion) + " and holds "
+                + (info.feedCount == 1 ? "1 subscription" : info.feedCount + " subscriptions") + ".\n\n"
+                + "Restoring replaces your whole library and every setting with it. The current"
+                + " library is kept as " + ProfileBackup.REPLACED_DB + " in the data folder."
+                + " AntennaPod restarts to finish.");
+        text.setWrapText(true);
+        Button restart = new Button("Restore and restart");
+        restart.setDefaultButton(true);
+        Button cancel = new Button("Cancel");
+        cancel.setCancelButton(true);
+        VBox pane = new VBox(12, text);
+        restart.setOnAction(event -> restartApp());
+        cancel.setOnAction(event -> {
+            ProfileBackup.cancelPending(dataDir);
+            appShell.getChildren().remove(modalOverlayOf(pane));
+            setStatus("Restore cancelled");
+        });
+        HBox buttons = new HBox(8, cancel, restart);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+        pane.getChildren().add(buttons);
+        pane.setPadding(new Insets(12));
+        showModal("Restore backup", pane);
+    }
+
+    /**
+     * Starts a new instance with the same command line and shuts this one down. The new one is
+     * marked so it waits for this one's instance lock instead of reporting "already running".
+     */
+    private void restartApp() {
+        try {
+            ProcessBuilder builder = new ProcessBuilder(relaunchCommand());
+            builder.environment().put(RESTART_ENV, "1");
+            builder.redirectErrorStream(true);
+            builder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            Process next = builder.start();
+            // one that dies at once (a bad command line) must not leave the user with no app
+            if (next.waitFor(1500, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                setStatus("Could not restart: close and reopen AntennaPod to finish");
+                return;
+            }
+        } catch (Exception e) {
+            setStatus("Could not restart (" + e.getMessage() + "): close and reopen AntennaPod to finish");
+            return;
+        }
+        shutdown();
+    }
+
+    /**
+     * How to start this app again: the installed or unzipped exe when jpackage launched us,
+     * otherwise the same JVM with its options, class path and main class. (Windows does not
+     * report a process's arguments through ProcessHandle, so they are rebuilt from the JVM.)
+     */
+    static List<String> relaunchCommand() {
+        List<String> line = new ArrayList<>();
+        String exe = System.getProperty("jpackage.app-path");
+        if (exe != null && !exe.isEmpty()) {
+            line.add(exe);
+            return line;
+        }
+        line.add(new File(System.getProperty("java.home"), "bin" + File.separator + "java").getPath());
+        line.addAll(java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments());
+        line.add("-cp");
+        line.add(System.getProperty("java.class.path"));
+        String command = System.getProperty("sun.java.command", Launcher.class.getName());
+        line.addAll(java.util.Arrays.asList(command.trim().split("\\s+")));
+        return line;
+    }
+
     private void toggleFavorite(FeedItem item) {
         setFavorites(actionTargets(item), !item.isTagged(FeedItem.TAG_FAVORITE));
     }
@@ -3430,7 +3564,19 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         grid.add(dataLabel, 0, row++, 2, 1);
         Button openDataButton = new Button("Open data folder", Icons.folder());
         openDataButton.setOnAction(event -> getHostServices().showDocument(dataDir.toURI().toString()));
-        grid.add(new HBox(8, openDataButton), 0, row++, 2, 1);
+        Button backupButton = new Button("Back up…", Icons.upload());
+        backupButton.setTooltip(new Tooltip("Save subscriptions, positions, history, favorites,"
+                + " queue, feed settings and every setting to one file"));
+        backupButton.setOnAction(event -> backUpProfile(backupButton));
+        Button restoreButton = new Button("Restore…", Icons.download());
+        restoreButton.setTooltip(new Tooltip("Replace the library and settings with a backup"));
+        restoreButton.setOnAction(event -> restoreProfile(restoreButton));
+        grid.add(new HBox(8, backupButton, restoreButton, openDataButton), 0, row++, 2, 1);
+        Label backupHint = new Label("A backup holds everything except downloaded files, including"
+                + " your sync and feed logins, so keep it somewhere private.");
+        backupHint.getStyleClass().add("muted-label");
+        backupHint.setWrapText(true);
+        grid.add(backupHint, 0, row++, 2, 1);
         tabs.getTabs().add(settingsTab("General", grid));
 
         // ---- Playback ------------------------------------------------------

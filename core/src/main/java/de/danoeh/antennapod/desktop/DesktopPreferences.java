@@ -396,6 +396,35 @@ public final class DesktopPreferences {
         PREFS.put("proxyPassword", password);
     }
 
+    /** Every stored setting, for a backup. */
+    public static java.util.Properties exportAll() throws java.util.prefs.BackingStoreException {
+        java.util.Properties values = new java.util.Properties();
+        for (String key : PREFS.keys()) {
+            String value = PREFS.get(key, null);
+            if (value != null) {
+                values.setProperty(key, value);
+            }
+        }
+        return values;
+    }
+
+    /** Replaces every setting with those of a backup. */
+    public static void importAll(java.util.Properties values) {
+        try {
+            PREFS.clear();
+        } catch (java.util.prefs.BackingStoreException e) {
+            // fall through: the backup's values still overwrite what they name
+        }
+        for (String key : values.stringPropertyNames()) {
+            PREFS.put(key, values.getProperty(key));
+        }
+        try {
+            PREFS.flush();
+        } catch (java.util.prefs.BackingStoreException e) {
+            // the registry writes through on its own schedule
+        }
+    }
+
     public static EpisodeFilter getEpisodeFilter() {
         return EpisodeFilter.fromName(PREFS.get("episodeFilter", EpisodeFilter.ALL.name()));
     }

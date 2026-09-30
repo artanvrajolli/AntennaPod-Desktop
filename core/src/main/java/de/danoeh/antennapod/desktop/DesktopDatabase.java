@@ -503,6 +503,35 @@ public final class DesktopDatabase implements AutoCloseable {
         return items;
     }
 
+    /** Writes a consistent copy of the whole database to a file that must not exist yet. */
+    public synchronized void snapshotTo(File target) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement("VACUUM INTO ?")) {
+            stmt.setString(1, target.getAbsolutePath());
+            stmt.execute();
+        }
+    }
+
+    /**
+     * Forgets downloads whose file is not on this machine, e.g. after restoring a backup made on
+     * another one; those episodes then stream or download again. Returns how many were cleared.
+     */
+    public synchronized int clearMissingDownloads() throws SQLException {
+        List<Long> missing = new ArrayList<>();
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(
+                     "SELECT id, local_file_url FROM feed_media WHERE local_file_url IS NOT NULL")) {
+            while (rs.next()) {
+                if (!new File(rs.getString("local_file_url")).isFile()) {
+                    missing.add(rs.getLong("id"));
+                }
+            }
+        }
+        for (long mediaId : missing) {
+            clearMediaDownload(mediaId);
+        }
+        return missing.size();
+    }
+
     /** The episode a media row belongs to, with that media attached, or null if either is gone. */
     public synchronized FeedItem getItemOfMedia(long mediaId) throws SQLException {
         FeedMedia media = getMedia(mediaId);
