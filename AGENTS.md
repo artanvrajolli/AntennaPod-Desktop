@@ -21,8 +21,8 @@ inside `core`.
     `storage/` (SQLite-backed desktop storage, import/export OPML, preferences)
   - `android/` + `androidx/` — hand-written compatibility shims the ported
     engine depends on (Log, XML, media, collections). Keep them minimal.
-  - 22 test classes (JUnit 4) in `core/src/test`.
-- `app/` — JavaFX UI (17 classes under
+  - 32 test classes (JUnit 4) in `core/src/test`.
+- `app/` — JavaFX UI (19 classes under
   `app/src/main/java/de/danoeh/antennapod/desktop`): `DesktopApp` (scenes),
   `PlaybackManager` (JavaFX media playback), `TrayManager` (system tray),
   `WindowChrome` (the app-drawn title bar; the stage is undecorated),
@@ -33,8 +33,9 @@ inside `core`.
   artwork drawn into the
   window icon), `ThemeManager`/`SystemTheme`, `ImageCache`, `Icons`, `Launcher`
   (entry point / main class), `AppIdentity` (the process AppUserModelID),
-  `SeekAccent` (artwork colour for the seek bar).
-  20 test classes in `app/src/test`.
+  `SeekAccent` (artwork colour for the seek bar), `FeedInput` (search-or-subscribe
+  field), `StartupRegistration` (start with Windows).
+  23 test classes in `app/src/test`.
 
 ## Build, test, run
 
@@ -50,6 +51,12 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   `org.openjfx.javafxplugin` Gradle plugin (`app` only).
 - Run task adds `--enable-native-access=javafx.media`; keep that flag when
   launching directly.
+- `gradlew :app:run -Pportable=<folder>` runs on a separate profile (portable
+  mode: library, downloads and settings in that folder). Use it to try anything
+  that subscribes, syncs or deletes; a plain run works on the real library in
+  `%APPDATA%\AntennaPod` and the real settings (registry), sync account included.
+- Tests must not write the real settings: pass settings in and out explicitly
+  (see `ProfileBackupTest`) rather than calling `DesktopPreferences.importAll`.
 - Tests are JUnit 4 (`useJUnit()` in both build files). `core` tests are pure
   JVM; `app` tests cover theme/tray/UI helpers.
 - `DesktopIntegrationTest` exercises the full storage + engine flow end to
@@ -106,6 +113,15 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   and refresh each hold their own `FeedMedia` copy, and `updateMedia` rewrites
   every column from whichever copy it is given, undoing the others' changes.
   Changes spanning several statements go through `inTransaction`.
+- Files are deleted only through `LocalFolderFeeds.isAppOwned`: the app's media
+  and cache folders, nothing else. Local-folder subscriptions (`antennapod_local:`
+  feeds, `file:` episode URLs) are the user's own files: never deleted,
+  downloaded, listed as downloads, synced or exported to OPML.
+- Feed logins live in `feed_credentials` (never in a feed URL) and are answered
+  only on a 401 challenge, via `FeedCredentials` (OkHttp interceptor + the
+  default `java.net.Authenticator` for JavaFX streaming).
+- Modals close on Escape, their close button and a click on the backdrop; the
+  episode header drops its controls to a second row when the pane is narrow.
 - No database queries or `MediaPlayer` calls from list cells or other FX-thread
   hot paths: load what cells show in the background (see `feedCounts`,
   `syncedPositions` in `DesktopApp`) and let the cells read the snapshot.
