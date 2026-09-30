@@ -5,6 +5,12 @@ pluginManagement {
     }
 }
 
+// Where Gradle downloads the Java 17 toolchain when this machine has none: provisioning
+// without a declared repository is deprecated and fails from Gradle 10 on.
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {

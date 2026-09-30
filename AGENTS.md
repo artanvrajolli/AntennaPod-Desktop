@@ -1,6 +1,6 @@
 # AGENTS.md — AntennaPod Desktop
 
-Guidance for coding agents working in this repository. Current version: **0.3.1**.
+Guidance for coding agents working in this repository. Current version: **0.3.2**.
 
 ## What this is
 
@@ -22,7 +22,7 @@ inside `core`.
   - `android/` + `androidx/` — hand-written compatibility shims the ported
     engine depends on (Log, XML, media, collections). Keep them minimal.
   - 22 test classes (JUnit 4) in `core/src/test`.
-- `app/` — JavaFX UI (14 classes under
+- `app/` — JavaFX UI (17 classes under
   `app/src/main/java/de/danoeh/antennapod/desktop`): `DesktopApp` (scenes),
   `PlaybackManager` (JavaFX media playback), `TrayManager` (system tray),
   `WindowChrome` (the app-drawn title bar; the stage is undecorated),
@@ -32,8 +32,9 @@ inside `core`.
   flyout and media card via WinRT SMTC), `TaskbarIcon` (the playing episode's
   artwork drawn into the
   window icon), `ThemeManager`/`SystemTheme`, `ImageCache`, `Icons`, `Launcher`
-  (entry point / main class), `SeekAccent` (artwork colour for the seek bar).
-  18 test classes in `app/src/test`.
+  (entry point / main class), `AppIdentity` (the process AppUserModelID),
+  `SeekAccent` (artwork colour for the seek bar).
+  20 test classes in `app/src/test`.
 
 ## Build, test, run
 
@@ -79,6 +80,10 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   AppUserModelID (taskbar group, toasts and the media card fall back to
   exe-path identity). Use these
   to isolate a fault before changing the native code.
+- Hiding the stage (closing to the tray) destroys its native window and showing it
+  creates a new HWND. Anything bound to the window - `WindowsTaskbar`/`ThumbBar`,
+  `SmtcManager` - re-binds on `WindowEvent.WINDOW_SHOWN` and replays what it last
+  showed; never cache an HWND for the life of the process.
 - App identity is `AntennaPod.AntennaPodDesktop`, claimed on the process by
   `AppIdentity` (first thing in `Launcher`) and stamped as
   `System.AppUserModel.ID` on the installed shortcuts by the `ApodStampAumid`
@@ -166,6 +171,10 @@ verified against a locally built installer:
 - Regenerating: run
   `powershell -ExecutionPolicy Bypass -File packaging/windows/generate-installer-bitmaps.ps1`
   after changing colours; the BMPs are checked in.
+- App icon designs live in `icons/icon-designs.ps1` (the shipped `gradient-mesh` plus
+  ten candidates). `icons/generate-icons.ps1 -Design <key>` exports one to `app.ico`
+  and the runtime PNGs; `icons/generate-candidates.ps1` renders them all to
+  `icons/candidates/` with a contact sheet. See `icons/README.md`.
 - WiX 3.14.1 is installed on this machine via winget
   (`WiXToolset.WiXToolset`) with
   `C:\Program Files (x86)\WiX Toolset v3.14\bin` appended to the machine PATH.
