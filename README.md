@@ -50,8 +50,14 @@ can go on a USB stick. Developers can do the same for a source run with
   compact icon playback controls (right-click the tray icon)
 - Progress bars show a ghost marker at the last position saved to your sync
   provider, and playback duration fixes keep gPodder.net episode actions clean
-- Search/filter your subscriptions and episodes, light/dark/system theme
-  (follows the Windows app theme by default)
+- Search/filter your subscriptions and episodes — by text and by state
+  (unplayed, in progress, downloaded, favorites) — or search the titles and show
+  notes of every subscription at once (Library → Search all episodes)
+- Downloads view (Library → Downloads): running transfers, every downloaded
+  episode with its size, and the disk space they take
+- Keyboard shortcuts for playback, speed, search, refresh and settings; press
+  **F1** for the list
+- Light/dark/system theme (follows the Windows app theme by default)
 - **Sync** with gPodder.net and Nextcloud (two-way subscriptions, positions,
   played state), including import from another device
 - Windows integration: the keyboard's media keys work from any window, the

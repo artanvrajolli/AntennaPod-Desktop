@@ -503,6 +503,41 @@ public final class DesktopDatabase implements AutoCloseable {
         return items;
     }
 
+    /**
+     * Episodes of every subscription whose title or show notes contain the text, ignoring case:
+     * title matches first, then newest first. Wildcards in the text match literally.
+     */
+    public synchronized List<FeedItem> searchItems(String text, int limit) throws SQLException {
+        List<FeedItem> items = new ArrayList<>();
+        String trimmed = text != null ? text.trim() : "";
+        if (trimmed.isEmpty()) {
+            return items;
+        }
+        String pattern = "%" + trimmed.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "SELECT * FROM feed_items WHERE title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\'"
+                        + " ORDER BY (title LIKE ? ESCAPE '\\') DESC, pub_date DESC NULLS LAST, id DESC"
+                        + " LIMIT ?")) {
+            stmt.setString(1, pattern);
+            stmt.setString(2, pattern);
+            stmt.setString(3, pattern);
+            stmt.setInt(4, limit);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    items.add(readItem(rs));
+                }
+            }
+        }
+        for (FeedItem item : items) {
+            FeedMedia media = getMediaOfItem(item.getId());
+            if (media != null) {
+                media.setItem(item);
+                item.setMedia(media);
+            }
+        }
+        return items;
+    }
+
     /** Writes a consistent copy of the whole database to a file that must not exist yet. */
     public synchronized void snapshotTo(File target) throws SQLException {
         try (PreparedStatement stmt = connection.prepareStatement("VACUUM INTO ?")) {

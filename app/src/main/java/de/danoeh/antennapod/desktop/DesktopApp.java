@@ -101,6 +101,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private ListView<FeedItem> episodeList;
     private TextField feedFilterField;
     private TextField episodeFilterField;
+    /** The toolbar's search-or-subscribe field. */
+    private TextField addField;
+    private Button episodeRefreshButton;
     private ComboBox<EpisodeFilter> episodeStateBox;
     private javafx.animation.Timeline downloadsTicker;
     private VBox sidebar;
@@ -656,6 +659,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private ToolBar buildToolbar() {
         // one field for both ways of adding a podcast: an address subscribes, anything else searches
         TextField inputField = new TextField();
+        addField = inputField;
         inputField.setPromptText("Search podcasts or paste a feed URL…");
         inputField.setPrefWidth(340);
         Button goButton = new Button("Search", Icons.search());
@@ -705,6 +709,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 toolbarMenuItem("Queue", Icons.queue(), this::showQueue),
                 toolbarMenuItem("Favorites", Icons.favorite(), this::showFavorites),
                 toolbarMenuItem("Downloads", Icons.download(), this::showDownloads),
+                toolbarMenuItem("Search all episodes", Icons.search(), this::showEpisodeSearch),
                 toolbarMenuItem("History", Icons.history(), this::showHistory),
                 toolbarMenuItem("Stats", Icons.stats(), this::showStatistics));
         MenuButton moreMenu = new MenuButton("More", Icons.more());
@@ -1535,16 +1540,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             prefsWriter.submit(() -> DesktopPreferences.setEpisodeFilter(chosen));
             applyEpisodeFilter();
         });
-        Button refreshButton = iconButton(Icons.refresh(), "Check this podcast for new episodes");
-        refreshButton.setOnAction(event -> {
-            Feed feed = selectedFeed;
-            if (feed == null) {
-                setStatus("Select a podcast first");
-                return;
-            }
-            setStatus("Refreshing " + feed.getTitle() + "…");
-            spinWhile(refreshButton, () -> doRefreshFeed(feed));
-        });
+        Button refreshButton = iconButton(Icons.refresh(), "Check this podcast for new episodes (F5)");
+        episodeRefreshButton = refreshButton;
+        refreshButton.setOnAction(event -> refreshOpenFeed());
         playAllButton.setTooltip(new Tooltip("Play from the oldest to the newest"));
         // title on the left, the list's controls pushed to the right edge
         Region spacer = new Region();
@@ -2082,8 +2080,127 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         volumeSlider.setValue(Math.max(0, Math.min(1, volumeSlider.getValue() + delta)));
     }
 
+    /** The episode header's refresh: the open subscription only, with the spinner on its button. */
+    private void refreshOpenFeed() {
+        Feed feed = selectedFeed;
+        if (feed == null) {
+            setStatus("Select a podcast first");
+            return;
+        }
+        if (episodeRefreshButton.isDisabled()) {
+            return;
+        }
+        setStatus("Refreshing " + feed.getTitle() + "…");
+        spinWhile(episodeRefreshButton, () -> doRefreshFeed(feed));
+    }
+
+    /** Every keyboard shortcut, as the F1 list shows them. */
+    static final String[][] SHORTCUTS = {
+            {"Space", "Play / pause"},
+            {"← / →", "Back / forward 5 seconds"},
+            {"Ctrl+← / Ctrl+→", "Previous / next episode"},
+            {"[ / ]", "Slower / faster"},
+            {"Ctrl+↑ / Ctrl+↓", "Volume up / down"},
+            {"M", "Mute"},
+            {"Ctrl+F", "Search this podcast's episodes"},
+            {"Ctrl+Shift+F", "Search all episodes"},
+            {"Ctrl+L", "Search podcasts or paste a feed URL"},
+            {"Esc", "Clear the search you are in, or close a window"},
+            {"F5", "Check this podcast for new episodes"},
+            {"Ctrl+F5", "Refresh all podcasts"},
+            {"Ctrl+,", "Settings"},
+            {"F1", "This list"},
+    };
+
+    private void showShortcuts() {
+        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
+        grid.setHgap(24);
+        grid.setVgap(6);
+        grid.setPadding(new Insets(12));
+        for (int i = 0; i < SHORTCUTS.length; i++) {
+            Label keys = new Label(SHORTCUTS[i][0]);
+            keys.setStyle("-fx-font-weight: bold;");
+            grid.add(keys, 0, i);
+            grid.add(new Label(SHORTCUTS[i][1]), 1, i);
+        }
+        showModal("Keyboard shortcuts", grid);
+    }
+
+    private static void focusAndSelect(TextField field) {
+        field.requestFocus();
+        field.selectAll();
+    }
+
+    /**
+     * Shortcuts that work wherever the focus is, typing included, because they use Ctrl or a
+     * function key that a text field has no use for. True when the event was one of them.
+     */
+    private boolean handleCommandKey(KeyEvent event) {
+        boolean ctrl = event.isShortcutDown();
+        switch (event.getCode()) {
+            case F1:
+                showShortcuts();
+                return true;
+            case F5:
+                if (ctrl) {
+                    refreshAll();
+                } else {
+                    refreshOpenFeed();
+                }
+                return true;
+            case F:
+                if (ctrl && event.isShiftDown()) {
+                    showEpisodeSearch();
+                    return true;
+                }
+                if (ctrl) {
+                    focusAndSelect(episodeFilterField);
+                    return true;
+                }
+                return false;
+            case L:
+                if (ctrl) {
+                    focusAndSelect(addField);
+                    return true;
+                }
+                return false;
+            case COMMA:
+                if (ctrl) {
+                    showSettings();
+                    return true;
+                }
+                return false;
+            case ESCAPE:
+                Node focused = scene != null ? scene.getFocusOwner() : null;
+                if (focused instanceof TextField && !((TextField) focused).getText().isEmpty()
+                        && (focused == episodeFilterField || focused == feedFilterField
+                        || focused == addField)) {
+                    ((TextField) focused).clear();
+                    return true;
+                }
+                return false;
+            default:
+                return false;
+        }
+    }
+
+    /** Steps the playback speed through the player bar's list, as [ and ] do. */
+    private void stepSpeed(int direction) {
+        int index = java.util.Arrays.asList(SPEED_OPTIONS).indexOf(speedBox.getValue());
+        int next = Math.max(0, Math.min(SPEED_OPTIONS.length - 1, (index < 0 ? 2 : index) + direction));
+        if (next != index) {
+            // the box's own handler applies and stores the speed
+            speedBox.setValue(SPEED_OPTIONS[next]);
+            setStatus("Speed " + SPEED_OPTIONS[next]);
+        }
+    }
+
     private void handleGlobalKey(KeyEvent event) {
         if (hasModal()) {
+            return;
+        }
+        if (handleCommandKey(event)) {
+            event.consume();
             return;
         }
         Node focusOwner = scene != null ? scene.getFocusOwner() : null;
@@ -2091,6 +2208,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             return;
         }
         switch (event.getCode()) {
+            case OPEN_BRACKET:
+                stepSpeed(-1);
+                event.consume();
+                break;
+            case CLOSE_BRACKET:
+                stepSpeed(1);
+                event.consume();
+                break;
             case SPACE:
                 playback.togglePlayPause();
                 event.consume();
@@ -2963,6 +3088,123 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 setStatus("Could not load favorites: " + e.getMessage());
             }
         });
+    }
+
+    /** Searches the titles and show notes of every subscription's episodes, as you type. */
+    private void showEpisodeSearch() {
+        TextField query = new TextField();
+        query.setPromptText("Search all episodes");
+        ObservableList<FeedItem> items = FXCollections.observableArrayList();
+        Label summary = new Label("Type to search the episodes of every subscription");
+        summary.getStyleClass().add("muted-label");
+        summary.setWrapText(true);
+        ListView<FeedItem> list = new ListView<>(items);
+        list.setPlaceholder(new Label(""));
+        SimpleDateFormat dateFormat = new SimpleDateFormat("d MMM yyyy", Locale.US);
+        list.setCellFactory(view -> fullWidthCell(new ListCell<>() {
+            @Override
+            protected void updateItem(FeedItem item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                    return;
+                }
+                Label title = new Label(item.getTitle());
+                title.setWrapText(true);
+                StringBuilder meta = new StringBuilder();
+                String feedTitle = feedTitleOf(item.getFeedId());
+                if (feedTitle != null) {
+                    meta.append(feedTitle);
+                }
+                if (item.getPubDate() != null) {
+                    appendMeta(meta, dateFormat.format(item.getPubDate()));
+                }
+                if (item.isPlayed()) {
+                    appendMeta(meta, "Played");
+                }
+                Label metaLabel = new Label(meta.toString());
+                metaLabel.getStyleClass().add("muted-label");
+                VBox texts = new VBox(2, title, metaLabel);
+                texts.setMinWidth(0);
+                HBox.setHgrow(texts, Priority.ALWAYS);
+                Button play = iconButton(Icons.play(), "Play");
+                play.setDisable(item.getMedia() == null);
+                play.setOnAction(event -> playback.play(item, new ArrayList<>(items)));
+                Button queue = iconButton(Icons.queueAdd(), "Add to queue");
+                queue.setOnAction(event -> enqueueItems(List.of(item)));
+                Button open = iconButton(Icons.navigateAfter(), "Open in its podcast");
+                open.setOnAction(event -> openInPodcast(item));
+                HBox row = new HBox(8, texts, play, queue, open);
+                row.setAlignment(Pos.CENTER_LEFT);
+                setGraphic(row);
+                setText(null);
+            }
+        }));
+        list.setOnMouseClicked(event -> {
+            if (event.getClickCount() == 2) {
+                FeedItem selected = list.getSelectionModel().getSelectedItem();
+                if (selected != null && selected.getMedia() != null) {
+                    playback.play(selected, new ArrayList<>(items));
+                }
+            }
+        });
+        // one query per pause in typing, and a slow one never overwrites a newer one's results
+        int[] generation = {0};
+        PauseTransition debounce = new PauseTransition(Duration.millis(250));
+        debounce.setOnFinished(event -> {
+            String text = query.getText().trim();
+            int mine = ++generation[0];
+            if (text.isEmpty()) {
+                items.clear();
+                summary.setText("Type to search the episodes of every subscription");
+                return;
+            }
+            background.submit(() -> {
+                try {
+                    List<FeedItem> found = database.searchItems(text, EPISODE_SEARCH_LIMIT);
+                    Platform.runLater(() -> {
+                        if (mine != generation[0]) {
+                            return;
+                        }
+                        items.setAll(found);
+                        summary.setText(found.isEmpty() ? "No episodes match \"" + text + "\""
+                                : found.size() >= EPISODE_SEARCH_LIMIT
+                                        ? "The first " + EPISODE_SEARCH_LIMIT + " matches; type more to narrow them"
+                                        : episodeCountText(found.size()) + " match");
+                    });
+                } catch (Exception e) {
+                    setStatus("Search failed: " + e.getMessage());
+                }
+            });
+        });
+        query.textProperty().addListener((obs, oldText, newText) -> debounce.playFromStart());
+        query.setOnAction(event -> {
+            debounce.stop();
+            debounce.getOnFinished().handle(null);
+        });
+        VBox pane = new VBox(8, query, summary, list);
+        pane.setPadding(new Insets(8));
+        VBox.setVgrow(list, Priority.ALWAYS);
+        showSidebar("Search all episodes", pane);
+        Platform.runLater(query::requestFocus);
+    }
+
+    private static final int EPISODE_SEARCH_LIMIT = 200;
+
+    /** Opens the episode's subscription with its list narrowed to that episode. */
+    private void openInPodcast(FeedItem item) {
+        for (Feed feed : feeds) {
+            if (feed.getId() == item.getFeedId()) {
+                episodeFilterField.setText(item.getTitle() != null ? item.getTitle() : "");
+                episodeStateBox.setValue(EpisodeFilter.ALL);
+                feedFilterField.clear();
+                feedList.getSelectionModel().select(feed);
+                feedList.scrollTo(feed);
+                return;
+            }
+        }
+        setStatus("That podcast is no longer subscribed");
     }
 
     private void showDownloads() {
