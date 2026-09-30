@@ -354,4 +354,12 @@ public final class DesktopPreferences {
     public static void setProxyPassword(String password) {
         PREFS.put("proxyPassword", password);
     }
+
+    public static EpisodeFilter getEpisodeFilter() {
+        return EpisodeFilter.fromName(PREFS.get("episodeFilter", EpisodeFilter.ALL.name()));
+    }
+
+    public static void setEpisodeFilter(EpisodeFilter filter) {
+        PREFS.put("episodeFilter", filter.name());
+    }
 }

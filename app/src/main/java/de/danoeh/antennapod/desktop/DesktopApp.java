@@ -101,6 +101,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private ListView<FeedItem> episodeList;
     private TextField feedFilterField;
     private TextField episodeFilterField;
+    private ComboBox<EpisodeFilter> episodeStateBox;
     private VBox sidebar;
     private SplitPane listsSplit;
     private VBox feedPane;
@@ -1496,10 +1497,17 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         playAllButton.setOnAction(event -> playAll());
         episodeFilterField = new TextField();
         episodeFilterField.setPromptText("Search episodes");
-        episodeFilterField.setPrefWidth(180);
+        episodeFilterField.setPrefWidth(160);
         episodeFilterField.textProperty().addListener((obs, oldText, newText) -> applyEpisodeFilter());
-        Button refreshButton = new Button("Refresh", Icons.refresh());
-        refreshButton.setTooltip(new Tooltip("Check this podcast for new episodes"));
+        episodeStateBox = new ComboBox<>(FXCollections.observableArrayList(EpisodeFilter.values()));
+        episodeStateBox.setValue(DesktopPreferences.getEpisodeFilter());
+        episodeStateBox.setTooltip(new Tooltip("Show only some episodes"));
+        episodeStateBox.setOnAction(event -> {
+            EpisodeFilter chosen = episodeStateBox.getValue();
+            prefsWriter.submit(() -> DesktopPreferences.setEpisodeFilter(chosen));
+            applyEpisodeFilter();
+        });
+        Button refreshButton = iconButton(Icons.refresh(), "Check this podcast for new episodes");
         refreshButton.setOnAction(event -> {
             Feed feed = selectedFeed;
             if (feed == null) {
@@ -1512,10 +1520,18 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         // title on the left, the list's controls pushed to the right edge
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox header = new HBox(8, feedTitleLabel, spacer, episodeFilterField, sortBox,
-                refreshButton, playAllButton);
+        HBox header = new HBox(8, feedTitleLabel, spacer, episodeFilterField, episodeStateBox,
+                sortBox, refreshButton, playAllButton);
         header.setAlignment(Pos.CENTER_LEFT);
+        // when the pane is narrow the title and the search field give way; the pickers and
+        // buttons keep their labels whole instead of shrinking to "Pl…"
+        for (Region control : new Region[]{episodeStateBox, sortBox, refreshButton, playAllButton}) {
+            control.setMinWidth(Region.USE_PREF_SIZE);
+        }
+        episodeFilterField.setMinWidth(90);
+        feedTitleLabel.setMinWidth(60);
         episodeList = new ListView<>(visibleEpisodes);
+        episodeList.setPlaceholder(new Label("No episodes to show"));
         episodeList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         episodeList.setCellFactory(list -> new EpisodeCell());
         episodeList.setOnMouseClicked(event -> {
@@ -1623,8 +1639,22 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private void applyEpisodeFilter() {
         String query = episodeFilterField.getText().trim().toLowerCase(Locale.ROOT);
-        visibleEpisodes.setPredicate(item -> query.isEmpty()
-                || (item.getTitle() != null && item.getTitle().toLowerCase(Locale.ROOT).contains(query)));
+        EpisodeFilter state = episodeStateBox.getValue() != null
+                ? episodeStateBox.getValue() : EpisodeFilter.ALL;
+        visibleEpisodes.setPredicate(item -> state.matches(item) && (query.isEmpty()
+                || (item.getTitle() != null && item.getTitle().toLowerCase(Locale.ROOT).contains(query))));
+    }
+
+    /**
+     * Redraws the episode rows after an action changed what the state filter looks at (played,
+     * favorite, downloaded): the filtered view only re-tests rows when its predicate is set
+     * again, so without this a row marked played would linger under "Unplayed".
+     */
+    private void refilterEpisodes() {
+        if (episodeStateBox.getValue() != null && episodeStateBox.getValue() != EpisodeFilter.ALL) {
+            applyEpisodeFilter();
+        }
+        episodeList.refresh();
     }
 
     private void showSleepTimerMenu() {
@@ -2605,7 +2635,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
                 setStatus((favorite ? "Added to favorites: " : "Removed from favorites: ")
                         + episodeCountText(items));
-                Platform.runLater(episodeList::refresh);
+                Platform.runLater(this::refilterEpisodes);
             } catch (Exception e) {
                 setStatus("Could not update favorites: " + e.getMessage());
             }
@@ -4023,7 +4053,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     syncManager.recordPlayedState(item, played);
                 }
                 setStatus((played ? "Marked played: " : "Marked unplayed: ") + episodeCountText(items));
-                Platform.runLater(episodeList::refresh);
+                Platform.runLater(this::refilterEpisodes);
                 refreshFeedCounts();
             } catch (Exception e) {
                 setStatus("Could not update episodes: " + e.getMessage());
@@ -4256,7 +4286,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             } catch (Exception e) {
                 setStatus("Could not delete download: " + e.getMessage());
             }
-            Platform.runLater(episodeList::refresh);
+            Platform.runLater(this::refilterEpisodes);
         });
     }
 
