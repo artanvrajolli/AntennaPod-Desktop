@@ -270,8 +270,15 @@ public final class PlaybackManager {
             }
             mediaReady = true;
             int duration = getDuration();
+            // checked again after waiting for the lock above: a load timeout or error aborting
+            // this episode meanwhile clears currentMedia, and would leave this handler holding
+            // nothing (or, after resumeAt, spending the next player's pending seek)
+            FeedMedia readyMedia = currentMedia;
+            if (player != created || readyMedia == null) {
+                return;
+            }
             if (duration > 0) {
-                currentMedia.setDuration(duration);
+                readyMedia.setDuration(duration);
                 saveMedia();
             }
             if (pendingSeekMs >= 0) {
@@ -284,11 +291,11 @@ public final class PlaybackManager {
                     completeEpisode();
                     return;
                 }
-                player.seek(new Duration(Math.max(target, 0)));
+                created.seek(new Duration(Math.max(target, 0)));
             } else if (startPosition > 0 && startPosition < duration - 5000) {
-                player.seek(new Duration(startPosition));
+                created.seek(new Duration(startPosition));
             }
-            player.play();
+            created.play();
             notifyLoading(false);
             notifyState();
         });
@@ -623,6 +630,12 @@ public final class PlaybackManager {
     }
 
     public synchronized void seek(int positionMs) {
+        if (player != null && !mediaReady) {
+            // a player that is still loading ignores seeks, and the ready handler then jumps to
+            // the resume point: keep the wanted position for it instead
+            pendingSeekMs = Math.max(positionMs, 0);
+            return;
+        }
         if (player != null) {
             // a jump lands in unknown audio; stale quiet-since timing must not skip into it
             silenceSkipper.reset();
@@ -1109,9 +1122,17 @@ public final class PlaybackManager {
                 return;
             }
         }
-        media.setPosition(position);
-        if (duration > 0) {
-            media.setDuration(duration);
+        synchronized (this) {
+            // the player was asked without the lock: in the meantime the episode may have
+            // finished (completeEpisode already saved it at the start) or been replaced (a
+            // stopped player reads 0), and writing what was read would undo either
+            if (currentMedia != media || player != activePlayer || finishedMedia == media) {
+                return;
+            }
+            media.setPosition(position);
+            if (duration > 0) {
+                media.setDuration(duration);
+            }
         }
         persistMedia(media);
     }

@@ -33,6 +33,7 @@ import java.awt.TrayIcon;
 import java.awt.event.ActionListener;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
+import java.util.List;
 import javafx.application.Platform;
 import javafx.scene.image.Image;
 import javafx.scene.image.PixelReader;
@@ -67,6 +68,8 @@ public final class TrayManager {
     private CheckBox silenceToggle;
     private Button playPauseButton;
     private HBox transportRow;
+    /** The transport buttons that need a loaded episode; play/pause works without one. */
+    private List<Button> episodeControls = List.of();
     private Label nowPlayingLabel;
     private Label feedLabel;
     private ImageView artworkView;
@@ -171,14 +174,14 @@ public final class TrayManager {
         header.setAlignment(Pos.CENTER_LEFT);
         playPauseButton = control(Icons.accent(Icons.play()), "Play", callbacks::onPlayPause);
         playPauseButton.setMinSize(44, 36);
-        transportRow = new HBox(8,
-                control(Icons.previous(), "Previous episode", callbacks::onPrevious),
-                control(Icons.replay10(), "Skip back", callbacks::onSkipBack),
-                playPauseButton,
-                control(Icons.forward30(), "Skip forward", callbacks::onSkipForward),
-                control(Icons.next(), "Next episode", callbacks::onNext));
+        Button previous = control(Icons.previous(), "Previous episode", callbacks::onPrevious);
+        Button skipBack = control(Icons.replay10(), "Skip back", callbacks::onSkipBack);
+        Button skipForward = control(Icons.forward30(), "Skip forward", callbacks::onSkipForward);
+        Button next = control(Icons.next(), "Next episode", callbacks::onNext);
+        episodeControls = List.of(previous, skipBack, skipForward, next);
+        transportRow = new HBox(8, previous, skipBack, playPauseButton, skipForward, next);
         transportRow.setAlignment(Pos.CENTER);
-        transportRow.setDisable(true);
+        setEpisodeControlsDisabled(true);
         positionLabel = new Label("");
         positionLabel.getStyleClass().add("muted-label");
         progressSlider = new Slider(0, 1, 0);
@@ -316,8 +319,9 @@ public final class TrayManager {
 
     /**
      * Refreshes the tray popup and tooltip: transport, header (episode + subscription +
-     * artwork) and the icon's artwork. The transport row stays disabled until an episode
-     * is loaded, so the empty popup cannot drive a player that has nothing to play.
+     * artwork) and the icon's artwork. Until an episode is loaded only play/pause stays
+     * enabled: with nothing loaded it resumes the last episode, like every other play button
+     * (see PlaybackManager.togglePlayPause); skipping and seeking have nothing to act on.
      */
     public void update(boolean playing, String nowPlaying, String feedTitle, Image artwork) {
         if (trayIcon == null) {
@@ -327,7 +331,11 @@ public final class TrayManager {
         playPauseButton.setGraphic(Icons.accent(playing ? Icons.pause() : Icons.play()));
         playPauseButton.setAccessibleText(playing ? "Pause" : "Play");
         playPauseButton.getTooltip().setText(playing ? "Pause" : "Play");
-        transportRow.setDisable(!hasEpisode);
+        setEpisodeControlsDisabled(!hasEpisode);
+        if (!hasEpisode) {
+            // the position ticks stop with the player, so nothing else clears the last one
+            updateProgress(0, 0);
+        }
         nowPlayingLabel.setText(hasEpisode ? truncate(nowPlaying, 100) : "Nothing playing");
         boolean hasFeed = hasEpisode && feedTitle != null && !feedTitle.isBlank();
         feedLabel.setText(hasFeed ? truncate(feedTitle.trim(), 60) : "");
@@ -346,6 +354,12 @@ public final class TrayManager {
         });
         wantedArtwork = artwork;
         applyArtwork(artwork);
+    }
+
+    private void setEpisodeControlsDisabled(boolean disabled) {
+        for (Button button : episodeControls) {
+            button.setDisable(disabled);
+        }
     }
 
     private Image artworkImageOrDefault(Image artwork) {

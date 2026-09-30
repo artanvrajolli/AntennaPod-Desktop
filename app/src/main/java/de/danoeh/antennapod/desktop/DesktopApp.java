@@ -82,8 +82,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private volatile long smtcMediaId = -1;
     private volatile File smtcArtworkFile;
     private MediaKeys mediaKeys;
+    /** Set once the media card failed to attach, so the media keys are claimed directly. */
+    private boolean smtcUnavailable;
     private PlaybackManager playback;
     private ExecutorService background;
+    /**
+     * Writes feed preferences one at a time, in order. Each write re-reads the stored prefs and
+     * changes only its own fields, so the episode-pane sort box and the feed settings panel,
+     * which both save the same row, cannot undo each other.
+     */
+    private ExecutorService prefsWriter;
 
     private final ObservableList<Feed> feeds = FXCollections.observableArrayList();
     private final ObservableList<FeedItem> episodes = FXCollections.observableArrayList();
@@ -238,6 +246,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     /** Bumped by every episode load, so only the newest one is shown when loads overlap. */
     private long episodeLoadGeneration;
     private volatile long loadingMediaId = -1;
+    /**
+     * What the episode cells show as playing, copied from the player on every state change:
+     * cells must not call into PlaybackManager, whose lock is held across database writes.
+     */
+    private long cellCurrentMediaId = -1;
+    private boolean cellPlaying;
     private final TrayManager trayManager = new TrayManager();
     private boolean trayActive;
     /** The app's own icon, in every size, kept so the window icon can go back to it. */
@@ -285,6 +299,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             thread.setDaemon(true);
             return thread;
         });
+        prefsWriter = Executors.newSingleThreadExecutor(r -> {
+            Thread thread = new Thread(r, "desktop-feed-prefs");
+            thread.setDaemon(true);
+            return thread;
+        });
         playback = new PlaybackManager(database, this);
         SyncManager syncManager = new SyncManager(database, feedUpdater);
         playback.setPlayActionRecorder(media -> {
@@ -301,7 +320,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         background.submit(() -> {
             int swept = episodeCache.sweepFinished();
             if (swept > 0) {
-                Platform.runLater(episodeList::refresh);
+                // a lambda, not episodeList::refresh: that would read the field here, on this
+                // thread, possibly before the FX thread has built the list
+                Platform.runLater(() -> episodeList.refresh());
             }
         });
         this.syncManager = syncManager;
@@ -432,6 +453,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         // the episode in the Windows volume flyout, with the same transport vocabulary
         smtc.setErrorReporter(message -> setStatus("Media card: " + message));
+        // with no card the media keys have nothing to arrive through: claim them after all
+        smtc.setAttachFailedHandler(() -> Platform.runLater(() -> {
+            smtcUnavailable = true;
+            if (mediaKeys == null) {
+                startMediaKeys();
+            }
+        }));
         smtc.attach(stage, new SmtcManager.Callbacks() {
             @Override
             public void onPlay() {
@@ -1465,7 +1493,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void saveSortCode(Feed feed, String code) {
-        background.submit(() -> {
+        prefsWriter.submit(() -> {
             try {
                 FeedPrefs prefs = database.getFeedPrefs(feed.getId());
                 prefs.sortCode = code;
@@ -1594,7 +1622,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private void updateSleepButton() {
         SleepTimer.Mode mode = sleepTimer.getMode();
         if (mode == SleepTimer.Mode.AFTER_MINUTES) {
-            sleepButton.setText(formatDuration((int) sleepTimer.getRemainingMs()));
+            sleepButton.setText(formatDuration(sleepTimer.getRemainingMs()));
         } else if (mode == SleepTimer.Mode.END_OF_EPISODE) {
             sleepButton.setText("episode");
         } else {
@@ -2016,7 +2044,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (!MediaKeys.isEnabled() || !DesktopPreferences.getMediaKeysEnabled()) {
             return;
         }
-        if (SmtcManager.isEnabled()) {
+        if (SmtcManager.isEnabled() && !smtcUnavailable) {
             // Presses arrive through the system media card, which Windows routes to whichever
             // player is currently active — this episode while it plays, the other app while it
             // does. Claiming the keys here would steal them from other players and fire twice.
@@ -2229,14 +2257,18 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     }
                     feeds.setAll(all);
                     feedList.refresh();
+                    boolean kept = false;
                     if (keepId != null) {
                         for (Feed feed : all) {
                             if (feed.getId() == keepId) {
                                 feedList.getSelectionModel().select(feed);
+                                kept = true;
                                 break;
                             }
                         }
-                    } else if (!all.isEmpty()
+                    }
+                    // nothing wanted, or the wanted feed is gone (unsubscribed): open the first
+                    if (!kept && !all.isEmpty()
                             && feedList.getSelectionModel().getSelectedItem() == null) {
                         feedList.getSelectionModel().selectFirst();
                     }
@@ -2416,8 +2448,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 feedUpdater.unsubscribe(feed.getId());
                 setStatus("Unsubscribed from " + feed.getTitle());
                 Platform.runLater(() -> {
-                    episodes.clear();
-                    feedTitleLabel.setText("Select a podcast");
+                    // only the open feed's list goes; unsubscribing another one from its context
+                    // menu leaves what is shown alone. Forgetting it also stops later reloads
+                    // (sync, mark seen, sort changes) from loading a feed that no longer exists.
+                    if (selectedFeed != null && selectedFeed.getId() == feed.getId()) {
+                        selectedFeed = null;
+                        episodeLoadGeneration++;
+                        episodes.clear();
+                        feedTitleLabel.setText("Select a podcast");
+                    }
                 });
                 reloadFeeds(null);
             } catch (Exception e) {
@@ -2472,7 +2511,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         setStatus("Importing " + file.getName() + "…");
         background.submit(() -> {
-            try (java.io.Reader reader = new java.io.FileReader(file)) {
+            // UTF-8 rather than the platform charset; lenient, so a stray byte from an exporter
+            // that wrote Latin-1 is replaced instead of failing the whole import
+            try (java.io.Reader reader = new java.io.InputStreamReader(
+                    new java.io.FileInputStream(file), java.nio.charset.StandardCharsets.UTF_8)) {
                 OpmlImporter.ImportResult result =
                         new OpmlImporter(database, feedUpdater).importFromReader(reader);
                 setStatus("Imported " + result.imported.size() + " feeds"
@@ -2494,7 +2536,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             return;
         }
         background.submit(() -> {
-            try (java.io.Writer writer = new java.io.FileWriter(file)) {
+            // UTF-8, as the document declares; FileWriter would use the platform charset
+            try (java.io.Writer writer = java.nio.file.Files.newBufferedWriter(
+                    file.toPath(), java.nio.charset.StandardCharsets.UTF_8)) {
                 new OpmlImporter(database, feedUpdater).exportToWriter(writer);
                 setStatus("Exported subscriptions to " + file.getName());
             } catch (Exception e) {
@@ -2549,8 +2593,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                             removeButton.setOnAction(event -> background.submit(() -> {
                                 try {
                                     database.setFavorite(item.getId(), false);
-                                    Platform.runLater(() -> items.remove(item));
-                                    Platform.runLater(episodeList::refresh);
+                                    Platform.runLater(() -> {
+                                        items.remove(item);
+                                        // the open list holds its own copies of the episodes
+                                        for (FeedItem shown : episodes) {
+                                            if (shown.getId() == item.getId()) {
+                                                shown.removeTag(FeedItem.TAG_FAVORITE);
+                                            }
+                                        }
+                                        episodeList.refresh();
+                                    });
                                 } catch (Exception e) {
                                     setStatus("Could not update favorite: " + e.getMessage());
                                 }
@@ -2627,38 +2679,50 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 "Longest first", "Title A-Z");
         sortBox.setValue(sortLabel(prefs.sortCode));
         grid.add(sortBox, 1, row++);
-        Runnable save = () -> background.submit(() -> {
+        // the controls are read here, on the FX thread; the write goes through prefsWriter
+        Runnable save = () -> {
+            float speed = (float) Math.round(speedSlider.getValue() * 20) / 20f;
+            int autoDownload = triStateValue(downloadBox.getValue());
+            int autoDelete = triStateValue(deleteBox.getValue());
+            String include = includeField.getText().trim();
+            String exclude = excludeField.getText().trim();
+            int minDurationSec;
             try {
-                prefs.speed = (float) Math.round(speedSlider.getValue() * 20) / 20f;
-                prefs.autoDownload = triStateValue(downloadBox.getValue());
-                prefs.autoDelete = triStateValue(deleteBox.getValue());
-                prefs.includeFilter = includeField.getText().trim();
-                prefs.excludeFilter = excludeField.getText().trim();
-                try {
-                    int minutes = Integer.parseInt(minDurationField.getText().trim());
-                    prefs.minDurationSec = minutes < 0 ? -1 : minutes * 60;
-                } catch (NumberFormatException e) {
-                    prefs.minDurationSec = -1;
-                }
-                prefs.sortCode = sortCode(sortBox.getValue());
-                database.saveFeedPrefs(prefs);
-                setStatus("Feed settings saved");
-                Platform.runLater(() -> {
-                    if (selectedFeed != null && selectedFeed.getId() == feed.getId()) {
-                        loadEpisodes(feed);
-                    }
-                });
-            } catch (Exception e) {
-                setStatus("Could not save feed settings: " + e.getMessage());
+                int minutes = Integer.parseInt(minDurationField.getText().trim());
+                minDurationSec = minutes < 0 ? -1 : minutes * 60;
+            } catch (NumberFormatException e) {
+                minDurationSec = -1;
             }
-        });
+            int minDuration = minDurationSec;
+            prefsWriter.submit(() -> {
+                try {
+                    FeedPrefs stored = database.getFeedPrefs(feed.getId());
+                    stored.speed = speed;
+                    stored.autoDownload = autoDownload;
+                    stored.autoDelete = autoDelete;
+                    stored.includeFilter = include;
+                    stored.excludeFilter = exclude;
+                    stored.minDurationSec = minDuration;
+                    database.saveFeedPrefs(stored);
+                    setStatus("Feed settings saved");
+                    Platform.runLater(() -> {
+                        if (selectedFeed != null && selectedFeed.getId() == feed.getId()) {
+                            loadEpisodes(feed);
+                        }
+                    });
+                } catch (Exception e) {
+                    setStatus("Could not save feed settings: " + e.getMessage());
+                }
+            });
+        };
         autoSave(speedSlider, save);
         autoSave(downloadBox.valueProperty(), save);
         autoSave(deleteBox.valueProperty(), save);
         autoSave(includeField, save);
         autoSave(excludeField, save);
         autoSave(minDurationField, save);
-        autoSave(sortBox.valueProperty(), save);
+        // the order is saved on its own, the same way the episode pane's sort box saves it
+        autoSave(sortBox.valueProperty(), () -> saveSortCode(feed, sortCode(sortBox.getValue())));
         Label savedHint = new Label("Changes are saved automatically.");
         savedHint.setWrapText(true);
         grid.add(savedHint, 0, row, 2, 1);
@@ -2835,22 +2899,22 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     totalDownloaded += row.downloaded;
                     totalSize += row.downloadSizeBytes;
                 }
-                lines.add("Listened: " + formatDuration((int) totalPlayed)
-                        + " of " + formatDuration((int) totalTime));
+                lines.add("Listened: " + formatDuration(totalPlayed)
+                        + " of " + formatDuration(totalTime));
                 lines.add("Episodes: " + totalEpisodes + " · Downloaded: " + totalDownloaded
                         + " (" + formatSize(totalSize) + ")");
                 lines.add("");
                 lines.add("Per podcast:");
                 for (DesktopDatabase.FeedStatistics row : feeds) {
                     lines.add((row.feedTitle != null ? row.feedTitle : "?") + ": "
-                            + formatDuration((int) row.playedTimeMs) + " listened, "
+                            + formatDuration(row.playedTimeMs) + " listened, "
                             + row.episodes + " episodes, " + row.unplayed + " unplayed");
                 }
                 if (!months.isEmpty()) {
                     lines.add("");
                     lines.add("By month:");
                     for (DesktopDatabase.MonthlyStatistics month : months) {
-                        lines.add(month.month + ": " + formatDuration((int) month.playedTimeMs));
+                        lines.add(month.month + ": " + formatDuration(month.playedTimeMs));
                     }
                 }
                 Platform.runLater(() -> {
@@ -3280,7 +3344,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                         setText(null);
                         return;
                     }
-                    setText(formatDuration((int) chapter.getStart()) + " · " + chapter.getTitle());
+                    setText(formatDuration(chapter.getStart()) + " · " + chapter.getTitle());
                 }
             });
             chapterList.setOnMouseClicked(event -> {
@@ -3322,7 +3386,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                             }
                             String speaker = segment.getSpeaker() != null && !segment.getSpeaker().isEmpty()
                                     ? segment.getSpeaker() + ": " : "";
-                            setText(formatDuration((int) segment.getStartTime()) + "  "
+                            setText(formatDuration(segment.getStartTime()) + "  "
                                     + speaker + segment.getWords());
                             setWrapText(true);
                         }
@@ -3642,6 +3706,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     syncedItemIds.clear();
                     syncedItemIds.addAll(result.syncedItemIds);
                     updateGhostMarker(playback.getPosition(), playback.getDuration());
+                    reloadSyncedMarker();
                     if (onFinish != null) {
                         onFinish.accept(message);
                     }
@@ -4126,21 +4191,54 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         background.submit(() -> {
             try {
+                int deleted = 0;
+                FeedMedia inUse = null;
                 for (FeedMedia media : deletable) {
-                    new File(media.getLocalFileUrl()).delete();
+                    if (!deleteDownloadFile(media.getLocalFileUrl())) {
+                        inUse = media;
+                        continue;
+                    }
+                    deleted++;
                     media.setLocalFileUrl(null);
                     database.clearMediaDownload(media.getId());
                     if (deleteCachedCopy(media)) {
                         database.setMediaCacheFile(media.getId(), null);
                     }
                 }
-                setStatus("Deleted downloads: "
-                        + (deletable.size() == 1 ? "1 episode" : deletable.size() + " episodes"));
+                if (inUse != null) {
+                    setStatus("Could not delete " + inUse.getHumanReadableIdentifier()
+                            + ": the file is in use");
+                } else {
+                    setStatus("Deleted downloads: "
+                            + (deleted == 1 ? "1 episode" : deleted + " episodes"));
+                }
             } catch (Exception e) {
                 setStatus("Could not delete download: " + e.getMessage());
             }
             Platform.runLater(episodeList::refresh);
         });
+    }
+
+    /**
+     * Deletes a downloaded episode file, retrying for a few seconds: a player that has just
+     * finished it is disposed on its own thread and holds the file open until then, and on
+     * Windows an open file cannot be deleted. False if it is still there, so the caller can keep
+     * the download recorded instead of leaving an orphaned file behind. Background threads only.
+     */
+    private static boolean deleteDownloadFile(String path) {
+        File file = new File(path);
+        for (int attempt = 0; attempt < 10; attempt++) {
+            if (!file.exists() || file.delete()) {
+                return true;
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return !file.exists();
     }
 
     /** Deletes the playback cache's copy of an episode; true if there was one. */
@@ -4185,7 +4283,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     return;
                 }
                 if (media.getLocalFileUrl() != null) {
-                    new File(media.getLocalFileUrl()).delete();
+                    if (!deleteDownloadFile(media.getLocalFileUrl())) {
+                        setStatus("Could not auto-delete " + media.getHumanReadableIdentifier()
+                                + ": the file is in use");
+                        return;
+                    }
                     media.setLocalFileUrl(null);
                     database.clearMediaDownload(media.getId());
                     setStatus("Auto-deleted: " + media.getHumanReadableIdentifier());
@@ -4269,7 +4371,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     public void onProgress(long mediaId, long bytesRead, long totalBytes) {
         int percent = totalBytes > 0 ? (int) (bytesRead * 100 / totalBytes) : -1;
         Integer previous = downloadProgress.get(mediaId);
-        if (previous == null || percent < 0 || percent - previous >= 5) {
+        // an unknown size reports -1 on every chunk; only a change is worth redrawing the list
+        boolean changed = previous == null
+                || (percent < 0 ? previous >= 0 : previous < 0 || percent - previous >= 5);
+        if (changed) {
             downloadProgress.put(mediaId, percent);
             Platform.runLater(episodeList::refresh);
         }
@@ -4291,7 +4396,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     @Override
     public void onError(long mediaId, Exception e) {
         downloadProgress.remove(mediaId);
-        setStatus("Download failed: " + e.getMessage());
+        setStatus(EpisodeDownloader.isCancellation(e)
+                ? "Download cancelled" : "Download failed: " + e.getMessage());
         Platform.runLater(episodeList::refresh);
     }
 
@@ -4406,12 +4512,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         background.submit(() -> {
             try {
                 File art = SmtcArtwork.fetch(artUrl,
-                        new File(DesktopPreferences.getCacheDir(), "smtc-art"), mediaId);
+                        new File(DesktopPreferences.getCacheDir(), "smtc-art"), mediaId,
+                        () -> smtcMediaId == mediaId);
                 if (art == null || smtcMediaId != mediaId) {
                     return;
                 }
                 smtcArtworkFile = art;
-                smtc.setEpisode(title, artist, album, art);
+                // checked again on the card's thread: a switch to another episode can be
+                // queued there between the check above and this update
+                smtc.setEpisode(title, artist, album, art, () -> smtcMediaId == mediaId);
             } catch (Exception e) {
                 // the card simply shows without artwork
             }
@@ -4444,8 +4553,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (artwork.getProgress() < 1) {
             // still loading: keep the icon that is up and draw this one once the image is there
             artwork.progressProperty().addListener((obs, oldProgress, progress) -> {
-                if (progress.doubleValue() >= 1 && !artwork.isError()
-                        && wanted.equals(taskbarIconArtUrl)) {
+                if (progress.doubleValue() < 1 || !wanted.equals(taskbarIconArtUrl)) {
+                    return;
+                }
+                if (artwork.isError()) {
+                    // a failed load also ends at 1: drop the previous episode's artwork, which
+                    // was left up while this one loaded
+                    mainStage.getIcons().setAll(baseIcons);
+                } else {
                     applyTaskbarIcon(artwork);
                 }
             });
@@ -4539,7 +4654,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         updateTransportEnabled();
         paintVolumeTrack();
         FeedMedia current = playback.getCurrentMedia();
-        windowsTaskbar.setPlaybackState(current != null, playback.isPlaying());
+        cellCurrentMediaId = current != null ? current.getId() : -1;
+        cellPlaying = playback.isPlaying();
+        windowsTaskbar.setPlaybackState(current != null, cellPlaying);
         updateSmtcCard(current);
         if (current == null) {
             updateBufferBar(0, 0);
@@ -4924,6 +5041,33 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
     }
 
+    /**
+     * Re-reads the playing episode's synced position after a sync, which may have brought one
+     * from another device: the per-episode lookup above would otherwise keep the old value for
+     * the rest of the episode. A changed position is shown again even if the old one had faded.
+     */
+    private void reloadSyncedMarker() {
+        long itemId = syncedMarkerItemId;
+        if (itemId < 0) {
+            return;
+        }
+        background.submit(() -> {
+            try {
+                int position = database.getSyncedPosition(itemId);
+                Platform.runLater(() -> {
+                    if (syncedMarkerItemId != itemId || position == syncedMarkerPositionMs) {
+                        return;
+                    }
+                    syncedMarkerPositionMs = position;
+                    ghostFadedItemId = -1;
+                    updateGhostMarker(playback.getPosition(), playback.getDuration());
+                });
+            } catch (Exception e) {
+                // keep the marker as it was
+            }
+        });
+    }
+
     private void updateGhostMarker(int positionMs, int durationMs) {
         if (ghostMarker == null) {
             return;
@@ -5007,11 +5151,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         return syncedPositions.getOrDefault(item.getId(), -1);
     }
 
-    private static String formatDuration(int millis) {
-        int totalSeconds = Math.max(millis / 1000, 0);
-        int hours = totalSeconds / 3600;
-        int minutes = (totalSeconds % 3600) / 60;
-        int seconds = totalSeconds % 60;
+    /** Takes a long: library-wide statistics pass 596 hours, where an int of millis wraps. */
+    private static String formatDuration(long millis) {
+        long totalSeconds = Math.max(millis / 1000, 0);
+        long hours = totalSeconds / 3600;
+        long minutes = (totalSeconds % 3600) / 60;
+        long seconds = totalSeconds % 60;
         if (hours > 0) {
             return String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds);
         }
@@ -5087,6 +5232,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         if (background != null) {
             background.shutdownNow();
+        }
+        if (prefsWriter != null) {
+            // let a settings change made just before closing reach the database
+            prefsWriter.shutdown();
+            try {
+                prefsWriter.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
         try {
             if (database != null) {
@@ -5320,8 +5474,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 downloadButton.setGraphic(Icons.download());
             }
             downloadButton.setDisable(media == null || media.getDownloadUrl() == null);
-            FeedMedia current = playback.getCurrentMedia();
-            boolean isCurrent = media != null && current != null && media.getId() == current.getId();
+            boolean isCurrent = media != null && media.getId() == cellCurrentMediaId;
             boolean isLoading = media != null && media.getId() == loadingMediaId;
             if (isLoading) {
                 meta.append(" · Loading…");
@@ -5332,13 +5485,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 playButton.setGraphic(spinner);
                 playButton.setDisable(true);
             } else {
-                boolean playingCurrent = isCurrent && playback.isPlaying();
+                boolean playingCurrent = isCurrent && cellPlaying;
                 playButton.setGraphic(playingCurrent ? Icons.pause() : Icons.play());
                 playButton.setDisable(media == null);
                 playTooltip.setText(playingCurrent ? "Pause" : "Play");
             }
             if (isCurrent && !isLoading) {
-                meta.append(playback.isPlaying() ? " · Playing" : " · Paused");
+                meta.append(cellPlaying ? " · Playing" : " · Paused");
             }
             playedButton.setGraphic(item.isPlayed() ? Icons.replay() : Icons.check());
             metaLabel.setText(meta.toString());

@@ -72,9 +72,16 @@ public class ThemeSceneTest {
                 instanceof javafx.scene.control.Separator);
         javafx.scene.layout.HBox transport = (javafx.scene.layout.HBox) panel.getChildren().get(2);
         org.junit.Assert.assertEquals(5, transport.getChildren().size());
-        // nothing loaded yet: the transport row stays disabled with the player idle
-        assertTrue(transport.isDisable());
-        transport.setDisable(false);
+        // nothing loaded yet: play/pause stays usable (it resumes the last episode), the
+        // buttons that act on a loaded episode are disabled
+        assertFalse(transport.isDisable());
+        for (int i = 0; i < transport.getChildren().size(); i++) {
+            assertEquals(i != 2, transport.getChildren().get(i).isDisable());
+        }
+        // update() needs a real tray icon, so enable the rest by hand to fire every button
+        for (javafx.scene.Node node : transport.getChildren()) {
+            node.setDisable(false);
+        }
         for (javafx.scene.Node node : transport.getChildren()) {
             javafx.scene.control.Button button = (javafx.scene.control.Button) node;
             assertTrue(button.getText().isEmpty());
