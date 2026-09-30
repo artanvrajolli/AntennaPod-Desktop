@@ -1173,8 +1173,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             // pixel of rounding; taller content (min height above the viewport) still scrolls
             scroller.setFitToHeight(true);
             scroller.getStyleClass().add("modal-scroll");
-            scroller.maxHeightProperty().bind(appShell.heightProperty().subtract(160));
-            body = scroller;
+            StackPane hinted = withScrollHints(scroller);
+            hinted.maxHeightProperty().bind(appShell.heightProperty().subtract(160));
+            body = hinted;
         }
         VBox.setVgrow(body, Priority.ALWAYS);
 
@@ -4603,9 +4604,72 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private static Tab settingsTab(String title, javafx.scene.layout.GridPane grid) {
         ScrollPane scroll = new ScrollPane(grid);
         scroll.setFitToWidth(true);
-        Tab tab = new Tab(title, scroll);
+        Tab tab = new Tab(title, withScrollHints(scroll));
         tab.setClosable(false);
         return tab;
+    }
+
+    /**
+     * Shows that a scroll pane holds more than fits: a fade along the edge with more beyond it,
+     * and a "More" pill at the bottom that scrolls a page. A thin scroll bar alone did not say
+     * so, and settings further down went unnoticed. Nothing shows when everything fits.
+     */
+    static StackPane withScrollHints(ScrollPane scroll) {
+        Region topFade = new Region();
+        topFade.getStyleClass().add("scroll-fade-top");
+        Region bottomFade = new Region();
+        bottomFade.getStyleClass().add("scroll-fade-bottom");
+        for (Region fade : new Region[]{topFade, bottomFade}) {
+            fade.setMouseTransparent(true);
+            fade.setPrefHeight(36);
+            fade.setMaxHeight(36);
+            fade.setMaxWidth(Double.MAX_VALUE);
+        }
+        Button more = new Button("More", Icons.down());
+        more.getStyleClass().add("scroll-more");
+        more.setContentDisplay(javafx.scene.control.ContentDisplay.RIGHT);
+        more.setFocusTraversable(false);
+        more.setTooltip(new Tooltip("Scroll down for more"));
+        more.setOnAction(event -> {
+            double content = scroll.getContent().getBoundsInLocal().getHeight();
+            double view = scroll.getViewportBounds().getHeight();
+            if (content > view) {
+                double page = (view * 0.85) / (content - view);
+                scroll.setVvalue(Math.min(scroll.getVmax(), scroll.getVvalue() + page * scroll.getVmax()));
+            }
+        });
+        StackPane pane = new StackPane(scroll, topFade, bottomFade, more);
+        StackPane.setAlignment(topFade, Pos.TOP_CENTER);
+        StackPane.setAlignment(bottomFade, Pos.BOTTOM_CENTER);
+        // in the corner by the scroll bar, where it covers the least of the content
+        StackPane.setAlignment(more, Pos.BOTTOM_RIGHT);
+        // keep clear of the scroll bar, which stays usable under the hint
+        StackPane.setMargin(topFade, new Insets(0, 14, 0, 0));
+        StackPane.setMargin(bottomFade, new Insets(0, 14, 0, 0));
+        StackPane.setMargin(more, new Insets(0, 22, 6, 0));
+        Runnable update = () -> {
+            javafx.scene.Node content = scroll.getContent();
+            double contentHeight = content != null ? content.getBoundsInLocal().getHeight() : 0;
+            boolean scrollable = contentHeight > scroll.getViewportBounds().getHeight() + 1;
+            boolean atTop = scroll.getVvalue() <= scroll.getVmin() + 0.001;
+            boolean atBottom = scroll.getVvalue() >= scroll.getVmax() - 0.001;
+            topFade.setVisible(scrollable && !atTop);
+            bottomFade.setVisible(scrollable && !atBottom);
+            more.setVisible(scrollable && !atBottom);
+        };
+        scroll.vvalueProperty().addListener((obs, was, now) -> update.run());
+        scroll.viewportBoundsProperty().addListener((obs, was, now) -> update.run());
+        scroll.contentProperty().addListener((obs, was, now) -> {
+            if (now != null) {
+                now.boundsInLocalProperty().addListener((o, w, n) -> update.run());
+            }
+            update.run();
+        });
+        if (scroll.getContent() != null) {
+            scroll.getContent().boundsInLocalProperty().addListener((obs, was, now) -> update.run());
+        }
+        update.run();
+        return pane;
     }
 
     private static Label sectionLabel(String text) {

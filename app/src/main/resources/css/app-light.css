@@ -285,3 +285,25 @@
 .slider:disabled .track {
     -fx-background-color: #d8d8d8;
 }
+
+/* "there is more below/above" on scroll panes (withScrollHints) */
+.scroll-fade-bottom {
+    -fx-background-color: linear-gradient(to bottom, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.92));
+}
+
+.scroll-fade-top {
+    -fx-background-color: linear-gradient(to top, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.85));
+}
+
+.button.scroll-more {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 12;
+    -fx-border-color: rgba(0, 0, 0, 0.18);
+    -fx-border-radius: 12;
+    -fx-padding: 2 10 2 12;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.18), 8, 0.2, 0, 2);
+}
+
+.button.scroll-more:hover {
+    -fx-background-color: #f0f0f0;
+}
