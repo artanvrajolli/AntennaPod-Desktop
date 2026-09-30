@@ -1026,6 +1026,28 @@ public final class DesktopDatabase implements AutoCloseable {
         inSqlTransaction(() -> swapQueueOrder(itemId, orderOfOther, otherId, orderOfItem));
     }
 
+    /**
+     * Moves an episode to a place in the queue (0 is the top; past the end means last), as a
+     * drag and drop does, and renumbers the whole queue in one transaction.
+     */
+    public synchronized void moveQueueItemTo(long itemId, int index) throws SQLException {
+        List<Long> ids = getQueueIds();
+        if (!ids.remove(itemId)) {
+            return;
+        }
+        ids.add(Math.max(0, Math.min(index, ids.size())), itemId);
+        inSqlTransaction(() -> {
+            try (PreparedStatement stmt = connection.prepareStatement(
+                    "UPDATE queue SET sort_order = ? WHERE item_id = ?")) {
+                for (int i = 0; i < ids.size(); i++) {
+                    stmt.setLong(1, i + 1);
+                    stmt.setLong(2, ids.get(i));
+                    stmt.executeUpdate();
+                }
+            }
+        });
+    }
+
     private void swapQueueOrder(long itemId, long orderOfOther, long otherId, long orderOfItem)
             throws SQLException {
         try (PreparedStatement stmt = connection.prepareStatement(

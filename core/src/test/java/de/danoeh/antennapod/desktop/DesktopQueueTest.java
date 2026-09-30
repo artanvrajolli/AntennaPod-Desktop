@@ -50,6 +50,29 @@ public class DesktopQueueTest {
     }
 
     @Test
+    public void testDragToAnyPlace() throws Exception {
+        database.addToQueue(firstId);
+        database.addToQueue(secondId);
+        database.addToQueue(thirdId);
+        database.moveQueueItemTo(thirdId, 0);
+        assertEquals(java.util.Arrays.asList("Episode Three", "Episode One", "Episode Two"),
+                titles(database.getQueue()));
+        database.moveQueueItemTo(thirdId, 99);
+        assertEquals(java.util.Arrays.asList("Episode One", "Episode Two", "Episode Three"),
+                titles(database.getQueue()));
+        database.moveQueueItemTo(firstId, 1);
+        assertEquals(java.util.Arrays.asList("Episode Two", "Episode One", "Episode Three"),
+                titles(database.getQueue()));
+        // an episode not in the queue is not added by a move
+        database.removeFromQueue(secondId);
+        database.moveQueueItemTo(secondId, 0);
+        assertEquals(java.util.Arrays.asList("Episode One", "Episode Three"), titles(database.getQueue()));
+        // and a later add still lands last
+        database.addToQueue(secondId);
+        assertEquals("Episode Two", database.getQueue().get(2).getTitle());
+    }
+
+    @Test
     public void testAddKeepsOrderAndIgnoresDuplicates() throws Exception {
         database.addToQueue(firstId);
         database.addToQueue(secondId);

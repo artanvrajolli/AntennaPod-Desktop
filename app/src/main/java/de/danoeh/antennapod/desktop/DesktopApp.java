@@ -4947,6 +4947,39 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         ObservableList<FeedItem> queueItems = FXCollections.observableArrayList(initialQueue);
         ListView<FeedItem> queueList = new ListView<>(queueItems);
         queueList.setCellFactory(view -> fullWidthCell(new ListCell<>() {
+            {
+                // drag a row to reorder; dropping on a row puts the episode before it, and on
+                // the empty space below the last one, at the end
+                setOnDragDetected(event -> {
+                    if (getItem() == null) {
+                        return;
+                    }
+                    javafx.scene.input.Dragboard board = startDragAndDrop(javafx.scene.input.TransferMode.MOVE);
+                    ClipboardContent content = new ClipboardContent();
+                    content.putString(QUEUE_DRAG_PREFIX + getItem().getId());
+                    board.setContent(content);
+                    board.setDragView(snapshot(null, null));
+                    event.consume();
+                });
+                setOnDragOver(event -> {
+                    if (draggedQueueItemId(event.getDragboard()) >= 0) {
+                        event.acceptTransferModes(javafx.scene.input.TransferMode.MOVE);
+                        setStyle("-fx-border-color: -fx-accent transparent transparent transparent;"
+                                + " -fx-border-width: 2 0 0 0;");
+                    }
+                    event.consume();
+                });
+                setOnDragExited(event -> setStyle(""));
+                setOnDragDropped(event -> {
+                    setStyle("");
+                    long draggedId = draggedQueueItemId(event.getDragboard());
+                    boolean done = draggedId >= 0
+                            && dropQueueItem(draggedId, isEmpty() ? queueItems.size() : getIndex(), queueItems);
+                    event.setDropCompleted(done);
+                    event.consume();
+                });
+            }
+
             @Override
             protected void updateItem(FeedItem item, boolean empty) {
                 super.updateItem(item, empty);
@@ -4998,6 +5031,62 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         pane.setPadding(new Insets(8));
         VBox.setVgrow(queueList, Priority.ALWAYS);
         showSidebar("Queue", pane);
+    }
+
+    /** Marks a queue drag, so text dragged in from elsewhere is not taken for an episode. */
+    private static final String QUEUE_DRAG_PREFIX = "antennapod-queue-item:";
+
+    private static long draggedQueueItemId(javafx.scene.input.Dragboard board) {
+        if (board == null || !board.hasString() || !board.getString().startsWith(QUEUE_DRAG_PREFIX)) {
+            return -1;
+        }
+        try {
+            return Long.parseLong(board.getString().substring(QUEUE_DRAG_PREFIX.length()));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /**
+     * Puts a dragged episode before the one at {@code dropIndex} (or last, past the end): in the
+     * list right away, then in the database, re-read afterwards so both agree.
+     */
+    private boolean dropQueueItem(long itemId, int dropIndex, ObservableList<FeedItem> queueItems) {
+        int from = -1;
+        for (int i = 0; i < queueItems.size(); i++) {
+            if (queueItems.get(i).getId() == itemId) {
+                from = i;
+                break;
+            }
+        }
+        if (from < 0) {
+            return false;
+        }
+        int to = queueDropTarget(from, dropIndex, queueItems.size());
+        if (to == from) {
+            return true;
+        }
+        FeedItem moved = queueItems.remove(from);
+        queueItems.add(to, moved);
+        background.submit(() -> {
+            try {
+                database.moveQueueItemTo(itemId, to);
+                List<FeedItem> queue = database.getQueue();
+                Platform.runLater(() -> queueItems.setAll(queue));
+            } catch (Exception e) {
+                setStatus("Could not reorder queue: " + e.getMessage());
+            }
+        });
+        return true;
+    }
+
+    /**
+     * Where an item dragged from {@code from} ends up when dropped on the row at {@code dropIndex}
+     * (before it) or past the last row: taking it out first shifts the rows after it up by one.
+     */
+    static int queueDropTarget(int from, int dropIndex, int size) {
+        int target = Math.max(0, Math.min(dropIndex, size));
+        return target > from ? target - 1 : target;
     }
 
     private void moveQueueItem(FeedItem item, boolean up, ObservableList<FeedItem> queueItems) {
