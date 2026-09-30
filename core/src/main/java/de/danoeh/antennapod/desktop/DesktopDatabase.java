@@ -125,6 +125,24 @@ public final class DesktopDatabase implements AutoCloseable {
         }
     }
 
+    private interface SqlWork {
+        void run() throws SQLException;
+    }
+
+    /** {@link #inTransaction} for writers that only throw SQLException. */
+    private synchronized void inSqlTransaction(SqlWork work) throws SQLException {
+        try {
+            inTransaction(() -> {
+                work.run();
+                return null;
+            });
+        } catch (SQLException | RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new SQLException(e);
+        }
+    }
+
     public synchronized long insertFeed(Feed feed) throws SQLException {
         try (PreparedStatement stmt = connection.prepareStatement(
                 "INSERT INTO feeds (download_url, title, link, description, author, language, image_url,"
@@ -901,6 +919,12 @@ public final class DesktopDatabase implements AutoCloseable {
         long otherId = ids.get(swapWith);
         long orderOfItem = getQueueOrder(itemId);
         long orderOfOther = getQueueOrder(otherId);
+        // both rows or neither: half a swap leaves two entries with the same place in the queue
+        inSqlTransaction(() -> swapQueueOrder(itemId, orderOfOther, otherId, orderOfItem));
+    }
+
+    private void swapQueueOrder(long itemId, long orderOfOther, long otherId, long orderOfItem)
+            throws SQLException {
         try (PreparedStatement stmt = connection.prepareStatement(
                 "UPDATE queue SET sort_order = ? WHERE item_id = ?")) {
             stmt.setLong(1, orderOfOther);
@@ -1024,27 +1048,39 @@ public final class DesktopDatabase implements AutoCloseable {
     }
 
     public synchronized void setSyncSubscriptionSnapshot(List<String> urls) throws SQLException {
-        try (Statement stmt = connection.createStatement()) {
-            stmt.executeUpdate("DELETE FROM sync_subscriptions");
-        }
-        try (PreparedStatement stmt = connection.prepareStatement("INSERT INTO sync_subscriptions (url) VALUES (?)")) {
-            for (String url : urls) {
-                stmt.setString(1, url);
-                stmt.executeUpdate();
+        // one transaction: a crash between the DELETE and the INSERTs left a partial snapshot,
+        // which the next sync read as subscriptions to upload or remove
+        inSqlTransaction(() -> {
+            try (Statement stmt = connection.createStatement()) {
+                stmt.executeUpdate("DELETE FROM sync_subscriptions");
             }
-        }
+            try (PreparedStatement stmt = connection.prepareStatement(
+                    "INSERT INTO sync_subscriptions (url) VALUES (?)")) {
+                for (String url : urls) {
+                    stmt.setString(1, url);
+                    stmt.executeUpdate();
+                }
+            }
+        });
     }
 
     public synchronized FeedItem findItemByEpisodeUrl(String feedDownloadUrl, String mediaDownloadUrl, String guid)
             throws SQLException {
         try (PreparedStatement stmt = connection.prepareStatement(
+                // In the named feed by enclosure or GUID; failing that, by enclosure in any feed:
+                // the feed may be stored under another URL than the sender's (a redirect
+                // followed when subscribing here). Never by GUID alone across feeds - short
+                // GUIDs like "1" repeat between podcasts.
                 "SELECT i.id FROM feed_items i JOIN feed_media m ON m.item_id = i.id"
                         + " JOIN feeds f ON f.id = i.feed_id"
-                        + " WHERE f.download_url = ? AND (m.download_url = ?"
-                        + " OR i.item_identifier = ?) LIMIT 1")) {
+                        + " WHERE (f.download_url = ? AND (m.download_url = ?"
+                        + " OR i.item_identifier = ?)) OR m.download_url = ?"
+                        + " ORDER BY (f.download_url = ?) DESC LIMIT 1")) {
             stmt.setString(1, feedDownloadUrl);
             stmt.setString(2, mediaDownloadUrl);
             stmt.setString(3, guid != null ? guid : mediaDownloadUrl);
+            stmt.setString(4, mediaDownloadUrl);
+            stmt.setString(5, feedDownloadUrl);
             try (ResultSet rs = stmt.executeQuery()) {
                 if (!rs.next()) {
                     return null;

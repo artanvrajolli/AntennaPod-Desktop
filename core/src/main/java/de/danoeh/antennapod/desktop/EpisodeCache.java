@@ -2,7 +2,6 @@ package de.danoeh.antennapod.desktop;
 
 import de.danoeh.antennapod.model.feed.FeedMedia;
 import java.io.File;
-import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -109,7 +108,11 @@ public final class EpisodeCache {
         if (isCaching(media.getId())) {
             return;
         }
-        running.put(media.getId(), executor.submit(() -> fetch(media, target)));
+        java.util.concurrent.atomic.AtomicReference<Future<?>> self =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        Future<?> future = executor.submit(() -> fetch(media, target, self));
+        self.set(future);
+        running.put(media.getId(), future);
     }
 
     public synchronized boolean isCaching(long mediaId) {
@@ -124,7 +127,8 @@ public final class EpisodeCache {
         }
     }
 
-    private void fetch(FeedMedia media, File target) {
+    private void fetch(FeedMedia media, File target,
+            java.util.concurrent.atomic.AtomicReference<Future<?>> self) {
         try {
             EpisodeDownloader.fetchToFile(media, target, new EpisodeDownloader.ProgressListener() {
                 @Override
@@ -159,12 +163,16 @@ public final class EpisodeCache {
             database.setMediaCacheFile(media.getId(), media.getCacheFileUrl());
         } catch (Exception e) {
             target.delete();
-            new File(target.getAbsolutePath() + ".part").delete();
-            if (!(e instanceof IOException) || !"Download cancelled".equals(e.getMessage())) {
+            if (!EpisodeDownloader.isCancellation(e)) {
                 report("Could not cache \"" + media.getHumanReadableIdentifier() + "\": " + e.getMessage());
             }
         } finally {
-            running.remove(media.getId());
+            // only this run's own entry, as in EpisodeDownloader: an evicted run winding down
+            // must not unregister the one that re-cached the episode meanwhile
+            Future<?> mine = self.get();
+            if (mine != null) {
+                running.remove(media.getId(), mine);
+            }
             trim();
         }
     }

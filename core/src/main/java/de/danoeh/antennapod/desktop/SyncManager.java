@@ -82,7 +82,7 @@ public class SyncManager {
             for (String url : changes.getAdded()) {
                 if (!localUrls.contains(url)) {
                     try {
-                        feedUpdater.subscribe(url);
+                        feedUpdater.subscribeKeepingUrl(url);
                         localUrls.add(url);
                         added++;
                     } catch (Exception e) {
@@ -118,7 +118,11 @@ public class SyncManager {
             int actionsApplied = downloadAndApplyActions(service, localActions, changedIds,
                     playedIds, unplayedIds, syncedItemIds);
             for (long itemId : syncedItemIds) {
-                database.setSyncedPosition(itemId, database.getItem(itemId).getMedia().getPosition());
+                // an episode unsubscribed while this sync ran is simply gone
+                FeedItem synced = database.getItem(itemId);
+                if (synced != null && synced.getMedia() != null) {
+                    database.setSyncedPosition(itemId, synced.getMedia().getPosition());
+                }
             }
             SyncResult result = new SyncResult(subsAdded, actionsUploaded, actionsApplied, changedIds,
                     playedIds, unplayedIds);
@@ -166,13 +170,12 @@ public class SyncManager {
     private int syncSubscriptions(ISyncService service) throws Exception {
         long lastSync = Long.parseLong(database.getSyncState(STATE_SUB_TIMESTAMP, "0"));
         SubscriptionChanges changes = service.getSubscriptionChanges(lastSync);
-        database.setSyncState(STATE_SUB_TIMESTAMP, String.valueOf(changes.getTimestamp()));
 
         Set<String> localUrls = new HashSet<>();
         for (Feed feed : database.getAllFeeds()) {
             localUrls.add(feed.getDownloadUrl());
         }
-        // The timestamp above has already moved past these changes, so a subscription that fails
+        // The timestamp moves past these changes further down, so a subscription that fails
         // now (a timeout, a 5xx) would never be offered again. Keep it and retry on later syncs.
         Set<String> wanted = new LinkedHashSet<>(pendingSubscriptions());
         wanted.addAll(changes.getAdded());
@@ -182,7 +185,7 @@ public class SyncManager {
         for (String url : wanted) {
             if (!localUrls.contains(url)) {
                 try {
-                    feedUpdater.subscribe(url);
+                    feedUpdater.subscribeKeepingUrl(url);
                     added++;
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -197,6 +200,10 @@ public class SyncManager {
                 feedUpdater.unsubscribe(feed.getId());
             }
         }
+        // only now past these changes: a removal that throws above leaves the timestamp where
+        // it was, so the next sync asks for it again instead of never applying it (adds that
+        // fail are kept in the pending list; adds already done are skipped as local next time)
+        database.setSyncState(STATE_SUB_TIMESTAMP, String.valueOf(changes.getTimestamp()));
 
         Set<String> currentLocal = new HashSet<>();
         for (Feed feed : database.getAllFeeds()) {
@@ -322,18 +329,28 @@ public class SyncManager {
             if (action.getPosition() >= 0) {
                 media.setPosition(action.getPosition() * 1000);
             }
-            if (action.getTotal() > 0 && isAlmostEnded(action.getPosition() * 1000, durationMs)) {
-                item.setPlayed(true);
-                database.setItemState(item.getId(), item.getPlayState());
+            boolean played = action.getTotal() > 0
+                    && isAlmostEnded(action.getPosition() * 1000, durationMs);
+            boolean unplayed = !played && action.getTotal() > 0 && action.getPosition() <= 0
+                    && item.isPlayed();
+            if (played || unplayed) {
+                item.setPlayed(played);
                 media.setPosition(0);
+            }
+            // play state and position together: a crash between them left an episode marked
+            // played with its old position, or unplayed at the end
+            database.inTransaction(() -> {
+                if (played || unplayed) {
+                    database.setItemState(item.getId(), item.getPlayState());
+                }
+                database.updatePlaybackState(media);
+                return null;
+            });
+            if (played) {
                 playedIds.add(item.getId());
-            } else if (action.getTotal() > 0 && action.getPosition() <= 0 && item.isPlayed()) {
-                item.setPlayed(false);
-                database.setItemState(item.getId(), item.getPlayState());
-                media.setPosition(0);
+            } else if (unplayed) {
                 unplayedIds.add(item.getId());
             }
-            database.updatePlaybackState(media);
             changedIds.add(item.getId());
             return true;
         } catch (Exception e) {

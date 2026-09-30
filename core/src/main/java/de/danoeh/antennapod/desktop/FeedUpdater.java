@@ -50,6 +50,21 @@ public final class FeedUpdater {
     }
 
     public Feed subscribe(String url) throws Exception {
+        return subscribe(url, false);
+    }
+
+    /**
+     * Subscribes under exactly the URL given, even when it redirects: for subscriptions that come
+     * from a sync server, which knows the feed by that URL. Stored under the redirect's target
+     * instead, the feed was never matched to the server's copy again - its removal on another
+     * device did nothing here, its episode actions found no feed, and every sync uploaded the
+     * target URL as a new subscription and offered the original one again.
+     */
+    public Feed subscribeKeepingUrl(String url) throws Exception {
+        return subscribe(url, true);
+    }
+
+    private Feed subscribe(String url, boolean keepGivenUrl) throws Exception {
         String prepared = prepareAndLookup(url);
         String finalUrl = RedirectChecker.getFinalUrl(prepared);
         Feed existing = database.getFeedByDownloadUrl(prepared);
@@ -60,7 +75,7 @@ public final class FeedUpdater {
             return existing;
         }
         Feed downloaded = downloadAndParse(finalUrl);
-        downloaded.setDownloadUrl(finalUrl);
+        downloaded.setDownloadUrl(keepGivenUrl ? prepared : finalUrl);
         // all or nothing: a failure halfway used to leave the feed with part of its episodes,
         // and the next attempt found it "already subscribed" and kept it that way
         // NEW means "arrived after the subscription was stored". The back catalogue
@@ -172,6 +187,12 @@ public final class FeedUpdater {
                     parsed.getMedia().setItemId(itemId);
                     database.insertMedia(itemId, parsed.getMedia());
                 }
+                // as subscribe does for the back catalogue: a new episode played before the next
+                // refresh would otherwise have no chapters and no transcript
+                if (parsed.getChapters() != null && !parsed.getChapters().isEmpty()) {
+                    database.saveChapters(itemId, parsed.getChapters());
+                }
+                persistTranscriptInfo(itemId, parsed);
                 newItems.add(parsed);
             } else {
                 known.updateFromOther(parsed);

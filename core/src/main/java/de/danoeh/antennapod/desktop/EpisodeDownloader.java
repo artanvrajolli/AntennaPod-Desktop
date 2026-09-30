@@ -13,6 +13,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicReference;
+import okhttp3.CacheControl;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
@@ -44,7 +46,10 @@ public final class EpisodeDownloader {
         if (isDownloading(media.getId())) {
             return;
         }
-        running.put(media.getId(), executor.submit(() -> download(media, listener)));
+        AtomicReference<Future<?>> self = new AtomicReference<>();
+        Future<?> future = executor.submit(() -> download(media, listener, self));
+        self.set(future);
+        running.put(media.getId(), future);
     }
 
     public synchronized void cancel(long mediaId) {
@@ -58,7 +63,8 @@ public final class EpisodeDownloader {
         executor.shutdownNow();
     }
 
-    private void download(FeedMedia media, ProgressListener listener) {
+    private void download(FeedMedia media, ProgressListener listener,
+            AtomicReference<Future<?>> self) {
         File target = targetFile(media);
         try {
             fetchToFile(media, target, listener);
@@ -71,9 +77,21 @@ public final class EpisodeDownloader {
             target.delete();
             listener.onError(media.getId(), e);
         } finally {
-            running.remove(media.getId());
+            // only this run's own entry: a cancelled run can still be winding down after the
+            // episode was queued again, and must not unregister the new run
+            Future<?> mine = self.get();
+            if (mine != null) {
+                running.remove(media.getId(), mine);
+            }
         }
     }
+
+    /** Whether a failure is the transfer being cancelled rather than anything going wrong. */
+    public static boolean isCancellation(Exception e) {
+        return e instanceof IOException && CANCELLED.equals(e.getMessage());
+    }
+
+    private static final String CANCELLED = "Download cancelled";
 
     /**
      * Streams the episode to {@code target}. The bytes land in a {@code .part} file first and are
@@ -81,8 +99,14 @@ public final class EpisodeDownloader {
      * that later looks like a finished download.
      */
     static void fetchToFile(FeedMedia media, File target, ProgressListener listener) throws IOException {
-        File part = new File(target.getAbsolutePath() + ".part");
-        Request request = new Request.Builder().url(media.getDownloadUrl()).get().build();
+        target.getParentFile().mkdirs();
+        // a part file per run: a cancelled run still winding down must not truncate, or delete,
+        // the file a new run for the same episode is writing
+        File part = File.createTempFile(target.getName() + "-", ".part", target.getParentFile());
+        // no-store: the shared client's small HTTP cache would otherwise take a second copy of
+        // every episode on the way through, only to evict it again
+        Request request = new Request.Builder().url(media.getDownloadUrl())
+                .cacheControl(new CacheControl.Builder().noStore().build()).get().build();
         try (Response response = AntennapodHttpClient.getHttpClient().newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 throw new IOException("Download failed: " + response);
@@ -92,7 +116,6 @@ public final class EpisodeDownloader {
                 throw new IOException("Empty response");
             }
             long total = body.contentLength();
-            target.getParentFile().mkdirs();
             long bytesRead = 0;
             try (InputStream in = body.byteStream();
                  OutputStream out = Files.newOutputStream(part.toPath())) {
@@ -100,7 +123,7 @@ public final class EpisodeDownloader {
                 int read;
                 while ((read = in.read(buffer)) != -1) {
                     if (Thread.currentThread().isInterrupted()) {
-                        throw new IOException("Download cancelled");
+                        throw new IOException(CANCELLED);
                     }
                     out.write(buffer, 0, read);
                     bytesRead += read;
@@ -112,6 +135,15 @@ public final class EpisodeDownloader {
             }
             Files.deleteIfExists(target.toPath());
             Files.move(part.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.io.InterruptedIOException e) {
+            part.delete();
+            // cancel() interrupts the thread, and Okio usually notices first, inside read(); a
+            // timeout is an InterruptedIOException too, but a real failure
+            if (Thread.currentThread().isInterrupted()
+                    && !(e instanceof java.net.SocketTimeoutException)) {
+                throw new IOException(CANCELLED, e);
+            }
+            throw e;
         } catch (Exception e) {
             part.delete();
             throw e;
