@@ -473,6 +473,37 @@ public final class DesktopDatabase implements AutoCloseable {
         return items;
     }
 
+    /** Every episode with a downloaded file, most recently downloaded first, with its media. */
+    public synchronized List<FeedItem> getDownloadedItems() throws SQLException {
+        List<FeedItem> items = new ArrayList<>();
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(
+                     "SELECT fi.* FROM feed_items fi JOIN feed_media fm ON fm.item_id = fi.id"
+                             + " WHERE fm.local_file_url IS NOT NULL AND fm.download_date > 0"
+                             + " ORDER BY fm.download_date DESC, fi.id DESC")) {
+            while (rs.next()) {
+                items.add(readItem(rs));
+            }
+        }
+        for (FeedItem item : items) {
+            FeedMedia media = getMediaOfItem(item.getId());
+            if (media != null) {
+                media.setItem(item);
+                item.setMedia(media);
+            }
+        }
+        return items;
+    }
+
+    /** The episode a media row belongs to, with that media attached, or null if either is gone. */
+    public synchronized FeedItem getItemOfMedia(long mediaId) throws SQLException {
+        FeedMedia media = getMedia(mediaId);
+        if (media == null) {
+            return null;
+        }
+        return getItem(media.getItemId());
+    }
+
     public synchronized long insertMedia(long itemId, FeedMedia media) throws SQLException {
         try (PreparedStatement stmt = connection.prepareStatement(
                 "INSERT INTO feed_media (item_id, download_url, local_file_url, download_date, duration,"

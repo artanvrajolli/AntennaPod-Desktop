@@ -102,6 +102,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private TextField feedFilterField;
     private TextField episodeFilterField;
     private ComboBox<EpisodeFilter> episodeStateBox;
+    private javafx.animation.Timeline downloadsTicker;
     private VBox sidebar;
     private SplitPane listsSplit;
     private VBox feedPane;
@@ -685,6 +686,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         libraryMenu.getItems().addAll(
                 toolbarMenuItem("Queue", Icons.queue(), this::showQueue),
                 toolbarMenuItem("Favorites", Icons.favorite(), this::showFavorites),
+                toolbarMenuItem("Downloads", Icons.download(), this::showDownloads),
                 toolbarMenuItem("History", Icons.history(), this::showHistory),
                 toolbarMenuItem("Stats", Icons.stats(), this::showStatistics));
         MenuButton moreMenu = new MenuButton("More", Icons.more());
@@ -1517,18 +1519,17 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             setStatus("Refreshing " + feed.getTitle() + "…");
             spinWhile(refreshButton, () -> doRefreshFeed(feed));
         });
+        playAllButton.setTooltip(new Tooltip("Play from the oldest to the newest"));
         // title on the left, the list's controls pushed to the right edge
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox header = new HBox(8, feedTitleLabel, spacer, episodeFilterField, episodeStateBox,
-                sortBox, refreshButton, playAllButton);
+        HBox controls = new HBox(8, episodeFilterField, episodeStateBox, sortBox, refreshButton,
+                playAllButton);
+        controls.setAlignment(Pos.CENTER_LEFT);
+        controls.setMinWidth(0);
+        HBox header = new HBox(8, feedTitleLabel, spacer, controls);
         header.setAlignment(Pos.CENTER_LEFT);
-        // when the pane is narrow the title and the search field give way; the pickers and
-        // buttons keep their labels whole instead of shrinking to "Pl…"
-        for (Region control : new Region[]{episodeStateBox, sortBox, refreshButton, playAllButton}) {
-            control.setMinWidth(Region.USE_PREF_SIZE);
-        }
-        episodeFilterField.setMinWidth(90);
+        refreshButton.setMinWidth(Region.USE_PREF_SIZE);
         feedTitleLabel.setMinWidth(60);
         episodeList = new ListView<>(visibleEpisodes);
         episodeList.setPlaceholder(new Label("No episodes to show"));
@@ -1546,7 +1547,48 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         VBox pane = new VBox(6, header, episodeList);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(episodeList, Priority.ALWAYS);
+        pane.widthProperty().addListener((obs, oldWidth, width) ->
+                layoutEpisodeHeader(pane, header, controls, width.doubleValue()));
+        layoutEpisodeHeader(pane, header, controls, pane.getWidth());
         return pane;
+    }
+
+    /** Room the podcast title keeps next to the controls before they drop to their own row. */
+    private static final double EPISODE_HEADER_TITLE_ROOM = 140;
+    /** What the one-row controls measured last, reused while they sit on their own row. */
+    private double episodeHeaderControlsWidth;
+
+    /**
+     * Keeps the episode header readable as the pane narrows (the sidebar opening takes a third of
+     * the window): wide, the controls sit right of the title with whole labels; narrow, they drop
+     * to a row of their own under the title, the search field takes the slack, and the pickers
+     * and Play all may shrink rather than run off the edge.
+     */
+    private void layoutEpisodeHeader(VBox pane, HBox header, HBox controls, double width) {
+        boolean inHeader = header.getChildren().contains(controls);
+        if (inHeader) {
+            episodeHeaderControlsWidth = controls.prefWidth(-1);
+        }
+        Insets padding = pane.getPadding();
+        double needed = episodeHeaderControlsWidth + EPISODE_HEADER_TITLE_ROOM
+                + header.getSpacing() * 2 + padding.getLeft() + padding.getRight();
+        boolean oneRow = width <= 0 || episodeHeaderControlsWidth <= 0 || width >= needed;
+        if (oneRow && !inHeader) {
+            pane.getChildren().remove(controls);
+            header.getChildren().add(controls);
+        } else if (!oneRow && inHeader) {
+            header.getChildren().remove(controls);
+            pane.getChildren().add(1, controls);
+        }
+        HBox.setHgrow(episodeFilterField, oneRow ? Priority.NEVER : Priority.ALWAYS);
+        episodeFilterField.setMinWidth(oneRow ? 90 : 60);
+        double pickerMin = oneRow ? Region.USE_PREF_SIZE : 70;
+        episodeStateBox.setMinWidth(pickerMin);
+        sortBox.setMinWidth(pickerMin);
+        Button playAll = (Button) controls.getChildren().get(controls.getChildren().size() - 1);
+        playAll.setContentDisplay(oneRow ? javafx.scene.control.ContentDisplay.LEFT
+                : javafx.scene.control.ContentDisplay.GRAPHIC_ONLY);
+        playAll.setMinWidth(Region.USE_PREF_SIZE);
     }
 
     private void saveSortCode(Feed feed, String code) {
@@ -2700,6 +2742,205 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 setStatus("Could not load favorites: " + e.getMessage());
             }
         });
+    }
+
+    private void showDownloads() {
+        background.submit(() -> {
+            try {
+                List<FeedItem> rows = loadDownloadRows();
+                Platform.runLater(() -> showDownloadsPane(rows));
+            } catch (Exception e) {
+                setStatus("Could not load downloads: " + e.getMessage());
+            }
+        });
+    }
+
+    /** Running and waiting transfers first, then the finished downloads, newest first. */
+    private List<FeedItem> loadDownloadRows() throws Exception {
+        List<FeedItem> rows = new ArrayList<>();
+        java.util.Set<Long> seen = new java.util.HashSet<>();
+        for (long mediaId : downloader.activeMediaIds()) {
+            FeedItem item = database.getItemOfMedia(mediaId);
+            if (item != null && seen.add(mediaId)) {
+                rows.add(item);
+            }
+        }
+        for (FeedItem item : database.getDownloadedItems()) {
+            if (item.getMedia() != null && seen.add(item.getMedia().getId())) {
+                rows.add(item);
+            }
+        }
+        return rows;
+    }
+
+    private void showDownloadsPane(List<FeedItem> rows) {
+        ObservableList<FeedItem> items = FXCollections.observableArrayList(rows);
+        Label summary = new Label();
+        summary.getStyleClass().add("muted-label");
+        Runnable updateSummary = () -> {
+            int count = 0;
+            long bytes = 0;
+            for (FeedItem item : items) {
+                FeedMedia media = item.getMedia();
+                if (media != null && media.localFileAvailable()) {
+                    count++;
+                    bytes += Math.max(media.getSize(), 0);
+                }
+            }
+            summary.setText(episodeCountText(count) + " downloaded · " + formatSize(bytes));
+        };
+        updateSummary.run();
+        Runnable reload = () -> background.submit(() -> {
+            try {
+                List<FeedItem> fresh = loadDownloadRows();
+                Platform.runLater(() -> {
+                    items.setAll(fresh);
+                    updateSummary.run();
+                });
+            } catch (Exception e) {
+                setStatus("Could not load downloads: " + e.getMessage());
+            }
+        });
+        // the open episode list holds its own copies of these episodes, so it re-reads them too
+        Runnable afterDelete = () -> {
+            reload.run();
+            if (selectedFeed != null) {
+                loadEpisodes(selectedFeed);
+            }
+        };
+        ListView<FeedItem> list = new ListView<>(items);
+        list.setPlaceholder(new Label("No downloads yet"));
+        list.setCellFactory(view -> fullWidthCell(new ListCell<>() {
+            @Override
+            protected void updateItem(FeedItem item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null || item.getMedia() == null) {
+                    setText(null);
+                    setGraphic(null);
+                    return;
+                }
+                FeedMedia media = item.getMedia();
+                Label title = new Label(item.getTitle());
+                title.setWrapText(true);
+                StringBuilder meta = new StringBuilder();
+                String feedTitle = feedTitleOf(item.getFeedId());
+                if (feedTitle != null) {
+                    meta.append(feedTitle);
+                }
+                boolean running = downloader.isDownloading(media.getId());
+                if (running) {
+                    Integer percent = downloadProgress.get(media.getId());
+                    appendMeta(meta, "Downloading"
+                            + (percent != null && percent >= 0 ? " " + percent + "%" : "…"));
+                } else {
+                    if (media.getSize() > 0) {
+                        appendMeta(meta, formatSize(media.getSize()));
+                    }
+                    if (item.isPlayed()) {
+                        appendMeta(meta, "Played");
+                    }
+                }
+                Label metaLabel = new Label(meta.toString());
+                metaLabel.getStyleClass().add("muted-label");
+                VBox texts = new VBox(2, title, metaLabel);
+                texts.setMinWidth(0);
+                HBox.setHgrow(texts, Priority.ALWAYS);
+                HBox row;
+                if (running) {
+                    Button cancel = iconButton(Icons.stop(), "Cancel download");
+                    cancel.setOnAction(event -> downloader.cancel(media.getId()));
+                    row = new HBox(8, texts, cancel);
+                } else {
+                    Button play = iconButton(Icons.play(), "Play");
+                    play.setOnAction(event -> playback.play(item, new ArrayList<>(items)));
+                    Button delete = iconButton(Icons.remove(), "Delete download");
+                    delete.setOnAction(event -> deleteDownloads(List.of(item), afterDelete));
+                    row = new HBox(8, texts, play, delete);
+                }
+                row.setAlignment(Pos.CENTER_LEFT);
+                setGraphic(row);
+                setText(null);
+            }
+        }));
+        list.setOnMouseClicked(event -> {
+            if (event.getClickCount() == 2) {
+                FeedItem selected = list.getSelectionModel().getSelectedItem();
+                if (selected != null && selected.getMedia() != null
+                        && !downloader.isDownloading(selected.getMedia().getId())) {
+                    playback.play(selected, new ArrayList<>(items));
+                }
+            }
+        });
+        Button deletePlayed = new Button("Delete played", Icons.remove());
+        deletePlayed.setTooltip(new Tooltip("Delete the downloads of every played episode"));
+        deletePlayed.setOnAction(event -> {
+            List<FeedItem> played = new ArrayList<>();
+            for (FeedItem item : items) {
+                if (item.isPlayed() && item.getMedia() != null && item.getMedia().localFileAvailable()) {
+                    played.add(item);
+                }
+            }
+            if (played.isEmpty()) {
+                setStatus("No played downloads to delete");
+                return;
+            }
+            deleteDownloads(played, afterDelete);
+        });
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox top = new HBox(8, summary, spacer, deletePlayed);
+        top.setAlignment(Pos.CENTER_LEFT);
+        VBox pane = new VBox(8, top, list);
+        pane.setPadding(new Insets(8));
+        VBox.setVgrow(list, Priority.ALWAYS);
+        showSidebar("Downloads", pane);
+        startDownloadsTicker(list, reload);
+    }
+
+    /**
+     * Keeps the open Downloads view current: percentages redraw every second, and a transfer
+     * starting or ending reloads the rows. Polled rather than pushed because auto-downloads report
+     * to their own listener; it stops once the sidebar shows something else.
+     */
+    private void startDownloadsTicker(ListView<FeedItem> list, Runnable reload) {
+        if (downloadsTicker != null) {
+            downloadsTicker.stop();
+        }
+        List<Long> lastActive = new ArrayList<>(downloader.activeMediaIds());
+        downloadsTicker = new javafx.animation.Timeline(new javafx.animation.KeyFrame(
+                Duration.seconds(1), event -> {
+                    if (!sidebar.isVisible() || !"Downloads".equals(sidebarTitle.getText())
+                            || !sidebarContent.getChildren().contains(list.getParent())) {
+                        downloadsTicker.stop();
+                        return;
+                    }
+                    List<Long> active = downloader.activeMediaIds();
+                    if (!new java.util.HashSet<>(active).equals(new java.util.HashSet<>(lastActive))) {
+                        lastActive.clear();
+                        lastActive.addAll(active);
+                        reload.run();
+                    } else if (!active.isEmpty()) {
+                        list.refresh();
+                    }
+                }));
+        downloadsTicker.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        downloadsTicker.play();
+    }
+
+    private static void appendMeta(StringBuilder meta, String part) {
+        if (meta.length() > 0) {
+            meta.append(" · ");
+        }
+        meta.append(part);
+    }
+
+    private String feedTitleOf(long feedId) {
+        for (Feed feed : feeds) {
+            if (feed.getId() == feedId) {
+                return feed.getTitle() != null ? feed.getTitle() : feed.getDownloadUrl();
+            }
+        }
+        return null;
     }
 
     private void showFeedSettings(Feed feed) {
@@ -4249,6 +4490,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void deleteDownloads(List<FeedItem> items) {
+        deleteDownloads(items, null);
+    }
+
+    /** Deletes the files, then runs {@code after} (if any) on the FX thread. */
+    private void deleteDownloads(List<FeedItem> items, Runnable after) {
         List<FeedMedia> deletable = new ArrayList<>();
         for (FeedItem item : items) {
             FeedMedia media = item.getMedia();
@@ -4286,7 +4532,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             } catch (Exception e) {
                 setStatus("Could not delete download: " + e.getMessage());
             }
-            Platform.runLater(this::refilterEpisodes);
+            Platform.runLater(() -> {
+                refilterEpisodes();
+                if (after != null) {
+                    after.run();
+                }
+            });
         });
     }
 

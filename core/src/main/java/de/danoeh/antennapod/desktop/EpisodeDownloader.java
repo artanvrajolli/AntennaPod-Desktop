@@ -8,6 +8,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -40,6 +42,17 @@ public final class EpisodeDownloader {
     public synchronized boolean isDownloading(long mediaId) {
         Future<?> future = running.get(mediaId);
         return future != null && !future.isDone();
+    }
+
+    /** The media ids with a transfer running or waiting for a free slot right now. */
+    public synchronized List<Long> activeMediaIds() {
+        List<Long> ids = new ArrayList<>();
+        for (Map.Entry<Long, Future<?>> entry : running.entrySet()) {
+            if (!entry.getValue().isDone()) {
+                ids.add(entry.getKey());
+            }
+        }
+        return ids;
     }
 
     public synchronized void enqueue(FeedMedia media, ProgressListener listener) {
