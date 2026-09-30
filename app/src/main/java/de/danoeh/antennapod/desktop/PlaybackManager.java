@@ -237,7 +237,7 @@ public final class PlaybackManager {
             currentFxMedia = null;
             notifyState();
             notifyLoading(false);
-            notifyError("Could not play \"" + titleOf(media) + "\": " + e.getMessage());
+            notifyError(Messages.format("playback.error.could_not_play", titleOf(media), e.getMessage()));
             return;
         }
         final MediaPlayer created = player;
@@ -349,7 +349,7 @@ public final class PlaybackManager {
         }
         int positionMs = Math.max(lastKnownPositionMs, currentMedia.getPosition());
         if (shouldResume(positionMs)) {
-            resumeAt(positionMs, "stopped early");
+            resumeAt(positionMs, Messages.get("playback.reason.stopped_early"));
             return;
         }
         completeEpisode();
@@ -876,7 +876,7 @@ public final class PlaybackManager {
             }
             if (loadRetries < MAX_LOAD_RETRIES) {
                 loadRetries++;
-                notifyError("\"" + titleOf(stuck) + "\" is slow to start, trying again");
+                notifyError(Messages.format("playback.error.slow_start", titleOf(stuck)));
                 pendingSeekMs = Math.max(lastKnownPositionMs, stuck.getPosition());
                 suppressNextPlayAction = true;
                 notifyLoading(true);
@@ -884,7 +884,7 @@ public final class PlaybackManager {
                 return;
             }
         }
-        abortPlayback("timed out while loading the stream");
+        abortPlayback(Messages.get("playback.reason.timed_out"));
     }
 
     /**
@@ -920,7 +920,7 @@ public final class PlaybackManager {
                 }
                 stalled = true;
                 if (now - stalledSince >= STALL_TIMEOUT_MS) {
-                    failure = "the stream stalled and did not recover";
+                    failure = Messages.get("playback.reason.stalled");
                 }
             } else if (status == MediaPlayer.Status.STOPPED && everPlayed) {
                 // nothing here ever stops a player it still owns. Wait out the moment between
@@ -931,7 +931,7 @@ public final class PlaybackManager {
                     stoppedSince = now;
                 } else if (now - stoppedSince >= UNEXPECTED_STOP_GRACE_MS) {
                     if (canResumeFromNewSource(lastKnownPositionMs)) {
-                        failure = "playback stopped unexpectedly";
+                        failure = Messages.get("playback.reason.stopped_unexpectedly");
                     } else if (lastKnownPositionMs > 0
                             && !isPrematureStop(lastKnownPositionMs, trustedDurationMs())) {
                         // end-of-media never fired, but the player stopped at the end: finish
@@ -987,7 +987,7 @@ public final class PlaybackManager {
             }
             notifyLoading(false);
             notifyState();
-            notifyError("Stopped \"" + titleOf(failed) + "\": " + reason);
+            notifyError(Messages.format("playback.error.stopped", titleOf(failed), reason));
         }, "playback-abort");
         stopper.setDaemon(true);
         stopper.start();
@@ -1058,8 +1058,8 @@ public final class PlaybackManager {
         pendingSeekMs = positionMs;
         // a restart is not the user pausing, so it must not turn into a sync play action
         suppressNextPlayAction = true;
-        notifyError("\"" + titleOf(media) + "\" " + reason + " at " + formatPosition(positionMs)
-                + ", resuming");
+        notifyError(Messages.format("playback.error.resuming", titleOf(media), reason,
+                formatPosition(positionMs)));
         notifyLoading(true);
         startPlayback(media);
         // after the restart, so the save on the way out of the old player cannot overwrite it
@@ -1079,7 +1079,7 @@ public final class PlaybackManager {
                 error = currentFxMedia.getError();
             }
             String message = error != null ? error.getMessage() : null;
-            return message != null && !message.isEmpty() ? message : "the stream could not be loaded";
+            return message != null && !message.isEmpty() ? message : Messages.get("playback.reason.not_loaded");
         }
     }
 
@@ -1087,7 +1087,7 @@ public final class PlaybackManager {
         if (media.getItem() != null && media.getItem().getTitle() != null) {
             return media.getItem().getTitle();
         }
-        return "episode";
+        return Messages.get("playback.untitled");
     }
 
     private void saveMedia() {

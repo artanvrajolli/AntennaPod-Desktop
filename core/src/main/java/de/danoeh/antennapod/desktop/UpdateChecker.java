@@ -72,11 +72,11 @@ public final class UpdateChecker {
                 return null;
             }
             if (!response.isSuccessful()) {
-                throw new IOException("Update check failed: " + response.code());
+                throw new IOException(Messages.format("error.update.check_failed", response.code()));
             }
             ResponseBody body = response.body();
             if (body == null) {
-                throw new IOException("Update check returned nothing");
+                throw new IOException(Messages.get("error.update.check_empty"));
             }
             return parse(body.string());
         }

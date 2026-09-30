@@ -110,7 +110,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private final Map<Long, java.util.SortedSet<String>> feedTagMap = new HashMap<>();
     private ComboBox<String> tagBox;
     private boolean tagBoxProgrammatic;
-    private static final String ALL_TAGS = "All subscriptions";
+    private static final String ALL_TAGS = Messages.get("feeds.tags.all");
     private VBox sidebar;
     private SplitPane listsSplit;
     private VBox feedPane;
@@ -207,7 +207,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private long lastProgressRefreshMs;
     private static final String PROJECT_URL = "https://github.com/artanvrajolli/AntennaPod-Desktop";
     /** What the synced-position marker means, shown when hovering it in the seek bar or a row. */
-    private static final String SYNCED_TIP = "Synced position";
+    private static final String SYNCED_TIP = Messages.get("player.synced_position");
     private static final int SYNCED_MARKER_MIN_GAP_MS = 30000;
     /** Edge of the synced marker's square; rotated 45 degrees it reads as a hollow diamond. */
     private static final double SYNCED_MARKER_SIZE = 10;
@@ -293,7 +293,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (!acquireInstanceLock()) {
             Platform.runLater(() -> {
                 Alert alert = new Alert(Alert.AlertType.INFORMATION,
-                        "AntennaPod Desktop is already running.");
+                        Messages.get("app.already_running"));
                 alert.setTitle("AntennaPod Desktop");
                 alert.setHeaderText(null);
                 alert.showAndWait();
@@ -306,20 +306,21 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         try {
             restored = ProfileBackup.applyPending(DesktopPreferences.getDataDir());
         } catch (Exception e) {
-            setStatus("Could not restore the backup: " + e.getMessage());
+            setStatus(Messages.format("status.backup.restore_failed", e.getMessage()));
         }
         database = new DesktopDatabase(DesktopPreferences.getDatabaseFile());
         if (restored) {
             int cleared = database.clearMissingDownloads();
-            setStatus("Backup restored" + (cleared > 0
-                    ? "; " + episodeCountText(cleared) + " downloaded elsewhere will download again" : ""));
+            setStatus(cleared > 0
+                    ? Messages.format("status.backup.restored_redownload", episodeCountText(cleared))
+                    : Messages.get("status.backup.restored"));
         }
         feedUpdater = new FeedUpdater(database);
         try {
             // before the first refresh, so protected feeds are fetched with their login
             feedUpdater.reloadCredentials();
         } catch (Exception e) {
-            setStatus("Could not load feed logins: " + e.getMessage());
+            setStatus(Messages.format("status.feed_logins.load_failed", e.getMessage()));
         }
         downloader = new EpisodeDownloader(database);
         background = Executors.newCachedThreadPool(r -> {
@@ -358,7 +359,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         sleepTimer = new SleepTimer(() -> {
             // pause only: toggling could start playback if it stopped in the meantime
             playback.pause();
-            setStatus("Sleep timer expired, playback paused");
+            setStatus(Messages.get("status.sleep.expired"));
         });
         sleepTimer.restore();
         if (sleepTimer.getMode() == SleepTimer.Mode.END_OF_EPISODE) {
@@ -370,7 +371,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             if (sleepTimer.getMode() == SleepTimer.Mode.END_OF_EPISODE) {
                 sleepTimer.cancel();
                 updateSleepButton();
-                setStatus("Sleep timer: stopped at the end of the episode");
+                setStatus(Messages.get("status.sleep.stopped_at_end"));
             }
         });
         javafx.animation.Timeline sleepTicker = new javafx.animation.Timeline(
@@ -444,9 +445,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     // closing the window keeps playing by default, so say so once rather than
                     // leaving someone to think the app vanished
                     DesktopPreferences.setTrayHintShown(true);
-                    trayManager.notify(APP_NAME + " is still running",
-                            "It stays in the tray so playback keeps going. "
-                                    + "Right-click the tray icon for controls, or to exit.");
+                    trayManager.notify(Messages.format("tray.hint.title", APP_NAME),
+                            Messages.get("tray.hint.text"));
                 }
             } else {
                 shutdown();
@@ -486,7 +486,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         });
         // the episode in the Windows volume flyout, with the same transport vocabulary
-        smtc.setErrorReporter(message -> setStatus("Media card: " + message));
+        smtc.setErrorReporter(message -> setStatus(Messages.format("status.media_card", message)));
         // with no card the media keys have nothing to arrive through: claim them after all
         smtc.setAttachFailedHandler(() -> Platform.runLater(() -> {
             smtcUnavailable = true;
@@ -659,7 +659,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                         autoDownloadNew(result.feed, result.newEpisodes);
                     }
                 }
-                setStatus("Auto-refresh done: " + total + " new episodes");
+                setStatus(Messages.format("status.autorefresh.done", total));
                 notifyNewEpisodes(results);
                 refreshFeedCounts();
                 Platform.runLater(() -> {
@@ -669,7 +669,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     }
                 });
             } catch (Exception e) {
-                setStatus("Auto-refresh failed: " + e.getMessage());
+                setStatus(Messages.format("status.autorefresh.failed", e.getMessage()));
             }
         }, minutes, minutes, java.util.concurrent.TimeUnit.MINUTES);
     }
@@ -678,15 +678,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         // one field for both ways of adding a podcast: an address subscribes, anything else searches
         TextField inputField = new TextField();
         addField = inputField;
-        inputField.setPromptText("Search podcasts or paste a feed URL…");
+        inputField.setPromptText(Messages.get("toolbar.search.prompt"));
         inputField.setPrefWidth(340);
-        Button goButton = new Button("Search", Icons.search());
+        Button goButton = new Button(Messages.get("toolbar.search"), Icons.search());
         // sized for the wider label so the toolbar does not shift as the label flips while typing;
         // measured once the skin exists, since an unskinned button has no preferred width yet
         goButton.skinProperty().addListener((obs, oldSkin, skin) -> {
             if (skin != null && goButton.getMinWidth() == Region.USE_COMPUTED_SIZE) {
                 String shown = goButton.getText();
-                goButton.setText("Subscribe");
+                goButton.setText(Messages.get("common.subscribe"));
                 double wide = goButton.prefWidth(-1);
                 goButton.setText(shown);
                 goButton.setMinWidth(Math.max(wide, goButton.prefWidth(-1)));
@@ -694,7 +694,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         inputField.textProperty().addListener((obs, oldText, newText) -> {
             boolean url = FeedInput.looksLikeFeedUrl(newText);
-            goButton.setText(url ? "Subscribe" : "Search");
+            goButton.setText(url ? Messages.get("common.subscribe") : Messages.get("toolbar.search"));
             goButton.setGraphic(url ? Icons.add() : Icons.search());
         });
         Runnable go = () -> {
@@ -711,39 +711,39 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         };
         goButton.setOnAction(event -> go.run());
         inputField.setOnAction(event -> go.run());
-        Button refreshAllButton = new Button("Refresh all", Icons.refresh());
+        Button refreshAllButton = new Button(Messages.get("toolbar.refresh_all"), Icons.refresh());
         refreshAllButton.setOnAction(event -> {
-            setStatus("Refreshing all podcasts…");
+            setStatus(Messages.get("status.refresh.all_started"));
             spinWhile(refreshAllButton, this::doRefreshAll);
         });
-        Button syncButton = new Button("Sync", Icons.sync());
+        Button syncButton = new Button(Messages.get("toolbar.sync"), Icons.sync());
         this.syncButton = syncButton;
         updateSyncButtonTooltip();
         syncButton.setOnAction(event -> showSyncDialog());
         // the everyday views live one click away under Library; the occasional
         // actions under More — fourteen top-level controls was a wall of buttons
-        MenuButton libraryMenu = new MenuButton("Library", Icons.queue());
+        MenuButton libraryMenu = new MenuButton(Messages.get("toolbar.library"), Icons.queue());
         libraryMenu.getItems().addAll(
-                toolbarMenuItem("Queue", Icons.queue(), this::showQueue),
-                toolbarMenuItem("Favorites", Icons.favorite(), this::showFavorites),
-                toolbarMenuItem("Downloads", Icons.download(), this::showDownloads),
-                toolbarMenuItem("Search all episodes", Icons.search(), this::showEpisodeSearch),
-                toolbarMenuItem("History", Icons.history(), this::showHistory),
-                toolbarMenuItem("Stats", Icons.stats(), this::showStatistics));
-        MenuButton moreMenu = new MenuButton("More", Icons.more());
+                toolbarMenuItem(Messages.get("menu.library.queue"), Icons.queue(), this::showQueue),
+                toolbarMenuItem(Messages.get("menu.library.favorites"), Icons.favorite(), this::showFavorites),
+                toolbarMenuItem(Messages.get("menu.library.downloads"), Icons.download(), this::showDownloads),
+                toolbarMenuItem(Messages.get("menu.library.search_episodes"), Icons.search(), this::showEpisodeSearch),
+                toolbarMenuItem(Messages.get("menu.library.history"), Icons.history(), this::showHistory),
+                toolbarMenuItem(Messages.get("menu.library.stats"), Icons.stats(), this::showStatistics));
+        MenuButton moreMenu = new MenuButton(Messages.get("toolbar.more"), Icons.more());
         moreMenu.getItems().addAll(
-                toolbarMenuItem("Mark all as seen", Icons.check(), this::markAllSeen),
-                toolbarMenuItem("Mini player", Icons.play(), this::showMiniPlayer),
-                toolbarMenuItem("Add local folder…", Icons.folder(), this::addLocalFolder),
-                toolbarMenuItem("Import…", Icons.download(), this::importOpml),
-                toolbarMenuItem("Export…", Icons.upload(), this::exportOpml),
-                toolbarMenuItem("Settings", Icons.settings(), this::showSettings),
-                toolbarMenuItem("GitHub project page", Icons.github(), this::openProjectPage));
+                toolbarMenuItem(Messages.get("menu.more.mark_all_seen"), Icons.check(), this::markAllSeen),
+                toolbarMenuItem(Messages.get("menu.more.mini_player"), Icons.play(), this::showMiniPlayer),
+                toolbarMenuItem(Messages.get("menu.more.add_local_folder"), Icons.folder(), this::addLocalFolder),
+                toolbarMenuItem(Messages.get("menu.more.import"), Icons.download(), this::importOpml),
+                toolbarMenuItem(Messages.get("menu.more.export"), Icons.upload(), this::exportOpml),
+                toolbarMenuItem(Messages.get("menu.more.settings"), Icons.settings(), this::showSettings),
+                toolbarMenuItem(Messages.get("menu.more.project_page"), Icons.github(), this::openProjectPage));
         if (isDevBuild()) {
             // helpers for running from source: never part of an installed build
             moreMenu.getItems().addAll(new SeparatorMenuItem(),
-                    toolbarMenuItem("Reload latest build", Icons.refresh(), this::reloadAll),
-                    toolbarMenuItem("Open project folder", Icons.folder(), this::openProjectDir));
+                    toolbarMenuItem(Messages.get("menu.more.dev_reload"), Icons.refresh(), this::reloadAll),
+                    toolbarMenuItem(Messages.get("menu.more.dev_open_project"), Icons.folder(), this::openProjectDir));
         }
         // inputs stay left, actions sit at the far right
         Region spacer = new Region();
@@ -789,13 +789,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private VBox buildFeedPane() {
         feedFilterField = new TextField();
-        feedFilterField.setPromptText("Search subscriptions");
+        feedFilterField.setPromptText(Messages.get("feeds.search.prompt"));
         feedFilterField.textProperty().addListener((obs, oldText, newText) -> applyFeedFilter());
         // only there once some subscription has a tag
         tagBox = new ComboBox<>();
         tagBox.setMaxWidth(Double.MAX_VALUE);
-        tagBox.setTooltip(new Tooltip("Show the subscriptions with one tag; right-click a"
-                + " subscription and choose Tags… to tag it"));
+        tagBox.setTooltip(new Tooltip(Messages.get("feeds.tags.tooltip")));
         tagBox.setVisible(false);
         tagBox.setManaged(false);
         tagBox.setOnAction(event -> {
@@ -826,7 +825,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         });
         // refreshing the open subscription lives in the episode header, next to its list
-        Button settingsButton = new Button("Feed settings");
+        Button settingsButton = new Button(Messages.get("feeds.settings"));
         settingsButton.setOnAction(event -> {
             Feed selected = feedList.getSelectionModel().getSelectedItem();
             if (selected != null) {
@@ -835,7 +834,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         HBox buttons = new HBox(8, settingsButton);
         buttons.setPadding(new Insets(8));
-        VBox pane = new VBox(4, new Label("Subscriptions"), tagBox, feedFilterField, feedList, buttons);
+        VBox pane = new VBox(4, new Label(Messages.get("feeds.title")), tagBox, feedFilterField, feedList, buttons);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(feedList, Priority.ALWAYS);
         return pane;
@@ -844,18 +843,18 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private javafx.scene.control.ContextMenu buildFeedContextMenu(Feed feed) {
         javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
         javafx.scene.control.MenuItem refresh =
-                new javafx.scene.control.MenuItem("Refresh");
+                new javafx.scene.control.MenuItem(Messages.get("feeds.menu.refresh"));
         refresh.setOnAction(event -> refreshFeed(feed));
         javafx.scene.control.MenuItem markSeen =
-                new javafx.scene.control.MenuItem("Mark all as seen");
+                new javafx.scene.control.MenuItem(Messages.get("feeds.menu.mark_seen"));
         markSeen.setOnAction(event -> markFeedSeen(feed));
         javafx.scene.control.MenuItem settings =
-                new javafx.scene.control.MenuItem("Feed settings");
+                new javafx.scene.control.MenuItem(Messages.get("feeds.settings"));
         settings.setOnAction(event -> showFeedSettings(feed));
-        javafx.scene.control.MenuItem tags = new javafx.scene.control.MenuItem("Tags…");
+        javafx.scene.control.MenuItem tags = new javafx.scene.control.MenuItem(Messages.get("feeds.menu.tags"));
         tags.setOnAction(event -> showFeedTagsModal(feed));
         javafx.scene.control.MenuItem unsubscribe =
-                new javafx.scene.control.MenuItem("Unsubscribe");
+                new javafx.scene.control.MenuItem(Messages.get("feeds.menu.unsubscribe"));
         unsubscribe.setStyle("-fx-text-fill: #d9534f;");
         unsubscribe.setOnAction(event -> unsubscribe(feed));
         menu.getItems().addAll(refresh, markSeen, settings, tags,
@@ -867,29 +866,29 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         List<FeedItem> targets = actionTargets(item);
         javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
         javafx.scene.control.MenuItem markPlayed =
-                new javafx.scene.control.MenuItem("Mark played");
+                new javafx.scene.control.MenuItem(Messages.get("episodes.menu.mark_played"));
         markPlayed.setOnAction(event -> applyPlayedState(targets, true));
         javafx.scene.control.MenuItem markUnplayed =
-                new javafx.scene.control.MenuItem("Mark unplayed");
+                new javafx.scene.control.MenuItem(Messages.get("episodes.menu.mark_unplayed"));
         markUnplayed.setOnAction(event -> applyPlayedState(targets, false));
         javafx.scene.control.MenuItem addToQueue =
-                new javafx.scene.control.MenuItem("Add to queue");
+                new javafx.scene.control.MenuItem(Messages.get("episodes.menu.add_to_queue"));
         addToQueue.setOnAction(event -> enqueueItems(targets));
         javafx.scene.control.MenuItem removeFromQueue =
-                new javafx.scene.control.MenuItem("Remove from queue");
+                new javafx.scene.control.MenuItem(Messages.get("episodes.menu.remove_from_queue"));
         removeFromQueue.setOnAction(event -> dequeueItems(targets));
         javafx.scene.control.MenuItem addFavorite =
-                new javafx.scene.control.MenuItem("Add to favorites");
+                new javafx.scene.control.MenuItem(Messages.get("episodes.menu.add_favorite"));
         addFavorite.setOnAction(event -> setFavorites(targets, true));
         javafx.scene.control.MenuItem removeFavorite =
-                new javafx.scene.control.MenuItem("Remove from favorites");
+                new javafx.scene.control.MenuItem(Messages.get("episodes.menu.remove_favorite"));
         removeFavorite.setOnAction(event -> setFavorites(targets, false));
         javafx.scene.control.MenuItem download =
-                new javafx.scene.control.MenuItem("Download");
+                new javafx.scene.control.MenuItem(Messages.get("episodes.menu.download"));
         download.setOnAction(event -> enqueueDownloads(targets));
         download.setDisable(!hasDownloadable(targets));
         javafx.scene.control.MenuItem deleteDownload =
-                new javafx.scene.control.MenuItem("Delete download");
+                new javafx.scene.control.MenuItem(Messages.get("episodes.menu.delete_download"));
         deleteDownload.setOnAction(event -> deleteDownloads(targets));
         deleteDownload.setDisable(!hasDownloaded(targets));
         menu.getItems().addAll(markPlayed, markUnplayed,
@@ -955,7 +954,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 Map<Long, java.util.SortedSet<String>> tags = database.getFeedTags();
                 Platform.runLater(() -> applyFeedTags(tags));
             } catch (Exception e) {
-                setStatus("Could not load tags: " + e.getMessage());
+                setStatus(Messages.format("status.tags.load_failed", e.getMessage()));
             }
         });
     }
@@ -979,13 +978,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             boxes.getChildren().add(check);
         };
         allTags().forEach(addCheck);
-        Label none = new Label("No tags yet. Add one below, e.g. \"Commute\" or \"Work\".");
+        Label none = new Label(Messages.get("tags.none"));
         none.getStyleClass().add("muted-label");
         none.setVisible(checks.isEmpty());
         none.setManaged(checks.isEmpty());
         TextField newTag = new TextField();
-        newTag.setPromptText("New tag");
-        Button add = new Button("Add", Icons.add());
+        newTag.setPromptText(Messages.get("tags.new.prompt"));
+        Button add = new Button(Messages.get("tags.add"), Icons.add());
         Runnable addNew = () -> {
             String tag = newTag.getText().trim();
             if (!tag.isEmpty()) {
@@ -999,7 +998,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         add.setOnAction(event -> addNew.run());
         newTag.setOnAction(event -> addNew.run());
         HBox.setHgrow(newTag, Priority.ALWAYS);
-        Button save = new Button("Save");
+        Button save = new Button(Messages.get("common.save"));
         save.setDefaultButton(true);
         VBox pane = new VBox(10, boxes, none, new HBox(8, newTag, add));
         save.setOnAction(event -> {
@@ -1013,11 +1012,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             background.submit(() -> {
                 try {
                     database.setFeedTags(feed.getId(), chosen);
-                    setStatus(chosen.isEmpty() ? "Tags removed from " + feed.getTitle()
-                            : feed.getTitle() + " tagged " + String.join(", ", chosen));
+                    setStatus(chosen.isEmpty() ? Messages.format("status.tags.removed", feed.getTitle())
+                            : Messages.format("status.tags.saved", feed.getTitle(), String.join(", ", chosen)));
                     reloadFeedTags();
                 } catch (Exception e) {
-                    setStatus("Could not save tags: " + e.getMessage());
+                    setStatus(Messages.format("status.tags.save_failed", e.getMessage()));
                 }
             });
         });
@@ -1025,7 +1024,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         buttons.setAlignment(Pos.CENTER_RIGHT);
         pane.getChildren().add(buttons);
         pane.setPadding(new Insets(12));
-        showModal("Tags: " + (feed.getTitle() != null ? feed.getTitle() : feed.getDownloadUrl()), pane);
+        showModal(Messages.format("tags.title",
+                feed.getTitle() != null ? feed.getTitle() : feed.getDownloadUrl()), pane);
         Platform.runLater(newTag::requestFocus);
     }
 
@@ -1046,7 +1046,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         sidebarTitle = new Label();
         sidebarTitle.getStyleClass().add("sidebar-title");
         sidebarTitle.setMaxWidth(Double.MAX_VALUE);
-        Button closeButton = iconButton(Icons.remove(), "Close panel");
+        Button closeButton = iconButton(Icons.remove(), Messages.get("common.close_panel"));
         closeButton.getStyleClass().add("flat");
         closeButton.setOnAction(event -> hideSidebar());
         HBox header = new HBox(8, sidebarTitle, closeButton);
@@ -1135,7 +1135,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         modalTitle.getStyleClass().add("sidebar-title");
         modalTitle.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(modalTitle, Priority.ALWAYS);
-        Button closeButton = iconButton(Icons.remove(), "Close");
+        Button closeButton = iconButton(Icons.remove(), Messages.get("common.close"));
         closeButton.getStyleClass().add("flat");
         HBox header = new HBox(8, modalTitle, closeButton);
         header.getStyleClass().add("sidebar-header");
@@ -1213,18 +1213,18 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         String current = appVersion();
         if (!UpdateChecker.isComparable(current)) {
             if (requestedByUser) {
-                setStatus("This is a development build, so there is nothing to compare against");
+                setStatus(Messages.get("status.update.dev_build"));
             }
             return;
         }
         if (requestedByUser) {
-            setStatus("Checking for updates\u2026");
+            setStatus(Messages.get("status.update.checking"));
         }
         try {
             UpdateChecker.Release release = UpdateChecker.fetchLatest();
             if (release == null || !UpdateChecker.isNewer(release.version, current)) {
                 if (requestedByUser) {
-                    setStatus("AntennaPod Desktop " + current + " is the latest version");
+                    setStatus(Messages.format("status.update.latest", current));
                 }
                 return;
             }
@@ -1235,7 +1235,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             Platform.runLater(() -> showUpdateModal(release, current));
         } catch (Exception e) {
             if (requestedByUser) {
-                setStatus("Could not check for updates: " + e.getMessage());
+                setStatus(Messages.format("status.update.check_failed", e.getMessage()));
             }
         }
     }
@@ -1260,9 +1260,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void showUpdateModal(UpdateChecker.Release release, String current) {
-        Label heading = new Label("AntennaPod Desktop " + release.version);
+        Label heading = new Label(Messages.format("update.heading", release.version));
         heading.setStyle("-fx-font-size: 15px; -fx-font-weight: bold;");
-        Label installed = new Label("You have " + current);
+        Label installed = new Label(Messages.format("update.installed", current));
         installed.getStyleClass().add("muted-label");
 
         WebView notes = new WebView();
@@ -1276,22 +1276,23 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         progress.setVisible(false);
         progress.setManaged(false);
 
-        Button install = new Button(release.hasInstaller() ? "Install" : "Open release page");
+        Button install = new Button(release.hasInstaller() ? Messages.get("update.install")
+                : Messages.get("update.open_release_page"));
         install.setDefaultButton(true);
-        Button later = new Button("Later");
-        Button skip = new Button("Skip this version");
+        Button later = new Button(Messages.get("update.later"));
+        Button skip = new Button(Messages.get("update.skip"));
         HBox buttons = new HBox(8, install, later, skip);
 
         VBox pane = new VBox(12, heading, installed, notes, progress, status, buttons);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(notes, Priority.ALWAYS);
-        showModal("Update available", pane);
+        showModal(Messages.get("update.title"), pane);
 
         later.setOnAction(event -> closeTopModal());
         skip.setOnAction(event -> {
             DesktopPreferences.setSkippedUpdateVersion(release.version);
             closeTopModal();
-            setStatus("Skipped " + release.version + "; it will not be offered again");
+            setStatus(Messages.format("status.update.skipped", release.version));
         });
         install.setOnAction(event -> {
             if (!release.hasInstaller()) {
@@ -1304,7 +1305,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             skip.setDisable(true);
             progress.setVisible(true);
             progress.setManaged(true);
-            status.setText("Downloading " + release.installerName + "\u2026");
+            status.setText(Messages.format("update.downloading", release.installerName));
             downloadAndInstall(release, progress, status, install, later, skip);
         });
     }
@@ -1318,7 +1319,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     Platform.runLater(() -> progress.setProgress(fraction));
                 });
                 Platform.runLater(() -> {
-                    status.setText("Starting the installer. AntennaPod Desktop will close.");
+                    status.setText(Messages.get("update.starting_installer"));
                     launchInstaller(installer);
                 });
             } catch (Exception e) {
@@ -1327,12 +1328,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 Platform.runLater(() -> {
                     progress.setVisible(false);
                     progress.setManaged(false);
-                    status.setText("Update failed: " + friendly
-                            + " You can retry or download it from the release page instead.");
+                    status.setText(Messages.format("update.failed", friendly));
                     install.setDisable(false);
                     later.setDisable(false);
                     skip.setDisable(false);
-                    install.setText("Retry");
+                    install.setText(Messages.get("update.retry"));
                     install.setDefaultButton(true);
                     install.setOnAction(retry -> {
                         install.setDisable(true);
@@ -1341,7 +1341,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                         progress.setVisible(true);
                         progress.setManaged(true);
                         progress.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
-                        status.setText("Downloading " + release.installerName + "\u2026");
+                        status.setText(Messages.format("update.downloading", release.installerName));
                         downloadAndInstall(release, progress, status, install, later, skip);
                     });
                     ensureOpenReleasePageButton(release, install);
@@ -1363,7 +1363,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 return;
             }
         }
-        Button page = new Button("Open release page");
+        Button page = new Button(Messages.get("update.open_release_page"));
         page.setUserData("openReleasePage");
         page.setOnAction(open -> {
             getHostServices().showDocument(release.pageUrl);
@@ -1380,7 +1380,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     static String friendlyUpdateError(Exception e) {
         String message = e == null ? null : e.getMessage();
         if (message == null || message.isBlank() || looksLikeUpdatePath(message)) {
-            return "could not save the update file (it may be locked by an antivirus scan).";
+            return Messages.get("update.error.save_failed");
         }
         return message.endsWith(".") ? message.substring(0, message.length() - 1) + "." : message;
     }
@@ -1402,7 +1402,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     .directory(installer.getParentFile())
                     .start();
         } catch (Exception e) {
-            setStatus("Could not start the installer: " + e.getMessage());
+            setStatus(Messages.format("status.update.installer_failed", e.getMessage()));
             return;
         }
         trayManager.remove();
@@ -1413,7 +1413,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     /** GitHub release bodies are Markdown; only the bits the notes actually use are converted. */
     static String releaseNotesHtml(String notes) {
         if (notes == null || notes.isBlank()) {
-            return "<p><i>No release notes.</i></p>";
+            return "<p><i>" + Messages.get("update.no_notes") + "</i></p>";
         }
         StringBuilder html = new StringBuilder();
         boolean inList = false;
@@ -1448,9 +1448,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private void openProjectPage() {
         try {
             getHostServices().showDocument(PROJECT_URL);
-            setStatus("Opened " + PROJECT_URL);
+            setStatus(Messages.format("status.opened", PROJECT_URL));
         } catch (Exception e) {
-            setStatus("Could not open the browser: " + e.getMessage());
+            setStatus(Messages.format("status.browser_failed", e.getMessage()));
         }
     }
 
@@ -1467,7 +1467,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private void reloadAll() {
         File root = projectDir(new File(System.getProperty("user.dir", ".")));
         if (root == null) {
-            setStatus("Not a project checkout: " + System.getProperty("user.dir", "."));
+            setStatus(Messages.format("status.dev.not_checkout", System.getProperty("user.dir", ".")));
             return;
         }
         try {
@@ -1476,7 +1476,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     .directory(root)
                     .start();
         } catch (Exception e) {
-            setStatus("Could not reload: " + e.getMessage());
+            setStatus(Messages.format("status.dev.reload_failed", e.getMessage()));
             return;
         }
         trayManager.remove();
@@ -1488,14 +1488,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private void openProjectDir() {
         File dir = projectDir(new File(System.getProperty("user.dir", ".")));
         if (dir == null) {
-            setStatus("Not a project checkout: " + System.getProperty("user.dir", "."));
+            setStatus(Messages.format("status.dev.not_checkout", System.getProperty("user.dir", ".")));
             return;
         }
         try {
             getHostServices().showDocument(dir.toURI().toString());
-            setStatus("Opened " + dir);
+            setStatus(Messages.format("status.opened", dir));
         } catch (Exception e) {
-            setStatus("Could not open the project folder: " + e.getMessage());
+            setStatus(Messages.format("status.dev.open_folder_failed", e.getMessage()));
         }
     }
 
@@ -1651,13 +1651,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             int[] counts = feedCounts.get(feed.getId());
             int unplayed = counts != null ? counts[0] : 0;
             int newCount = counts != null ? counts[1] : 0;
-            String unplayedText = unplayed > 0 ? unplayed + " unplayed" : "";
+            String unplayedText = unplayed > 0 ? Messages.format("feeds.count.unplayed", unplayed) : "";
             countLabel.setText(unplayedText);
             setAccessibleText(titleLabel.getText() + (unplayedText.isEmpty() ? "" : ", " + unplayedText)
-                    + (counts != null && counts[1] > 0 ? ", " + counts[1] + " new" : ""));
+                    + (counts != null && counts[1] > 0 ? ", " + Messages.format("feeds.count.new", counts[1]) : ""));
             boolean hasNew = newCount > 0;
             newCountBadge.setText(String.valueOf(newCount));
-            newCountTooltip.setText(newCount == 1 ? "1 new episode" : newCount + " new episodes");
+            newCountTooltip.setText(newCount == 1 ? Messages.get("count.new_episode.one")
+                    : Messages.format("count.new_episode.other", newCount));
             newCountBadge.setVisible(hasNew);
             newCountBadge.setManaged(hasNew);
             updateArt(feed.getImageUrl());
@@ -1680,35 +1681,36 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private VBox buildEpisodePane() {
-        feedTitleLabel = new Label("Select a podcast");
+        feedTitleLabel = new Label(Messages.get("episodes.select_podcast"));
         feedTitleLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
         sortBox = new ComboBox<>();
-        sortBox.getItems().addAll("Newest first", "Oldest first", "Shortest first",
-                "Longest first", "Title A-Z");
-        sortBox.setValue("Newest first");
+        sortBox.getItems().addAll(Messages.get("sort.newest"), Messages.get("sort.oldest"),
+                Messages.get("sort.shortest"),
+                Messages.get("sort.longest"), Messages.get("sort.title"));
+        sortBox.setValue(Messages.get("sort.newest"));
         sortBox.setOnAction(event -> {
             if (selectedFeed != null && !sortBoxProgrammatic) {
                 saveSortCode(selectedFeed, sortCode(sortBox.getValue()));
             }
         });
-        Button playAllButton = new Button("Play all", Icons.play());
+        Button playAllButton = new Button(Messages.get("episodes.play_all"), Icons.play());
         playAllButton.setOnAction(event -> playAll());
         episodeFilterField = new TextField();
-        episodeFilterField.setPromptText("Search episodes");
+        episodeFilterField.setPromptText(Messages.get("episodes.search.prompt"));
         episodeFilterField.setPrefWidth(160);
         episodeFilterField.textProperty().addListener((obs, oldText, newText) -> applyEpisodeFilter());
         episodeStateBox = new ComboBox<>(FXCollections.observableArrayList(EpisodeFilter.values()));
         episodeStateBox.setValue(DesktopPreferences.getEpisodeFilter());
-        episodeStateBox.setTooltip(new Tooltip("Show only some episodes"));
+        episodeStateBox.setTooltip(new Tooltip(Messages.get("episodes.filter.tooltip")));
         episodeStateBox.setOnAction(event -> {
             EpisodeFilter chosen = episodeStateBox.getValue();
             prefsWriter.submit(() -> DesktopPreferences.setEpisodeFilter(chosen));
             applyEpisodeFilter();
         });
-        Button refreshButton = iconButton(Icons.refresh(), "Check this podcast for new episodes (F5)");
+        Button refreshButton = iconButton(Icons.refresh(), Messages.get("episodes.refresh.tooltip"));
         episodeRefreshButton = refreshButton;
         refreshButton.setOnAction(event -> refreshOpenFeed());
-        playAllButton.setTooltip(new Tooltip("Play from the oldest to the newest"));
+        playAllButton.setTooltip(new Tooltip(Messages.get("episodes.play_all.tooltip")));
         // title on the left, the list's controls pushed to the right edge
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -1721,7 +1723,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         refreshButton.setMinWidth(Region.USE_PREF_SIZE);
         feedTitleLabel.setMinWidth(60);
         episodeList = new ListView<>(visibleEpisodes);
-        episodeList.setPlaceholder(new Label("No episodes to show"));
+        episodeList.setPlaceholder(new Label(Messages.get("episodes.empty")));
         episodeList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         episodeList.setCellFactory(list -> new EpisodeCell());
         episodeList.setOnMouseClicked(event -> {
@@ -1729,7 +1731,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 FeedItem selected = episodeList.getSelectionModel().getSelectedItem();
                 if (selected != null && selected.getMedia() != null) {
                     playback.play(selected, playbackOrder());
-                    setStatus("Playing \"" + selected.getTitle() + "\"");
+                    setStatus(Messages.format("status.playing", selected.getTitle()));
                 }
             }
         });
@@ -1788,7 +1790,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 database.saveFeedPrefs(prefs);
                 loadEpisodes(feed);
             } catch (Exception e) {
-                setStatus("Could not save sort order: " + e.getMessage());
+                setStatus(Messages.format("status.sort.save_failed", e.getMessage()));
             }
         });
     }
@@ -1798,11 +1800,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         for (FeedItem item : order) {
             if (item.getMedia() != null) {
                 playback.play(item, order);
-                setStatus("Playing from \"" + item.getTitle() + "\" to the end");
+                setStatus(Messages.format("status.playing_from", item.getTitle()));
                 return;
             }
         }
-        setStatus("Nothing playable in this list");
+        setStatus(Messages.get("status.nothing_playable.list"));
     }
 
     private List<FeedItem> playbackOrder() {
@@ -1816,7 +1818,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
      * top playable one in its own order when nothing is in progress.
      */
     private void playFeed(Feed feed) {
-        setStatus("Starting \"" + feed.getTitle() + "\"…");
+        setStatus(Messages.format("status.feed.starting", feed.getTitle()));
         background.submit(() -> {
             try {
                 Feed full = database.getFeed(feed.getId());
@@ -1834,14 +1836,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     }
                 }
                 if (start == null) {
-                    setStatus("Nothing playable in this subscription");
+                    setStatus(Messages.get("status.nothing_playable.feed"));
                     return;
                 }
                 FeedItem first = start;
                 Platform.runLater(() -> playback.play(first, items));
-                setStatus("Playing \"" + first.getTitle() + "\"");
+                setStatus(Messages.format("status.playing", first.getTitle()));
             } catch (Exception e) {
-                setStatus("Could not start subscription: " + e.getMessage());
+                setStatus(Messages.format("status.feed.start_failed", e.getMessage()));
             }
         });
     }
@@ -1890,16 +1892,17 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private void showSleepTimerMenu() {
         javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
-        javafx.scene.control.MenuItem off = new javafx.scene.control.MenuItem("Off");
+        javafx.scene.control.MenuItem off = new javafx.scene.control.MenuItem(Messages.get("sleep.off"));
         off.setOnAction(event -> setSleepTimer(SleepTimer.Mode.OFF, 0));
         menu.getItems().add(off);
         for (long minutes : new long[]{5, 10, 15, 30, 45, 60}) {
-            javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(minutes + " minutes");
+            javafx.scene.control.MenuItem item =
+                    new javafx.scene.control.MenuItem(Messages.format("sleep.minutes", minutes));
             item.setOnAction(event -> setSleepTimer(SleepTimer.Mode.AFTER_MINUTES, minutes));
             menu.getItems().add(item);
         }
         javafx.scene.control.MenuItem endOfEpisode =
-                new javafx.scene.control.MenuItem("End of episode");
+                new javafx.scene.control.MenuItem(Messages.get("sleep.end_of_episode"));
         endOfEpisode.setOnAction(event -> setSleepTimer(SleepTimer.Mode.END_OF_EPISODE, 0));
         menu.getItems().add(endOfEpisode);
         menu.show(sleepButton, javafx.geometry.Side.TOP, 0, 0);
@@ -1908,15 +1911,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private void setSleepTimer(SleepTimer.Mode mode, long minutes) {
         if (mode == SleepTimer.Mode.AFTER_MINUTES) {
             sleepTimer.startMinutes(minutes);
-            setStatus("Sleep timer: " + minutes + " minutes");
+            setStatus(Messages.format("status.sleep.minutes", minutes));
         } else if (mode == SleepTimer.Mode.END_OF_EPISODE) {
             sleepTimer.startEndOfEpisode();
             playback.setStopAfterCurrent(true);
-            setStatus("Sleep timer: end of episode");
+            setStatus(Messages.get("status.sleep.end_of_episode"));
         } else {
             sleepTimer.cancel();
             playback.setStopAfterCurrent(false);
-            setStatus("Sleep timer off");
+            setStatus(Messages.get("status.sleep.off"));
         }
         updateSleepButton();
     }
@@ -1926,7 +1929,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (mode == SleepTimer.Mode.AFTER_MINUTES) {
             sleepButton.setText(formatDuration(sleepTimer.getRemainingMs()));
         } else if (mode == SleepTimer.Mode.END_OF_EPISODE) {
-            sleepButton.setText("episode");
+            sleepButton.setText(Messages.get("sleep.button.end_of_episode"));
         } else {
             sleepButton.setText("");
         }
@@ -1965,33 +1968,33 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     /** Names the inputs a screen reader would otherwise announce only by kind ("combo box"). */
     private void nameInputs() {
-        addField.setAccessibleText("Search podcasts or paste a feed URL");
-        feedFilterField.setAccessibleText("Search subscriptions");
-        tagBox.setAccessibleText("Show subscriptions with tag");
-        episodeFilterField.setAccessibleText("Search this podcast's episodes");
-        episodeStateBox.setAccessibleText("Show episodes");
-        sortBox.setAccessibleText("Episode order");
-        feedList.setAccessibleText("Subscriptions");
-        episodeList.setAccessibleText("Episodes");
-        speedBox.setAccessibleText("Playback speed");
-        volumeSlider.setAccessibleText("Volume");
-        seekSlider.setAccessibleText("Position in episode");
+        addField.setAccessibleText(Messages.get("a11y.add_field"));
+        feedFilterField.setAccessibleText(Messages.get("a11y.feed_filter"));
+        tagBox.setAccessibleText(Messages.get("a11y.tag_filter"));
+        episodeFilterField.setAccessibleText(Messages.get("a11y.episode_filter"));
+        episodeStateBox.setAccessibleText(Messages.get("a11y.episode_state"));
+        sortBox.setAccessibleText(Messages.get("a11y.episode_sort"));
+        feedList.setAccessibleText(Messages.get("a11y.feed_list"));
+        episodeList.setAccessibleText(Messages.get("a11y.episode_list"));
+        speedBox.setAccessibleText(Messages.get("a11y.speed"));
+        volumeSlider.setAccessibleText(Messages.get("a11y.volume"));
+        seekSlider.setAccessibleText(Messages.get("a11y.seek"));
     }
 
     private VBox buildPlayerBar() {
-        Button prevButton = iconButton(Icons.previous(), "Previous episode");
+        Button prevButton = iconButton(Icons.previous(), Messages.get("player.previous"));
         prevButton.setOnAction(event -> playback.playPrevious());
         skipBackButton = iconButton(Icons.replay10(), "");
         skipBackButton.setOnAction(event ->
                 playback.skip(-DesktopPreferences.getSkipBackSec() * 1000));
-        playPauseButton = iconButton(Icons.accent(Icons.play(26)), "Play / pause");
+        playPauseButton = iconButton(Icons.accent(Icons.play(26)), Messages.get("player.play_pause"));
         playPauseButton.setOnAction(event -> playback.togglePlayPause());
         skipForwardButton = iconButton(Icons.forward30(), "");
         skipForwardButton.setOnAction(event ->
                 playback.skip(DesktopPreferences.getSkipForwardSec() * 1000));
-        Button nextButton = iconButton(Icons.next(), "Next episode");
+        Button nextButton = iconButton(Icons.next(), Messages.get("player.next"));
         nextButton.setOnAction(event -> playback.playNext());
-        Button stopButton = iconButton(Icons.stop(), "Stop");
+        Button stopButton = iconButton(Icons.stop(), Messages.get("player.stop"));
         stopButton.setOnAction(event -> playback.stop());
         updateSkipTooltips();
 
@@ -2017,7 +2020,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         artBox.setPrefSize(96, 96);
         artBox.setMaxSize(96, 96);
 
-        nowPlayingLabel = new Label("Nothing playing");
+        nowPlayingLabel = new Label(Messages.get("player.nothing_playing"));
         nowPlayingLabel.setMaxWidth(Double.MAX_VALUE);
         nowPlayingLabel.setStyle("-fx-cursor: hand;");
         nowPlayingLabel.setOnMouseClicked(event -> {
@@ -2030,7 +2033,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
         elapsedLabel = buildTimeLabel(Pos.CENTER_RIGHT);
         totalLabel = buildTimeLabel(Pos.CENTER_LEFT);
-        Tooltip timeTooltip = new Tooltip("Click to show remaining time");
+        Tooltip timeTooltip = new Tooltip(Messages.get("player.time.tooltip"));
         elapsedLabel.setTooltip(timeTooltip);
         totalLabel.setTooltip(timeTooltip);
         javafx.event.EventHandler<MouseEvent> timeToggle = event -> {
@@ -2082,7 +2085,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             playback.setRate(Float.parseFloat(value));
         });
 
-        silenceButton = iconButton(Icons.wave(), "Skip silence");
+        silenceButton = iconButton(Icons.wave(), Messages.get("player.skip_silence"));
         silenceButton.setOnAction(event ->
                 setSilenceSkipping(!DesktopPreferences.getSkipSilence()));
         updateSilenceButtonTooltip();
@@ -2104,11 +2107,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         });
         muteButton = iconButton(volumeSlider.getValue() <= 0 ? Icons.volumeOff() : Icons.volumeUp(),
-                "Mute");
+                Messages.get("player.mute"));
         muteButton.setOnAction(event -> toggleMute());
 
         sleepButton = new Button("", Icons.clock());
-        sleepButton.setTooltip(new Tooltip("Sleep timer"));
+        sleepButton.setTooltip(new Tooltip(Messages.get("player.sleep_timer")));
         nameFromTooltip(sleepButton);
         sleepButton.setOnAction(event -> showSleepTimerMenu());
 
@@ -2117,9 +2120,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         chapterLabel.setPrefWidth(160);
         chapterLabel.setMaxWidth(160);
 
-        chapterPrevButton = iconButton(Icons.navigateBefore(), "Previous chapter");
+        chapterPrevButton = iconButton(Icons.navigateBefore(), Messages.get("player.chapter.previous"));
         chapterPrevButton.setOnAction(event -> skipChapter(false));
-        chapterNextButton = iconButton(Icons.navigateAfter(), "Next chapter");
+        chapterNextButton = iconButton(Icons.navigateAfter(), Messages.get("player.chapter.next"));
         chapterNextButton.setOnAction(event -> skipChapter(true));
         setChapterButtonsVisible(false);
 
@@ -2154,7 +2157,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         StackPane.setAlignment(transportRow, Pos.CENTER);
         StackPane.setAlignment(extrasRow, Pos.CENTER_RIGHT);
 
-        statusLabel = new Label("Ready");
+        statusLabel = new Label(Messages.get("status.ready"));
         statusLabel.setMinWidth(Region.USE_PREF_SIZE);
         statusLabel.setMaxWidth(220);
         statusLabel.setStyle("-fx-cursor: hand;");
@@ -2189,20 +2192,20 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private void resumeLastPlayed() {
         long mediaId = DesktopPreferences.getLastPlayedMediaId();
         if (mediaId < 0) {
-            setStatus("Nothing to resume");
+            setStatus(Messages.get("status.resume.nothing"));
             return;
         }
-        setStatus("Resuming last episode…");
+        setStatus(Messages.get("status.resume.started"));
         background.submit(() -> {
             try {
                 FeedMedia media = database.getMedia(mediaId);
                 if (media == null) {
-                    setStatus("Could not resume: episode not found");
+                    setStatus(Messages.get("status.resume.not_found"));
                     return;
                 }
                 FeedItem item = database.getItem(media.getItemId());
                 if (item == null || item.getMedia() == null) {
-                    setStatus("Could not resume: episode not found");
+                    setStatus(Messages.get("status.resume.not_found"));
                     return;
                 }
                 List<FeedItem> queue = new ArrayList<>();
@@ -2220,7 +2223,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 int position = item.getMedia().getPosition();
                 Platform.runLater(() -> playback.playAt(item, queue, position));
             } catch (Exception e) {
-                setStatus("Could not resume: " + e.getMessage());
+                setStatus(Messages.format("status.resume.failed", e.getMessage()));
             }
         });
     }
@@ -2264,11 +2267,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private void updateSkipTooltips() {
         if (skipBackButton != null) {
             skipBackButton.setTooltip(
-                    new Tooltip("Rewind " + DesktopPreferences.getSkipBackSec() + " s"));
+                    new Tooltip(Messages.format("player.rewind", DesktopPreferences.getSkipBackSec())));
         }
         if (skipForwardButton != null) {
             skipForwardButton.setTooltip(
-                    new Tooltip("Forward " + DesktopPreferences.getSkipForwardSec() + " s"));
+                    new Tooltip(Messages.format("player.forward", DesktopPreferences.getSkipForwardSec())));
         }
     }
 
@@ -2289,13 +2292,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private void refreshOpenFeed() {
         Feed feed = selectedFeed;
         if (feed == null) {
-            setStatus("Select a podcast first");
+            setStatus(Messages.get("status.select_podcast_first"));
             return;
         }
         if (episodeRefreshButton.isDisabled()) {
             return;
         }
-        setStatus("Refreshing " + feed.getTitle() + "…");
+        setStatus(Messages.format("status.refresh.feed_started", feed.getTitle()));
         spinWhile(episodeRefreshButton, () -> doRefreshFeed(feed));
     }
 
@@ -2305,7 +2308,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
      */
     private void showMiniPlayer() {
         if (!trayActive || !trayManager.showMiniPlayer()) {
-            setStatus("The mini player needs the tray icon, which is switched off or unavailable");
+            setStatus(Messages.get("status.mini_player.unavailable"));
             return;
         }
         mainStage.hide();
@@ -2313,21 +2316,21 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     /** Every keyboard shortcut, as the F1 list shows them. */
     static final String[][] SHORTCUTS = {
-            {"Space", "Play / pause"},
-            {"← / →", "Back / forward 5 seconds"},
-            {"Ctrl+← / Ctrl+→", "Previous / next episode"},
-            {"[ / ]", "Slower / faster"},
-            {"Ctrl+↑ / Ctrl+↓", "Volume up / down"},
-            {"M", "Mute"},
-            {"Ctrl+F", "Search this podcast's episodes"},
-            {"Ctrl+Shift+F", "Search all episodes"},
-            {"Ctrl+L", "Search podcasts or paste a feed URL"},
-            {"Esc", "Clear the search you are in, or close a window"},
-            {"F5", "Check this podcast for new episodes"},
-            {"Ctrl+F5", "Refresh all podcasts"},
-            {"Ctrl+,", "Settings"},
-            {"Ctrl+Shift+M", "Mini player"},
-            {"F1", "This list"},
+            {Messages.get("shortcuts.key.space"), Messages.get("shortcuts.action.play_pause")},
+            {Messages.get("shortcuts.key.arrows"), Messages.get("shortcuts.action.seek")},
+            {Messages.get("shortcuts.key.ctrl_arrows"), Messages.get("shortcuts.action.previous_next")},
+            {Messages.get("shortcuts.key.brackets"), Messages.get("shortcuts.action.speed")},
+            {Messages.get("shortcuts.key.ctrl_up_down"), Messages.get("shortcuts.action.volume")},
+            {Messages.get("shortcuts.key.m"), Messages.get("shortcuts.action.mute")},
+            {Messages.get("shortcuts.key.ctrl_f"), Messages.get("shortcuts.action.search_episodes")},
+            {Messages.get("shortcuts.key.ctrl_shift_f"), Messages.get("shortcuts.action.search_all")},
+            {Messages.get("shortcuts.key.ctrl_l"), Messages.get("shortcuts.action.search_podcasts")},
+            {Messages.get("shortcuts.key.esc"), Messages.get("shortcuts.action.escape")},
+            {Messages.get("shortcuts.key.f5"), Messages.get("shortcuts.action.refresh")},
+            {Messages.get("shortcuts.key.ctrl_f5"), Messages.get("shortcuts.action.refresh_all")},
+            {Messages.get("shortcuts.key.ctrl_comma"), Messages.get("shortcuts.action.settings")},
+            {Messages.get("shortcuts.key.ctrl_shift_m"), Messages.get("shortcuts.action.mini_player")},
+            {Messages.get("shortcuts.key.f1"), Messages.get("shortcuts.action.this_list")},
     };
 
     private void showShortcuts() {
@@ -2341,7 +2344,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             grid.add(keys, 0, i);
             grid.add(new Label(SHORTCUTS[i][1]), 1, i);
         }
-        showModal("Keyboard shortcuts", grid);
+        showModal(Messages.get("shortcuts.title"), grid);
     }
 
     private static void focusAndSelect(TextField field) {
@@ -2415,7 +2418,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (next != index) {
             // the box's own handler applies and stores the speed
             speedBox.setValue(SPEED_OPTIONS[next]);
-            setStatus("Speed " + SPEED_OPTIONS[next]);
+            setStatus(Messages.format("status.speed", SPEED_OPTIONS[next]));
         }
     }
 
@@ -2669,7 +2672,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         Platform.runLater(() -> {
             statusLabel.setText(message);
-            String tip = message + "\n\nClick to copy";
+            String tip = message + "\n\n" + Messages.get("status.click_to_copy");
             if (statusLabel.getTooltip() == null) {
                 statusLabel.setTooltip(new Tooltip(tip));
             } else {
@@ -2764,7 +2767,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     }
                 });
             } catch (Exception e) {
-                setStatus("Could not load feeds: " + e.getMessage());
+                setStatus(Messages.format("status.feeds.load_failed", e.getMessage()));
             }
         });
     }
@@ -2822,7 +2825,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     scrollToCurrentEpisode();
                 });
             } catch (Exception e) {
-                setStatus("Could not load episodes: " + e.getMessage());
+                setStatus(Messages.format("status.episodes.load_failed", e.getMessage()));
             }
         });
     }
@@ -2831,7 +2834,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (url.isEmpty()) {
             return;
         }
-        setStatus("Subscribing to " + url + "…");
+        setStatus(Messages.format("status.subscribe.started", url));
         background.submit(() -> doSubscribe(url));
     }
 
@@ -2840,7 +2843,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (url.isEmpty()) {
             return;
         }
-        setStatus("Subscribing to " + url + "…");
+        setStatus(Messages.format("status.subscribe.started", url));
         spinWhile(button, () -> doSubscribe(url));
     }
 
@@ -2849,17 +2852,17 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             subscribeAndShow(url, null);
         } catch (Exception e) {
             if (FeedUpdater.isAuthRequired(e)) {
-                setStatus("This feed needs a username and password");
+                setStatus(Messages.get("status.subscribe.login_needed"));
                 Platform.runLater(() -> showFeedLoginModal(url));
                 return;
             }
-            setStatus("Subscribe failed: " + e.getMessage());
+            setStatus(Messages.format("status.subscribe.failed", e.getMessage()));
         }
     }
 
     private void subscribeAndShow(String url, FeedCredentials.Login login) throws Exception {
         Feed feed = login != null ? feedUpdater.subscribe(url, login) : feedUpdater.subscribe(url);
-        setStatus("Subscribed to " + feed.getTitle());
+        setStatus(Messages.format("status.subscribed", feed.getTitle()));
         reloadFeeds(feed.getId());
     }
 
@@ -2869,17 +2872,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
      * closing and reopening it handed the focus back to the toolbar field.
      */
     private void showFeedLoginModal(String url) {
-        Label intro = new Label("This feed is password-protected. Premium and supporter feeds"
-                + " usually send the login with the feed link, or show it on your account page.");
+        Label intro = new Label(Messages.get("login.intro"));
         intro.setWrapText(true);
         Label address = new Label(FeedCredentials.withoutUserInfo(url));
         address.getStyleClass().add("muted-label");
         address.setWrapText(true);
         TextField userField = new TextField();
-        userField.setPromptText("Username");
+        userField.setPromptText(Messages.get("login.username.prompt"));
         javafx.scene.control.PasswordField passField = new javafx.scene.control.PasswordField();
-        passField.setPromptText("Password");
-        Button subscribeButton = new Button("Subscribe", Icons.add());
+        passField.setPromptText(Messages.get("login.password.prompt"));
+        Button subscribeButton = new Button(Messages.get("common.subscribe"), Icons.add());
         subscribeButton.setDefaultButton(true);
         VBox pane = new VBox(10, intro, address, userField, passField);
         Runnable submit = () -> {
@@ -2892,20 +2894,19 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 return;
             }
             FeedCredentials.Login login = new FeedCredentials.Login(user, passField.getText());
-            setStatus("Subscribing to " + FeedCredentials.withoutUserInfo(url) + "…");
+            setStatus(Messages.format("status.subscribe.started", FeedCredentials.withoutUserInfo(url)));
             spinWhile(subscribeButton, () -> {
                 try {
                     subscribeAndShow(url, login);
                     Platform.runLater(() -> appShell.getChildren().remove(modalOverlayOf(pane)));
                 } catch (Exception e) {
                     boolean rejected = FeedUpdater.isAuthRequired(e);
-                    setStatus(rejected ? "The feed did not accept that username and password"
-                            : "Subscribe failed: " + e.getMessage());
+                    setStatus(rejected ? Messages.get("status.subscribe.login_rejected")
+                            : Messages.format("status.subscribe.failed", e.getMessage()));
                     Platform.runLater(() -> {
                         intro.setText(rejected
-                                ? "The feed did not accept that username and password."
-                                        + " Check them and try again."
-                                : "Could not subscribe: " + e.getMessage());
+                                ? Messages.get("login.rejected")
+                                : Messages.format("login.failed", e.getMessage()));
                         passField.selectAll();
                         passField.requestFocus();
                     });
@@ -2919,7 +2920,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         buttons.setAlignment(Pos.CENTER_RIGHT);
         pane.getChildren().add(buttons);
         pane.setPadding(new Insets(12));
-        showModal("Feed login", pane);
+        showModal(Messages.get("login.title"), pane);
         Platform.runLater(userField::requestFocus);
     }
 
@@ -2934,7 +2935,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void refreshFeed(Feed feed) {
-        setStatus("Refreshing " + feed.getTitle() + "…");
+        setStatus(Messages.format("status.refresh.feed_started", feed.getTitle()));
         background.submit(() -> doRefreshFeed(feed));
     }
 
@@ -2942,13 +2943,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         try {
             List<FeedItem> added = feedUpdater.refresh(feed);
             autoDownloadNew(feed, added);
-            setStatus("Refreshed " + feed.getTitle() + ": " + added.size() + " new episodes");
+            setStatus(Messages.format("status.refresh.feed_done", feed.getTitle(), added.size()));
             reloadEpisodesIfShowing(feed);
             refreshFeedCounts();
         } catch (Exception e) {
             setStatus(FeedUpdater.isAuthRequired(e)
-                    ? feed.getTitle() + " needs a username and password: add them in Feed settings"
-                    : "Refresh failed: " + e.getMessage());
+                    ? Messages.format("status.refresh.login_needed", feed.getTitle())
+                    : Messages.format("status.refresh.failed", e.getMessage()));
         }
     }
 
@@ -2977,12 +2978,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
             }
         } catch (Exception e) {
-            setStatus("Auto-download failed: " + e.getMessage());
+            setStatus(Messages.format("status.autodownload.failed", e.getMessage()));
         }
     }
 
     private void refreshAll() {
-        setStatus("Refreshing all podcasts…");
+        setStatus(Messages.get("status.refresh.all_started"));
         background.submit(this::doRefreshAll);
     }
 
@@ -2999,8 +3000,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     autoDownloadNew(result.feed, result.newEpisodes);
                 }
             }
-            setStatus("Refresh done: " + total + " new episodes"
-                    + (errors > 0 ? ", " + errors + " failed" : ""));
+            setStatus(errors > 0 ? Messages.format("status.refresh.done_with_errors", total, errors)
+                    : Messages.format("status.refresh.done", total));
             notifyNewEpisodes(results);
             refreshFeedCounts();
             Platform.runLater(() -> {
@@ -3010,7 +3011,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
             });
         } catch (Exception e) {
-            setStatus("Refresh failed: " + e.getMessage());
+            setStatus(Messages.format("status.refresh.failed", e.getMessage()));
         }
     }
 
@@ -3033,7 +3034,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         background.submit(() -> {
             try {
                 feedUpdater.unsubscribe(feed.getId());
-                setStatus("Unsubscribed from " + feed.getTitle());
+                setStatus(Messages.format("status.unsubscribed", feed.getTitle()));
                 Platform.runLater(() -> {
                     // only the open feed's list goes; unsubscribing another one from its context
                     // menu leaves what is shown alone. Forgetting it also stops later reloads
@@ -3042,12 +3043,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                         selectedFeed = null;
                         episodeLoadGeneration++;
                         episodes.clear();
-                        feedTitleLabel.setText("Select a podcast");
+                        feedTitleLabel.setText(Messages.get("episodes.select_podcast"));
                     }
                 });
                 reloadFeeds(null);
             } catch (Exception e) {
-                setStatus("Unsubscribe failed: " + e.getMessage());
+                setStatus(Messages.format("status.unsubscribe.failed", e.getMessage()));
             }
         });
     }
@@ -3057,14 +3058,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             try {
                 int cleared = database.clearNewFlags(feed.getId());
                 if (cleared == 0) {
-                    setStatus("No new episodes in " + feed.getTitle());
+                    setStatus(Messages.format("status.mark_seen.none_in_feed", feed.getTitle()));
                 } else {
-                    setStatus("Marked seen: " + episodeCountText(cleared));
+                    setStatus(Messages.format("status.mark_seen.done", episodeCountText(cleared)));
                 }
                 reloadEpisodesIfShowing(feed);
                 refreshFeedCounts();
             } catch (Exception e) {
-                setStatus("Could not mark episodes as seen: " + e.getMessage());
+                setStatus(Messages.format("status.mark_seen.failed", e.getMessage()));
             }
         });
     }
@@ -3074,29 +3075,30 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             try {
                 int cleared = database.clearAllNewFlags();
                 if (cleared == 0) {
-                    setStatus("No new episodes");
+                    setStatus(Messages.get("status.mark_seen.none"));
                 } else {
-                    setStatus("Marked seen: " + episodeCountText(cleared));
+                    setStatus(Messages.format("status.mark_seen.done", episodeCountText(cleared)));
                 }
                 if (selectedFeed != null) {
                     reloadEpisodesIfShowing(selectedFeed);
                 }
                 refreshFeedCounts();
             } catch (Exception e) {
-                setStatus("Could not mark episodes as seen: " + e.getMessage());
+                setStatus(Messages.format("status.mark_seen.failed", e.getMessage()));
             }
         });
     }
 
     private void importOpml() {
         FileChooser chooser = new FileChooser();
-        chooser.setTitle("Import OPML");
-        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("OPML files", "*.opml", "*.xml"));
+        chooser.setTitle(Messages.get("opml.import.title"));
+        chooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter(Messages.get("opml.filter"), "*.opml", "*.xml"));
         File file = chooser.showOpenDialog(feedList.getScene().getWindow());
         if (file == null) {
             return;
         }
-        setStatus("Importing " + file.getName() + "…");
+        setStatus(Messages.format("status.opml.importing", file.getName()));
         background.submit(() -> {
             // UTF-8 rather than the platform charset; lenient, so a stray byte from an exporter
             // that wrote Latin-1 is replaced instead of failing the whole import
@@ -3104,20 +3106,22 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     new java.io.FileInputStream(file), java.nio.charset.StandardCharsets.UTF_8)) {
                 OpmlImporter.ImportResult result =
                         new OpmlImporter(database, feedUpdater).importFromReader(reader);
-                setStatus("Imported " + result.imported.size() + " feeds"
-                        + (result.failed.isEmpty() ? "" : ", " + result.failed.size() + " failed"));
+                setStatus(result.failed.isEmpty()
+                        ? Messages.format("status.opml.imported", result.imported.size())
+                        : Messages.format("status.opml.imported_with_errors", result.imported.size(),
+                                result.failed.size()));
                 reloadFeeds(null);
             } catch (Exception e) {
-                setStatus("Import failed: " + e.getMessage());
+                setStatus(Messages.format("status.opml.import_failed", e.getMessage()));
             }
         });
     }
 
     private void exportOpml() {
         FileChooser chooser = new FileChooser();
-        chooser.setTitle("Export OPML");
+        chooser.setTitle(Messages.get("opml.export.title"));
         chooser.setInitialFileName("antennapod-subscriptions.opml");
-        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("OPML files", "*.opml"));
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(Messages.get("opml.filter"), "*.opml"));
         File file = chooser.showSaveDialog(feedList.getScene().getWindow());
         if (file == null) {
             return;
@@ -3127,9 +3131,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             try (java.io.Writer writer = java.nio.file.Files.newBufferedWriter(
                     file.toPath(), java.nio.charset.StandardCharsets.UTF_8)) {
                 new OpmlImporter(database, feedUpdater).exportToWriter(writer);
-                setStatus("Exported subscriptions to " + file.getName());
+                setStatus(Messages.format("status.opml.exported", file.getName()));
             } catch (Exception e) {
-                setStatus("Export failed: " + e.getMessage());
+                setStatus(Messages.format("status.opml.export_failed", e.getMessage()));
             }
         });
     }
@@ -3140,52 +3144,51 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
      */
     private void addLocalFolder() {
         javafx.stage.DirectoryChooser chooser = new javafx.stage.DirectoryChooser();
-        chooser.setTitle("Add a folder of audio files");
+        chooser.setTitle(Messages.get("local_folder.chooser_title"));
         File folder = chooser.showDialog(feedList.getScene().getWindow());
         if (folder == null) {
             return;
         }
-        setStatus("Adding " + folder.getName() + "…");
+        setStatus(Messages.format("status.local_folder.adding", folder.getName()));
         background.submit(() -> {
             try {
                 Feed feed = feedUpdater.subscribeLocalFolder(folder);
                 int episodes = feed.getItems() != null ? feed.getItems().size() : 0;
                 setStatus(episodes == 0
-                        ? "Added " + feed.getTitle() + ", but it has no playable files"
-                                + " (MP3, M4A, M4B, AAC, WAV, AIFF or MP4) yet"
-                        : "Added " + feed.getTitle() + ": " + episodeCountText(episodes));
+                        ? Messages.format("status.local_folder.added_empty", feed.getTitle())
+                        : Messages.format("status.local_folder.added", feed.getTitle(), episodeCountText(episodes)));
                 reloadFeeds(feed.getId());
             } catch (Exception e) {
-                setStatus("Could not add the folder: " + e.getMessage());
+                setStatus(Messages.format("status.local_folder.failed", e.getMessage()));
             }
         });
     }
 
     private void backUpProfile(Button button) {
         FileChooser chooser = new FileChooser();
-        chooser.setTitle("Back up AntennaPod Desktop");
+        chooser.setTitle(Messages.get("backup.chooser_title"));
         chooser.setInitialFileName("AntennaPod-backup-"
                 + new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(new Date()) + ".zip");
-        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Backups", "*.zip"));
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(Messages.get("backup.filter"), "*.zip"));
         File file = chooser.showSaveDialog(feedList.getScene().getWindow());
         if (file == null) {
             return;
         }
-        setStatus("Backing up to " + file.getName() + "…");
+        setStatus(Messages.format("status.backup.writing", file.getName()));
         spinWhile(button, () -> {
             try {
                 ProfileBackup.write(database, file, appVersion());
-                setStatus("Backed up to " + file.getAbsolutePath());
+                setStatus(Messages.format("status.backup.done", file.getAbsolutePath()));
             } catch (Exception e) {
-                setStatus("Backup failed: " + e.getMessage());
+                setStatus(Messages.format("status.backup.failed", e.getMessage()));
             }
         });
     }
 
     private void restoreProfile(Button button) {
         FileChooser chooser = new FileChooser();
-        chooser.setTitle("Restore a backup");
-        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Backups", "*.zip"));
+        chooser.setTitle(Messages.get("backup.restore.chooser_title"));
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(Messages.get("backup.filter"), "*.zip"));
         File file = chooser.showOpenDialog(feedList.getScene().getWindow());
         if (file == null) {
             return;
@@ -3196,7 +3199,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 ProfileBackup.Info info = ProfileBackup.stage(file, dataDir);
                 Platform.runLater(() -> confirmRestore(file, info, dataDir));
             } catch (Exception e) {
-                setStatus("Could not restore " + file.getName() + ": " + e.getMessage());
+                setStatus(Messages.format("status.backup.restore_file_failed", file.getName(), e.getMessage()));
             }
         });
     }
@@ -3205,30 +3208,31 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private void confirmRestore(File file, ProfileBackup.Info info, File dataDir) {
         String made = info.createdMs > 0
                 ? new SimpleDateFormat("d MMM yyyy HH:mm", Locale.US).format(new Date(info.createdMs))
-                : "an unknown date";
-        Label text = new Label("\"" + file.getName() + "\" was made on " + made
-                + (info.appVersion.isEmpty() ? "" : " by version " + info.appVersion) + " and holds "
-                + (info.feedCount == 1 ? "1 subscription" : info.feedCount + " subscriptions") + ".\n\n"
-                + "Restoring replaces your whole library and every setting with it. The current"
-                + " library is kept as " + ProfileBackup.REPLACED_DB + " in the data folder."
-                + " AntennaPod restarts to finish.");
+                : Messages.get("backup.restore.unknown_date");
+        String subscriptions = info.feedCount == 1 ? Messages.get("count.subscription.one")
+                : Messages.format("count.subscription.other", info.feedCount);
+        Label text = new Label((info.appVersion.isEmpty()
+                ? Messages.format("backup.restore.confirm", file.getName(), made, subscriptions)
+                : Messages.format("backup.restore.confirm_version", file.getName(), made, info.appVersion,
+                        subscriptions))
+                + "\n\n" + Messages.format("backup.restore.warning", ProfileBackup.REPLACED_DB));
         text.setWrapText(true);
-        Button restart = new Button("Restore and restart");
+        Button restart = new Button(Messages.get("backup.restore.restart"));
         restart.setDefaultButton(true);
-        Button cancel = new Button("Cancel");
+        Button cancel = new Button(Messages.get("common.cancel"));
         cancel.setCancelButton(true);
         VBox pane = new VBox(12, text);
         restart.setOnAction(event -> restartApp());
         cancel.setOnAction(event -> {
             ProfileBackup.cancelPending(dataDir);
             appShell.getChildren().remove(modalOverlayOf(pane));
-            setStatus("Restore cancelled");
+            setStatus(Messages.get("status.backup.restore_cancelled"));
         });
         HBox buttons = new HBox(8, cancel, restart);
         buttons.setAlignment(Pos.CENTER_RIGHT);
         pane.getChildren().add(buttons);
         pane.setPadding(new Insets(12));
-        showModal("Restore backup", pane);
+        showModal(Messages.get("backup.restore.title"), pane);
     }
 
     /**
@@ -3244,11 +3248,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             Process next = builder.start();
             // one that dies at once (a bad command line) must not leave the user with no app
             if (next.waitFor(1500, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-                setStatus("Could not restart: close and reopen AntennaPod to finish");
+                setStatus(Messages.get("status.restart.failed"));
                 return;
             }
         } catch (Exception e) {
-            setStatus("Could not restart (" + e.getMessage() + "): close and reopen AntennaPod to finish");
+            setStatus(Messages.format("status.restart.failed_detail", e.getMessage()));
             return;
         }
         shutdown();
@@ -3290,11 +3294,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                         item.removeTag(FeedItem.TAG_FAVORITE);
                     }
                 }
-                setStatus((favorite ? "Added to favorites: " : "Removed from favorites: ")
-                        + episodeCountText(items));
+                setStatus(favorite ? Messages.format("status.favorites.added", episodeCountText(items))
+                        : Messages.format("status.favorites.removed", episodeCountText(items)));
                 Platform.runLater(this::refilterEpisodes);
             } catch (Exception e) {
-                setStatus("Could not update favorites: " + e.getMessage());
+                setStatus(Messages.format("status.favorites.update_failed", e.getMessage()));
             }
         });
     }
@@ -3317,7 +3321,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                             }
                             Label title = new Label(item.getTitle());
                             title.setWrapText(true);
-                            Button removeButton = new Button("Unfavorite");
+                            Button removeButton = new Button(Messages.get("favorites.unfavorite"));
                             removeButton.setOnAction(event -> background.submit(() -> {
                                 try {
                                     database.setFavorite(item.getId(), false);
@@ -3332,7 +3336,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                                         episodeList.refresh();
                                     });
                                 } catch (Exception e) {
-                                    setStatus("Could not update favorite: " + e.getMessage());
+                                    setStatus(Messages.format("status.favorite.update_failed", e.getMessage()));
                                 }
                             }));
                             HBox row = new HBox(8, title, removeButton);
@@ -3351,10 +3355,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     });
                     VBox pane = new VBox(8, list);
                     pane.setPadding(new Insets(8));
-                    showSidebar("Favorites", pane);
+                    showSidebar(Messages.get("favorites.title"), pane);
                 });
             } catch (Exception e) {
-                setStatus("Could not load favorites: " + e.getMessage());
+                setStatus(Messages.format("status.favorites.load_failed", e.getMessage()));
             }
         });
     }
@@ -3362,9 +3366,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     /** Searches the titles and show notes of every subscription's episodes, as you type. */
     private void showEpisodeSearch() {
         TextField query = new TextField();
-        query.setPromptText("Search all episodes");
+        query.setPromptText(Messages.get("search_all.prompt"));
         ObservableList<FeedItem> items = FXCollections.observableArrayList();
-        Label summary = new Label("Type to search the episodes of every subscription");
+        Label summary = new Label(Messages.get("search_all.hint"));
         summary.getStyleClass().add("muted-label");
         summary.setWrapText(true);
         ListView<FeedItem> list = new ListView<>(items);
@@ -3390,19 +3394,19 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     appendMeta(meta, dateFormat.format(item.getPubDate()));
                 }
                 if (item.isPlayed()) {
-                    appendMeta(meta, "Played");
+                    appendMeta(meta, Messages.get("episodes.meta.played"));
                 }
                 Label metaLabel = new Label(meta.toString());
                 metaLabel.getStyleClass().add("muted-label");
                 VBox texts = new VBox(2, title, metaLabel);
                 texts.setMinWidth(0);
                 HBox.setHgrow(texts, Priority.ALWAYS);
-                Button play = iconButton(Icons.play(), "Play");
+                Button play = iconButton(Icons.play(), Messages.get("common.play"));
                 play.setDisable(item.getMedia() == null);
                 play.setOnAction(event -> playback.play(item, new ArrayList<>(items)));
-                Button queue = iconButton(Icons.queueAdd(), "Add to queue");
+                Button queue = iconButton(Icons.queueAdd(), Messages.get("common.add_to_queue"));
                 queue.setOnAction(event -> enqueueItems(List.of(item)));
-                Button open = iconButton(Icons.navigateAfter(), "Open in its podcast");
+                Button open = iconButton(Icons.navigateAfter(), Messages.get("search_all.open_in_podcast"));
                 open.setOnAction(event -> openInPodcast(item));
                 HBox row = new HBox(8, texts, play, queue, open);
                 row.setAlignment(Pos.CENTER_LEFT);
@@ -3426,7 +3430,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             int mine = ++generation[0];
             if (text.isEmpty()) {
                 items.clear();
-                summary.setText("Type to search the episodes of every subscription");
+                summary.setText(Messages.get("search_all.hint"));
                 return;
             }
             background.submit(() -> {
@@ -3437,13 +3441,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                             return;
                         }
                         items.setAll(found);
-                        summary.setText(found.isEmpty() ? "No episodes match \"" + text + "\""
+                        summary.setText(found.isEmpty() ? Messages.format("search_all.no_match", text)
                                 : found.size() >= EPISODE_SEARCH_LIMIT
-                                        ? "The first " + EPISODE_SEARCH_LIMIT + " matches; type more to narrow them"
-                                        : episodeCountText(found.size()) + " match");
+                                        ? Messages.format("search_all.limited", EPISODE_SEARCH_LIMIT)
+                                        : Messages.format("search_all.found", episodeCountText(found.size())));
                     });
                 } catch (Exception e) {
-                    setStatus("Search failed: " + e.getMessage());
+                    setStatus(Messages.format("status.search.failed", e.getMessage()));
                 }
             });
         });
@@ -3455,7 +3459,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         VBox pane = new VBox(8, query, summary, list);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(list, Priority.ALWAYS);
-        showSidebar("Search all episodes", pane);
+        showSidebar(Messages.get("search_all.title"), pane);
         Platform.runLater(query::requestFocus);
     }
 
@@ -3473,7 +3477,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 return;
             }
         }
-        setStatus("That podcast is no longer subscribed");
+        setStatus(Messages.get("status.podcast_not_subscribed"));
     }
 
     private void showDownloads() {
@@ -3482,7 +3486,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 List<FeedItem> rows = loadDownloadRows();
                 Platform.runLater(() -> showDownloadsPane(rows));
             } catch (Exception e) {
-                setStatus("Could not load downloads: " + e.getMessage());
+                setStatus(Messages.format("status.downloads.load_failed", e.getMessage()));
             }
         });
     }
@@ -3519,7 +3523,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     bytes += Math.max(media.getSize(), 0);
                 }
             }
-            summary.setText(episodeCountText(count) + " downloaded · " + formatSize(bytes));
+            summary.setText(Messages.format("downloads.summary", episodeCountText(count), formatSize(bytes)));
         };
         updateSummary.run();
         Runnable reload = () -> background.submit(() -> {
@@ -3530,7 +3534,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     updateSummary.run();
                 });
             } catch (Exception e) {
-                setStatus("Could not load downloads: " + e.getMessage());
+                setStatus(Messages.format("status.downloads.load_failed", e.getMessage()));
             }
         });
         // the open episode list holds its own copies of these episodes, so it re-reads them too
@@ -3541,7 +3545,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         };
         ListView<FeedItem> list = new ListView<>(items);
-        list.setPlaceholder(new Label("No downloads yet"));
+        list.setPlaceholder(new Label(Messages.get("downloads.empty")));
         list.setCellFactory(view -> fullWidthCell(new ListCell<>() {
             @Override
             protected void updateItem(FeedItem item, boolean empty) {
@@ -3562,14 +3566,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 boolean running = downloader.isDownloading(media.getId());
                 if (running) {
                     Integer percent = downloadProgress.get(media.getId());
-                    appendMeta(meta, "Downloading"
-                            + (percent != null && percent >= 0 ? " " + percent + "%" : "…"));
+                    appendMeta(meta, percent != null && percent >= 0
+                            ? Messages.format("downloads.meta.progress", percent)
+                            : Messages.get("downloads.meta.downloading"));
                 } else {
                     if (media.getSize() > 0) {
                         appendMeta(meta, formatSize(media.getSize()));
                     }
                     if (item.isPlayed()) {
-                        appendMeta(meta, "Played");
+                        appendMeta(meta, Messages.get("episodes.meta.played"));
                     }
                 }
                 Label metaLabel = new Label(meta.toString());
@@ -3579,13 +3584,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 HBox.setHgrow(texts, Priority.ALWAYS);
                 HBox row;
                 if (running) {
-                    Button cancel = iconButton(Icons.stop(), "Cancel download");
+                    Button cancel = iconButton(Icons.stop(), Messages.get("downloads.cancel"));
                     cancel.setOnAction(event -> downloader.cancel(media.getId()));
                     row = new HBox(8, texts, cancel);
                 } else {
-                    Button play = iconButton(Icons.play(), "Play");
+                    Button play = iconButton(Icons.play(), Messages.get("common.play"));
                     play.setOnAction(event -> playback.play(item, new ArrayList<>(items)));
-                    Button delete = iconButton(Icons.remove(), "Delete download");
+                    Button delete = iconButton(Icons.remove(), Messages.get("downloads.delete"));
                     delete.setOnAction(event -> deleteDownloads(List.of(item), afterDelete));
                     row = new HBox(8, texts, play, delete);
                 }
@@ -3603,8 +3608,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
             }
         });
-        Button deletePlayed = new Button("Delete played", Icons.remove());
-        deletePlayed.setTooltip(new Tooltip("Delete the downloads of every played episode"));
+        Button deletePlayed = new Button(Messages.get("downloads.delete_played"), Icons.remove());
+        deletePlayed.setTooltip(new Tooltip(Messages.get("downloads.delete_played.tooltip")));
         deletePlayed.setOnAction(event -> {
             List<FeedItem> played = new ArrayList<>();
             for (FeedItem item : items) {
@@ -3613,7 +3618,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
             }
             if (played.isEmpty()) {
-                setStatus("No played downloads to delete");
+                setStatus(Messages.get("status.downloads.no_played"));
                 return;
             }
             deleteDownloads(played, afterDelete);
@@ -3625,7 +3630,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         VBox pane = new VBox(8, top, list);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(list, Priority.ALWAYS);
-        showSidebar("Downloads", pane);
+        showSidebar(Messages.get("downloads.title"), pane);
         startDownloadsTicker(list, reload);
     }
 
@@ -3641,7 +3646,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         List<Long> lastActive = new ArrayList<>(downloader.activeMediaIds());
         downloadsTicker = new javafx.animation.Timeline(new javafx.animation.KeyFrame(
                 Duration.seconds(1), event -> {
-                    if (!sidebar.isVisible() || !"Downloads".equals(sidebarTitle.getText())
+                    if (!sidebar.isVisible() || !Messages.get("downloads.title").equals(sidebarTitle.getText())
                             || !sidebarContent.getChildren().contains(list.getParent())) {
                         downloadsTicker.stop();
                         return;
@@ -3682,7 +3687,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 FeedCredentials.Login login = database.getFeedCredentials(feed.getId());
                 Platform.runLater(() -> showFeedSettingsDialog(feed, prefs, login));
             } catch (Exception e) {
-                setStatus("Could not load feed settings: " + e.getMessage());
+                setStatus(Messages.format("status.feed_settings.load_failed", e.getMessage()));
             }
         });
     }
@@ -3693,7 +3698,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         grid.setVgap(8);
         grid.setPadding(new Insets(12));
         int row = 0;
-        grid.add(new Label("Playback speed (0 = global):"), 0, row);
+        grid.add(new Label(Messages.get("feed_settings.speed")), 0, row);
         Slider speedSlider = new Slider(0, 2.5, prefs.speed);
         speedSlider.setShowTickLabels(true);
         speedSlider.setShowTickMarks(true);
@@ -3702,26 +3707,27 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         speedSlider.valueProperty().addListener((obs, oldValue, newValue) ->
                 speedValue.setText(speedLabel(newValue.floatValue())));
         grid.add(new HBox(8, speedSlider, speedValue), 1, row++);
-        grid.add(new Label("Auto-download:"), 0, row);
+        grid.add(new Label(Messages.get("feed_settings.auto_download")), 0, row);
         ComboBox<String> downloadBox = triStateBox(prefs.autoDownload);
         grid.add(downloadBox, 1, row++);
-        grid.add(new Label("Auto-delete after playing:"), 0, row);
+        grid.add(new Label(Messages.get("feed_settings.auto_delete")), 0, row);
         ComboBox<String> deleteBox = triStateBox(prefs.autoDelete);
         grid.add(deleteBox, 1, row++);
-        grid.add(new Label("Include filter:"), 0, row);
+        grid.add(new Label(Messages.get("feed_settings.include_filter")), 0, row);
         TextField includeField = new TextField(prefs.includeFilter);
         grid.add(includeField, 1, row++);
-        grid.add(new Label("Exclude filter:"), 0, row);
+        grid.add(new Label(Messages.get("feed_settings.exclude_filter")), 0, row);
         TextField excludeField = new TextField(prefs.excludeFilter);
         grid.add(excludeField, 1, row++);
-        grid.add(new Label("Min duration (minutes, -1 = off):"), 0, row);
+        grid.add(new Label(Messages.get("feed_settings.min_duration")), 0, row);
         TextField minDurationField = new TextField(
                 prefs.minDurationSec < 0 ? "-1" : String.valueOf(prefs.minDurationSec / 60));
         grid.add(minDurationField, 1, row++);
-        grid.add(new Label("Episode order:"), 0, row);
+        grid.add(new Label(Messages.get("feed_settings.sort")), 0, row);
         ComboBox<String> sortBox = new ComboBox<>();
-        sortBox.getItems().addAll("Newest first", "Oldest first", "Shortest first",
-                "Longest first", "Title A-Z");
+        sortBox.getItems().addAll(Messages.get("sort.newest"), Messages.get("sort.oldest"),
+                Messages.get("sort.shortest"),
+                Messages.get("sort.longest"), Messages.get("sort.title"));
         sortBox.setValue(sortLabel(prefs.sortCode));
         grid.add(sortBox, 1, row++);
         // the controls are read here, on the FX thread; the write goes through prefsWriter
@@ -3749,14 +3755,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     stored.excludeFilter = exclude;
                     stored.minDurationSec = minDuration;
                     database.saveFeedPrefs(stored);
-                    setStatus("Feed settings saved");
+                    setStatus(Messages.get("status.feed_settings.saved"));
                     Platform.runLater(() -> {
                         if (selectedFeed != null && selectedFeed.getId() == feed.getId()) {
                             loadEpisodes(feed);
                         }
                     });
                 } catch (Exception e) {
-                    setStatus("Could not save feed settings: " + e.getMessage());
+                    setStatus(Messages.format("status.feed_settings.save_failed", e.getMessage()));
                 }
             });
         };
@@ -3768,19 +3774,19 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         autoSave(minDurationField, save);
         // the order is saved on its own, the same way the episode pane's sort box saves it
         autoSave(sortBox.valueProperty(), () -> saveSortCode(feed, sortCode(sortBox.getValue())));
-        Label savedHint = new Label("Changes are saved automatically.");
+        Label savedHint = new Label(Messages.get("common.saved_automatically"));
         savedHint.setWrapText(true);
         grid.add(savedHint, 0, row++, 2, 1);
         // the login is saved on request, not per keystroke, and is tried out right away
-        grid.add(sectionLabel("Login (password-protected feeds)"), 0, row++, 2, 1);
-        grid.add(new Label("Username:"), 0, row);
+        grid.add(sectionLabel(Messages.get("feed_settings.login_section")), 0, row++, 2, 1);
+        grid.add(new Label(Messages.get("common.username_label")), 0, row);
         TextField userField = new TextField(login != null ? login.username : "");
         grid.add(userField, 1, row++);
-        grid.add(new Label("Password:"), 0, row);
+        grid.add(new Label(Messages.get("common.password_label")), 0, row);
         javafx.scene.control.PasswordField passField = new javafx.scene.control.PasswordField();
         passField.setText(login != null ? login.password : "");
         grid.add(passField, 1, row++);
-        Button saveLogin = new Button("Save login");
+        Button saveLogin = new Button(Messages.get("feed_settings.save_login"));
         saveLogin.setOnAction(event -> {
             String user = userField.getText().trim();
             FeedCredentials.Login entered = user.isEmpty()
@@ -3789,26 +3795,26 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 try {
                     feedUpdater.setCredentials(feed.getId(), entered);
                     if (entered == null) {
-                        setStatus("Login removed from " + feed.getTitle());
+                        setStatus(Messages.format("status.login.removed", feed.getTitle()));
                         return;
                     }
-                    setStatus("Login saved; refreshing " + feed.getTitle() + "…");
+                    setStatus(Messages.format("status.login.saved", feed.getTitle()));
                     doRefreshFeed(feed);
                 } catch (Exception e) {
-                    setStatus("Could not save the login: " + e.getMessage());
+                    setStatus(Messages.format("status.login.save_failed", e.getMessage()));
                 }
             });
         });
-        Label loginHint = new Label("Leave the username empty to remove the login.");
+        Label loginHint = new Label(Messages.get("feed_settings.login_hint"));
         loginHint.getStyleClass().add("muted-label");
         loginHint.setWrapText(true);
         grid.add(new HBox(8, saveLogin), 1, row++);
         grid.add(loginHint, 1, row++);
-        showSidebar("Feed settings: " + feed.getTitle(), new VBox(grid));
+        showSidebar(Messages.format("feed_settings.title", feed.getTitle()), new VBox(grid));
     }
 
     private static String speedLabel(float speed) {
-        return speed <= 0 ? "global" : String.format(Locale.US, "%.2fx", speed);
+        return speed <= 0 ? Messages.get("feed_settings.speed.global") : String.format(Locale.US, "%.2fx", speed);
     }
 
     /** The one way silence skipping is switched: player bar, tray or taskbar thumbnail. */
@@ -3819,14 +3825,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             trayManager.updateSilenceSkipping(enabled);
         }
         windowsTaskbar.setSilenceSkipping(enabled);
-        setStatus(enabled ? "Skip silence enabled" : "Skip silence disabled");
+        setStatus(enabled ? Messages.get("status.skip_silence.enabled") : Messages.get("status.skip_silence.disabled"));
     }
 
     private void updateSilenceButtonTooltip() {
         if (silenceButton != null) {
             boolean enabled = DesktopPreferences.getSkipSilence();
             silenceButton.setTooltip(new Tooltip(enabled
-                    ? "Skip silence: on" : "Skip silence: off"));
+                    ? Messages.get("player.skip_silence.on") : Messages.get("player.skip_silence.off")));
             silenceButton.setOpacity(enabled ? 1.0 : 0.55);
         }
     }
@@ -3847,9 +3853,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         return closest;
     }
 
-    private static final String THEME_LABEL_AUTO = "Auto (follow system)";
-    private static final String THEME_LABEL_LIGHT = "Light";
-    private static final String THEME_LABEL_DARK = "Dark";
+    private static final String THEME_LABEL_AUTO = Messages.get("settings.theme.auto");
+    private static final String THEME_LABEL_LIGHT = Messages.get("settings.theme.light");
+    private static final String THEME_LABEL_DARK = Messages.get("settings.theme.dark");
     private static final String[] THEME_OPTIONS =
             {THEME_LABEL_AUTO, THEME_LABEL_LIGHT, THEME_LABEL_DARK};
 
@@ -3875,36 +3881,48 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private static ComboBox<String> triStateBox(int value) {
         ComboBox<String> box = new ComboBox<>();
-        box.getItems().addAll("Use global setting", "On", "Off");
-        box.setValue(value == FeedPrefs.ON ? "On" : (value == FeedPrefs.OFF ? "Off" : "Use global setting"));
+        box.getItems().addAll(Messages.get("feed_settings.tristate.global"),
+                Messages.get("feed_settings.tristate.on"), Messages.get("feed_settings.tristate.off"));
+        box.setValue(value == FeedPrefs.ON ? Messages.get("feed_settings.tristate.on")
+                : (value == FeedPrefs.OFF ? Messages.get("feed_settings.tristate.off")
+                        : Messages.get("feed_settings.tristate.global")));
         return box;
     }
 
     private static int triStateValue(String value) {
-        return "On".equals(value) ? FeedPrefs.ON : ("Off".equals(value) ? FeedPrefs.OFF : FeedPrefs.USE_GLOBAL);
+        return Messages.get("feed_settings.tristate.on").equals(value) ? FeedPrefs.ON
+                : (Messages.get("feed_settings.tristate.off").equals(value) ? FeedPrefs.OFF : FeedPrefs.USE_GLOBAL);
     }
 
     private static String sortLabel(String code) {
         if (code == null) {
-            return "Newest first";
+            return Messages.get("sort.newest");
         }
         switch (code) {
-            case "oldest": return "Oldest first";
-            case "shortest": return "Shortest first";
-            case "longest": return "Longest first";
-            case "title": return "Title A-Z";
-            default: return "Newest first";
+            case "oldest": return Messages.get("sort.oldest");
+            case "shortest": return Messages.get("sort.shortest");
+            case "longest": return Messages.get("sort.longest");
+            case "title": return Messages.get("sort.title");
+            default: return Messages.get("sort.newest");
         }
     }
 
     private static String sortCode(String label) {
-        switch (label) {
-            case "Oldest first": return "oldest";
-            case "Shortest first": return "shortest";
-            case "Longest first": return "longest";
-            case "Title A-Z": return "title";
-            default: return "newest";
+        // the labels come from the bundle, so they cannot be switch cases; equals on the label
+        // keeps the old switch's NullPointerException for a null label
+        if (label.equals(Messages.get("sort.oldest"))) {
+            return "oldest";
         }
+        if (label.equals(Messages.get("sort.shortest"))) {
+            return "shortest";
+        }
+        if (label.equals(Messages.get("sort.longest"))) {
+            return "longest";
+        }
+        if (label.equals(Messages.get("sort.title"))) {
+            return "title";
+        }
+        return "newest";
     }
 
     private void showHistory() {
@@ -3939,22 +3957,22 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                             }
                         }
                     });
-                    Button clearButton = new Button("Clear history");
+                    Button clearButton = new Button(Messages.get("history.clear"));
                     clearButton.setOnAction(event -> background.submit(() -> {
                         try {
                             database.clearPlaybackHistory();
                             Platform.runLater(items::clear);
                         } catch (Exception e) {
-                            setStatus("Could not clear history: " + e.getMessage());
+                            setStatus(Messages.format("status.history.clear_failed", e.getMessage()));
                         }
                     }));
                     VBox pane = new VBox(8, list, clearButton);
                     pane.setPadding(new Insets(8));
                     VBox.setVgrow(list, Priority.ALWAYS);
-                    showSidebar("Playback history", pane);
+                    showSidebar(Messages.get("history.title"), pane);
                 });
             } catch (Exception e) {
-                setStatus("Could not load history: " + e.getMessage());
+                setStatus(Messages.format("status.history.load_failed", e.getMessage()));
             }
         });
     }
@@ -3977,20 +3995,20 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     totalDownloaded += row.downloaded;
                     totalSize += row.downloadSizeBytes;
                 }
-                lines.add("Listened: " + formatDuration(totalPlayed)
-                        + " of " + formatDuration(totalTime));
-                lines.add("Episodes: " + totalEpisodes + " · Downloaded: " + totalDownloaded
-                        + " (" + formatSize(totalSize) + ")");
+                lines.add(Messages.format("stats.listened", formatDuration(totalPlayed),
+                        formatDuration(totalTime)));
+                lines.add(Messages.format("stats.totals", totalEpisodes, totalDownloaded,
+                        formatSize(totalSize)));
                 lines.add("");
-                lines.add("Per podcast:");
+                lines.add(Messages.get("stats.per_podcast"));
                 for (DesktopDatabase.FeedStatistics row : feeds) {
-                    lines.add((row.feedTitle != null ? row.feedTitle : "?") + ": "
-                            + formatDuration(row.playedTimeMs) + " listened, "
-                            + row.episodes + " episodes, " + row.unplayed + " unplayed");
+                    lines.add(Messages.format("stats.podcast_row",
+                            row.feedTitle != null ? row.feedTitle : "?",
+                            formatDuration(row.playedTimeMs), row.episodes, row.unplayed));
                 }
                 if (!months.isEmpty()) {
                     lines.add("");
-                    lines.add("By month:");
+                    lines.add(Messages.get("stats.by_month"));
                     for (DesktopDatabase.MonthlyStatistics month : months) {
                         lines.add(month.month + ": " + formatDuration(month.playedTimeMs));
                     }
@@ -3999,10 +4017,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     ListView<String> list = new ListView<>(FXCollections.observableArrayList(lines));
                     VBox pane = new VBox(8, list);
                     pane.setPadding(new Insets(8));
-                    showSidebar("Statistics", pane);
+                    showSidebar(Messages.get("stats.title"), pane);
                 });
             } catch (Exception e) {
-                setStatus("Could not load statistics: " + e.getMessage());
+                setStatus(Messages.format("status.stats.load_failed", e.getMessage()));
             }
         });
     }
@@ -4027,58 +4045,55 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         // ---- General: appearance, window behaviour, updates ---------------
         javafx.scene.layout.GridPane grid = settingsGrid();
         int row = 0;
-        grid.add(sectionLabel("Appearance"), 0, row++, 2, 1);
-        grid.add(new Label("Theme:"), 0, row);
+        grid.add(sectionLabel(Messages.get("settings.section.appearance")), 0, row++, 2, 1);
+        grid.add(new Label(Messages.get("settings.theme")), 0, row);
         ComboBox<String> themeBox = new ComboBox<>();
         themeBox.getItems().addAll(THEME_OPTIONS);
         themeBox.setValue(themeModeLabel(DesktopPreferences.getThemeMode()));
         grid.add(themeBox, 1, row++);
-        grid.add(sectionLabel("Window"), 0, row++, 2, 1);
+        grid.add(sectionLabel(Messages.get("settings.section.window")), 0, row++, 2, 1);
         javafx.scene.control.CheckBox closeToTrayBox = new javafx.scene.control.CheckBox(
-                "Keep running in the system tray when the window is closed");
+                Messages.get("settings.close_to_tray"));
         closeToTrayBox.setSelected(DesktopPreferences.getCloseToTray());
         grid.add(closeToTrayBox, 0, row++, 2, 1);
         javafx.scene.control.CheckBox mediaKeysBox = new javafx.scene.control.CheckBox(
-                "Let the keyboard's media keys control playback from any window");
+                Messages.get("settings.media_keys"));
         mediaKeysBox.setSelected(DesktopPreferences.getMediaKeysEnabled());
         mediaKeysBox.setDisable(!MediaKeys.isEnabled());
-        mediaKeysBox.setTooltip(new Tooltip("Play/pause, next, previous and stop. Key presses "
-                + "follow whichever player is currently active through the system media card, "
-                + "so turning this off just ignores them here and leaves them to other players."));
+        mediaKeysBox.setTooltip(new Tooltip(Messages.get("settings.media_keys.tooltip")));
         grid.add(mediaKeysBox, 0, row++, 2, 1);
         javafx.scene.control.CheckBox withWindowsBox = new javafx.scene.control.CheckBox(
-                "Start with Windows, in the tray");
+                Messages.get("settings.start_with_windows"));
         withWindowsBox.setSelected(StartupRegistration.isEnabled());
         withWindowsBox.setDisable(!StartupRegistration.isAvailable());
         withWindowsBox.setTooltip(new Tooltip(StartupRegistration.isAvailable()
-                ? "Starts AntennaPod when you sign in, without opening its window"
-                : "Only the installed or unzipped app can start with Windows, not a run from source"));
+                ? Messages.get("settings.start_with_windows.tooltip")
+                : Messages.get("settings.start_with_windows.unavailable")));
         withWindowsBox.selectedProperty().addListener((obs, was, on) -> {
             if (!StartupRegistration.setEnabled(on)) {
-                setStatus("Could not change the Windows startup entry");
+                setStatus(Messages.get("status.startup.change_failed"));
                 withWindowsBox.setSelected(StartupRegistration.isEnabled());
             } else {
-                setStatus(on ? "AntennaPod starts with Windows, in the tray"
-                        : "AntennaPod no longer starts with Windows");
+                setStatus(on ? Messages.get("status.startup.enabled")
+                        : Messages.get("status.startup.disabled"));
             }
         });
         grid.add(withWindowsBox, 0, row++, 2, 1);
         javafx.scene.control.CheckBox notifyBox = new javafx.scene.control.CheckBox(
-                "Show a notification when a refresh finds new episodes");
+                Messages.get("settings.notify"));
         notifyBox.setSelected(DesktopPreferences.getNotifyNewEpisodes());
-        notifyBox.setTooltip(new Tooltip("After refreshing every podcast, by hand or on the schedule;"
-                + " notifications need the tray icon"));
+        notifyBox.setTooltip(new Tooltip(Messages.get("settings.notify.tooltip")));
         notifyBox.selectedProperty().addListener((obs, was, on) -> DesktopPreferences.setNotifyNewEpisodes(on));
         grid.add(notifyBox, 0, row++, 2, 1);
-        grid.add(sectionLabel("Updates"), 0, row++, 2, 1);
-        Label versionLabel = new Label("Version " + appVersion());
+        grid.add(sectionLabel(Messages.get("settings.section.updates")), 0, row++, 2, 1);
+        Label versionLabel = new Label(Messages.format("settings.version", appVersion()));
         versionLabel.getStyleClass().add("muted-label");
         grid.add(versionLabel, 0, row++, 2, 1);
         javafx.scene.control.CheckBox updateCheckBox =
-                new javafx.scene.control.CheckBox("Check for updates on startup");
+                new javafx.scene.control.CheckBox(Messages.get("settings.update_check"));
         updateCheckBox.setSelected(DesktopPreferences.getUpdateCheckEnabled());
         grid.add(updateCheckBox, 0, row++, 2, 1);
-        Button checkUpdatesButton = new Button("Check for updates");
+        Button checkUpdatesButton = new Button(Messages.get("settings.check_updates"));
         checkUpdatesButton.setOnAction(event -> {
             // a check the user asked for reports whatever it finds, and offers a skipped release
             // again, because asking for it is the point
@@ -4086,151 +4101,148 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             background.submit(() -> checkForUpdates(true));
         });
         grid.add(checkUpdatesButton, 0, row++, 2, 1);
-        grid.add(sectionLabel("Data"), 0, row++, 2, 1);
+        grid.add(sectionLabel(Messages.get("settings.section.data")), 0, row++, 2, 1);
         File dataDir = DesktopPreferences.getDataDir();
         boolean portable = DesktopPreferences.getPortableDir() != null;
-        Label dataLabel = new Label((portable ? "Portable mode: library, downloads and settings are in "
-                : "Library and downloads are in ") + dataDir.getAbsolutePath()
-                + (portable ? "" : ". Settings are kept in the Windows registry; to carry everything in"
-                        + " one folder instead, create a folder named \"" + DesktopPreferences.PORTABLE_FOLDER
-                        + "\" next to AntennaPod-Desktop.exe."));
+        Label dataLabel = new Label(portable
+                ? Messages.format("settings.data.portable", dataDir.getAbsolutePath())
+                : Messages.format("settings.data.installed", dataDir.getAbsolutePath(),
+                        DesktopPreferences.PORTABLE_FOLDER));
         dataLabel.getStyleClass().add("muted-label");
         dataLabel.setWrapText(true);
         grid.add(dataLabel, 0, row++, 2, 1);
-        Button openDataButton = new Button("Open data folder", Icons.folder());
+        Button openDataButton = new Button(Messages.get("settings.open_data_folder"), Icons.folder());
         openDataButton.setOnAction(event -> getHostServices().showDocument(dataDir.toURI().toString()));
-        Button backupButton = new Button("Back up…", Icons.upload());
-        backupButton.setTooltip(new Tooltip("Save subscriptions, positions, history, favorites,"
-                + " queue, feed settings and every setting to one file"));
+        Button backupButton = new Button(Messages.get("settings.backup"), Icons.upload());
+        backupButton.setTooltip(new Tooltip(Messages.get("settings.backup.tooltip")));
         backupButton.setOnAction(event -> backUpProfile(backupButton));
-        Button restoreButton = new Button("Restore…", Icons.download());
-        restoreButton.setTooltip(new Tooltip("Replace the library and settings with a backup"));
+        Button restoreButton = new Button(Messages.get("settings.restore"), Icons.download());
+        restoreButton.setTooltip(new Tooltip(Messages.get("settings.restore.tooltip")));
         restoreButton.setOnAction(event -> restoreProfile(restoreButton));
         grid.add(new HBox(8, backupButton, restoreButton, openDataButton), 0, row++, 2, 1);
-        Label backupHint = new Label("A backup holds everything except downloaded files, including"
-                + " your sync and feed logins, so keep it somewhere private.");
+        Label backupHint = new Label(Messages.get("settings.backup.hint"));
         backupHint.getStyleClass().add("muted-label");
         backupHint.setWrapText(true);
         grid.add(backupHint, 0, row++, 2, 1);
-        tabs.getTabs().add(settingsTab("General", grid));
+        tabs.getTabs().add(settingsTab(Messages.get("settings.tab.general"), grid));
 
         // ---- Playback ------------------------------------------------------
         grid = settingsGrid();
         row = 0;
-        grid.add(sectionLabel("Playback"), 0, row++, 2, 1);
-        grid.add(new Label("Default speed:"), 0, row);
+        grid.add(sectionLabel(Messages.get("settings.section.playback")), 0, row++, 2, 1);
+        grid.add(new Label(Messages.get("settings.default_speed")), 0, row);
         ComboBox<String> settingsSpeedBox = new ComboBox<>();
         settingsSpeedBox.getItems().addAll(SPEED_OPTIONS);
         settingsSpeedBox.setValue(closestSpeed(DesktopPreferences.getPlaybackSpeed()));
         grid.add(settingsSpeedBox, 1, row++);
-        grid.add(new Label("Skip intro (seconds):"), 0, row);
+        grid.add(new Label(Messages.get("settings.skip_intro")), 0, row);
         TextField introField = new TextField(String.valueOf(DesktopPreferences.getSkipIntroSec()));
         grid.add(introField, 1, row++);
-        grid.add(new Label("Skip ending (seconds):"), 0, row);
+        grid.add(new Label(Messages.get("settings.skip_ending")), 0, row);
         TextField endingField = new TextField(String.valueOf(DesktopPreferences.getSkipEndingSec()));
         grid.add(endingField, 1, row++);
-        grid.add(new Label("Skip back (seconds):"), 0, row);
+        grid.add(new Label(Messages.get("settings.skip_back")), 0, row);
         TextField skipBackField = new TextField(String.valueOf(DesktopPreferences.getSkipBackSec()));
         grid.add(skipBackField, 1, row++);
-        grid.add(new Label("Skip forward (seconds):"), 0, row);
+        grid.add(new Label(Messages.get("settings.skip_forward")), 0, row);
         TextField skipForwardField =
                 new TextField(String.valueOf(DesktopPreferences.getSkipForwardSec()));
         grid.add(skipForwardField, 1, row++);
-        grid.add(new Label("Volume boost (dB, 0 = off):"), 0, row);
+        grid.add(new Label(Messages.get("settings.volume_boost")), 0, row);
         Slider boostSlider = new Slider(0, 12, DesktopPreferences.getVolumeBoostDb());
         boostSlider.setShowTickLabels(true);
         boostSlider.setMajorTickUnit(3);
         boostSlider.setSnapToTicks(true);
         grid.add(boostSlider, 1, row++);
-        tabs.getTabs().add(settingsTab("Playback", grid));
+        tabs.getTabs().add(settingsTab(Messages.get("settings.tab.playback"), grid));
 
         // ---- Downloads: download defaults and the episode cache ------------
         grid = settingsGrid();
         row = 0;
-        grid.add(sectionLabel("Downloads"), 0, row++, 2, 1);
+        grid.add(sectionLabel(Messages.get("settings.section.downloads")), 0, row++, 2, 1);
         javafx.scene.control.CheckBox downloadBox =
-                new javafx.scene.control.CheckBox("Auto-download new episodes by default");
+                new javafx.scene.control.CheckBox(Messages.get("settings.auto_download_default"));
         downloadBox.setSelected(DesktopPreferences.getAutoDownloadDefault());
         grid.add(downloadBox, 0, row++, 2, 1);
         javafx.scene.control.CheckBox deleteBox =
-                new javafx.scene.control.CheckBox("Delete episode files after playing by default");
+                new javafx.scene.control.CheckBox(Messages.get("settings.auto_delete_default"));
         deleteBox.setSelected(DesktopPreferences.getAutoDeleteDefault());
         grid.add(deleteBox, 0, row++, 2, 1);
-        Button openMediaButton = new Button("Open media folder");
+        Button openMediaButton = new Button(Messages.get("settings.open_media_folder"));
         openMediaButton.setOnAction(event ->
                 getHostServices().showDocument(DesktopPreferences.getMediaDir().toURI().toString()));
         grid.add(openMediaButton, 0, row++, 2, 1);
-        grid.add(sectionLabel("Episode cache"), 0, row++, 2, 1);
+        grid.add(sectionLabel(Messages.get("settings.section.cache")), 0, row++, 2, 1);
         javafx.scene.control.CheckBox cacheBox =
-                new javafx.scene.control.CheckBox("Cache episodes while they play");
+                new javafx.scene.control.CheckBox(Messages.get("settings.cache.enabled"));
         cacheBox.setSelected(DesktopPreferences.getEpisodeCacheEnabled());
         grid.add(cacheBox, 0, row++, 2, 1);
         javafx.scene.control.CheckBox cacheFinishBox =
-                new javafx.scene.control.CheckBox("Remove episodes from the cache when finished");
+                new javafx.scene.control.CheckBox(Messages.get("settings.cache.remove_finished"));
         cacheFinishBox.setSelected(DesktopPreferences.getEpisodeCacheRemoveAfterFinish());
         grid.add(cacheFinishBox, 0, row++, 2, 1);
-        grid.add(new Label("Cache limit (MB, 0 = no limit):"), 0, row);
+        grid.add(new Label(Messages.get("settings.cache.limit")), 0, row);
         TextField cacheLimitField = new TextField(String.valueOf(DesktopPreferences.getEpisodeCacheLimitMb()));
         grid.add(cacheLimitField, 1, row++);
-        grid.add(new Label("Prefetch episodes ahead (0 = off):"), 0, row);
+        grid.add(new Label(Messages.get("settings.cache.prefetch")), 0, row);
         TextField cachePrefetchField =
                 new TextField(String.valueOf(DesktopPreferences.getEpisodeCachePrefetchCount()));
         grid.add(cachePrefetchField, 1, row++);
-        Label cacheUsageLabel = new Label("Checking cache…");
+        Label cacheUsageLabel = new Label(Messages.get("settings.cache.checking"));
         grid.add(cacheUsageLabel, 0, row++, 2, 1);
         Runnable refreshCacheUsage = () -> background.submit(() -> {
             long used = episodeCache.sizeBytes();
             int limitMb = DesktopPreferences.getEpisodeCacheLimitMb();
-            String limitText = limitMb > 0 ? formatSize(limitMb * 1024L * 1024L) : "no limit";
-            String usage = "Using " + formatSize(used) + " of " + limitText
-                    + " (" + episodeCache.count() + " episodes)";
+            String limitText = limitMb > 0 ? formatSize(limitMb * 1024L * 1024L) : Messages.get("settings.cache.no_limit");
+            String usage = Messages.format("settings.cache.usage", formatSize(used), limitText,
+                    episodeCache.count());
             Platform.runLater(() -> cacheUsageLabel.setText(usage));
         });
         refreshCacheUsage.run();
-        Button clearCacheButton = new Button("Clear episode cache");
+        Button clearCacheButton = new Button(Messages.get("settings.cache.clear"));
         clearCacheButton.setOnAction(event -> background.submit(() -> {
             int removed = episodeCache.clear();
-            setStatus("Cleared episode cache: "
-                    + (removed == 1 ? "1 episode" : removed + " episodes"));
+            setStatus(Messages.format("status.cache.cleared", removed == 1
+                    ? Messages.get("count.episode.one") : Messages.format("count.episode.other", removed)));
             refreshCacheUsage.run();
             Platform.runLater(episodeList::refresh);
         }));
         grid.add(clearCacheButton, 0, row++, 2, 1);
-        Button openCacheButton = new Button("Open cache folder");
+        Button openCacheButton = new Button(Messages.get("settings.cache.open_folder"));
         openCacheButton.setOnAction(event ->
                 getHostServices().showDocument(DesktopPreferences.getEpisodeCacheDir().toURI().toString()));
         grid.add(openCacheButton, 0, row++, 2, 1);
-        tabs.getTabs().add(settingsTab("Downloads", grid));
+        tabs.getTabs().add(settingsTab(Messages.get("settings.tab.downloads"), grid));
 
         // ---- Network: refresh schedule and proxy ----------------------------
         grid = settingsGrid();
         row = 0;
-        grid.add(sectionLabel("Refresh"), 0, row++, 2, 1);
+        grid.add(sectionLabel(Messages.get("settings.section.refresh")), 0, row++, 2, 1);
         javafx.scene.control.CheckBox startupBox =
-                new javafx.scene.control.CheckBox("Refresh all on startup");
+                new javafx.scene.control.CheckBox(Messages.get("settings.refresh_startup"));
         startupBox.setSelected(DesktopPreferences.getAutoRefreshStartup());
         grid.add(startupBox, 0, row++, 2, 1);
-        grid.add(new Label("Auto-refresh every (minutes, 0 = off):"), 0, row);
+        grid.add(new Label(Messages.get("settings.refresh_interval")), 0, row);
         TextField intervalField = new TextField(String.valueOf(DesktopPreferences.getAutoRefreshMinutes()));
         grid.add(intervalField, 1, row++);
-        grid.add(sectionLabel("Proxy (empty host = direct connection)"), 0, row++, 2, 1);
-        grid.add(new Label("Host:"), 0, row);
+        grid.add(sectionLabel(Messages.get("settings.section.proxy")), 0, row++, 2, 1);
+        grid.add(new Label(Messages.get("common.host_label")), 0, row);
         TextField proxyHost = new TextField(DesktopPreferences.getProxyHost());
         grid.add(proxyHost, 1, row++);
-        grid.add(new Label("Port:"), 0, row);
+        grid.add(new Label(Messages.get("settings.proxy_port")), 0, row);
         TextField proxyPort = new TextField(String.valueOf(DesktopPreferences.getProxyPort()));
         grid.add(proxyPort, 1, row++);
-        grid.add(new Label("Username:"), 0, row);
+        grid.add(new Label(Messages.get("common.username_label")), 0, row);
         TextField proxyUser = new TextField(DesktopPreferences.getProxyUser());
         grid.add(proxyUser, 1, row++);
-        grid.add(new Label("Password:"), 0, row);
+        grid.add(new Label(Messages.get("common.password_label")), 0, row);
         javafx.scene.control.PasswordField proxyPass = new javafx.scene.control.PasswordField();
         proxyPass.setText(DesktopPreferences.getProxyPassword());
         grid.add(proxyPass, 1, row++);
-        tabs.getTabs().add(settingsTab("Network", grid));
+        tabs.getTabs().add(settingsTab(Messages.get("settings.tab.network"), grid));
         tabs.getTabs().add(buildLogsTab());
 
-        Label savedLabel = new Label("Changes are saved automatically.");
+        Label savedLabel = new Label(Messages.get("common.saved_automatically"));
         savedLabel.setWrapText(true);
         Runnable save = () -> {
             try {
@@ -4267,10 +4279,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 scheduleAutoRefresh();
                 ThemeManager.applySavedMode();
                 savedLabel.setText(
-                        "Saved — speed/skip/silence/boost apply to newly started playback.");
-                setStatus("Settings saved");
+                        Messages.get("settings.saved_note"));
+                setStatus(Messages.get("status.settings.saved"));
             } catch (Exception e) {
-                savedLabel.setText("Could not save: " + e.getMessage());
+                savedLabel.setText(Messages.format("settings.save_failed", e.getMessage()));
             }
         };
         autoSave(themeBox.valueProperty(), save);
@@ -4299,7 +4311,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         VBox.setVgrow(tabs, Priority.ALWAYS);
         HBox savedBar = new HBox(savedLabel);
         savedBar.setPadding(new Insets(6, 12, 10, 12));
-        showModal("Settings", new VBox(tabs, savedBar));
+        showModal(Messages.get("settings.title"), new VBox(tabs, savedBar));
     }
 
     /** A fresh grid for one settings tab. */
@@ -4334,16 +4346,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 String selected = list.getSelectionModel().getSelectedItem();
                 if (selected != null) {
                     copyText(selected);
-                    setStatus("Log line copied to clipboard");
+                    setStatus(Messages.get("status.log.line_copied"));
                 }
             }
         });
-        Label hint = new Label("Newest first · double-click a row to copy it");
+        Label hint = new Label(Messages.get("settings.logs.hint"));
         hint.getStyleClass().add("muted-label");
-        Button copyAll = new Button("Copy all");
+        Button copyAll = new Button(Messages.get("settings.logs.copy_all"));
         copyAll.setOnAction(event -> {
             copyText(String.join("\n", items));
-            setStatus("Log copied to clipboard (" + items.size() + " rows)");
+            setStatus(Messages.format("status.log.copied", items.size()));
         });
         HBox header = new HBox(8, hint, copyAll);
         header.setAlignment(Pos.CENTER_LEFT);
@@ -4351,7 +4363,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         VBox pane = new VBox(8, header, list);
         pane.setPadding(new Insets(12));
         VBox.setVgrow(list, Priority.ALWAYS);
-        Tab tab = new Tab("Logs", pane);
+        Tab tab = new Tab(Messages.get("settings.tab.logs"), pane);
         tab.setClosable(false);
         return tab;
     }
@@ -4447,10 +4459,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         meta.setPadding(new Insets(8, 8, 0, 8));
         WebView webView = new WebView();
         showHtml(webView, Shownotes.toPage(item.getTitle(), item.getDescription(), ThemeManager.isDark()));
-        Button websiteButton = new Button("Open episode website");
+        Button websiteButton = new Button(Messages.get("episode.website"));
         websiteButton.setDisable(item.getLink() == null || item.getLink().isEmpty());
         websiteButton.setOnAction(event -> getHostServices().showDocument(item.getLink()));
-        Button transcriptButton = new Button("Transcript");
+        Button transcriptButton = new Button(Messages.get("episode.transcript"));
         transcriptButton.setDisable(item.getTranscriptUrl() == null || item.getTranscriptUrl().isEmpty());
         transcriptButton.setOnAction(event -> showTranscript(item));
         HBox buttons = new HBox(8, websiteButton, transcriptButton);
@@ -4477,7 +4489,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     continue;
                 }
                 String label = funding.content != null && !funding.content.isBlank()
-                        ? funding.content.trim() : "Support this podcast";
+                        ? funding.content.trim() : Messages.get("episode.support");
                 Button support = new Button(label, Icons.favorite());
                 support.setTooltip(new Tooltip(funding.url));
                 support.setOnAction(event -> getHostServices().showDocument(funding.url));
@@ -4486,16 +4498,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         java.util.List<de.danoeh.antennapod.model.feed.Soundbite> soundbites = item.getSoundbites();
         if (soundbites != null && !soundbites.isEmpty() && item.getMedia() != null) {
-            Label bitesLabel = new Label("Soundbites");
+            Label bitesLabel = new Label(Messages.get("episode.soundbites"));
             bitesLabel.setStyle("-fx-font-weight: bold;");
             bitesLabel.setPadding(new Insets(4, 8, 0, 8));
             VBox bites = new VBox(4);
             bites.setPadding(new Insets(0, 8, 0, 8));
             for (de.danoeh.antennapod.model.feed.Soundbite soundbite : soundbites) {
                 Button play = new Button(formatDuration(soundbite.startMs) + " · "
-                        + (soundbite.title.isEmpty() ? formatDuration(soundbite.durationMs) + " highlight"
+                        + (soundbite.title.isEmpty() ? Messages.format("episode.soundbite.highlight", formatDuration(soundbite.durationMs))
                                 : soundbite.title), Icons.play());
-                play.setTooltip(new Tooltip("Play from " + formatDuration(soundbite.startMs)));
+                play.setTooltip(new Tooltip(Messages.format("episode.soundbite.play_from", formatDuration(soundbite.startMs))));
                 play.setOnAction(event -> seekToChapter(item, soundbite.startMs));
                 bites.getChildren().add(play);
             }
@@ -4504,7 +4516,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         List<de.danoeh.antennapod.model.feed.Chapter> chapters = item.getChapters();
         if (chapters != null && !chapters.isEmpty()) {
-            Label chaptersLabel = new Label("Chapters");
+            Label chaptersLabel = new Label(Messages.get("episode.chapters"));
             chaptersLabel.setStyle("-fx-font-weight: bold;");
             chaptersLabel.setPadding(new Insets(4, 8, 0, 8));
             ListView<de.danoeh.antennapod.model.feed.Chapter> chapterList =
@@ -4535,7 +4547,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             pane.getChildren().add(pane.getChildren().size() - 1, chapterList);
         }
         VBox.setVgrow(webView, Priority.ALWAYS);
-        showSidebar(item.getTitle() != null ? item.getTitle() : "Episode", pane);
+        showSidebar(item.getTitle() != null ? item.getTitle() : Messages.get("episode.title_fallback"), pane);
     }
 
     /** "Hosts: Ada · Guests: Grace" with each name a link when the feed gives one. */
@@ -4580,7 +4592,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void showTranscript(FeedItem item) {
-        setStatus("Loading transcript…");
+        setStatus(Messages.get("status.transcript.loading"));
         background.submit(() -> {
             try {
                 de.danoeh.antennapod.model.feed.Transcript transcript = TranscriptFetcher.fetch(item);
@@ -4618,10 +4630,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     });
                     VBox pane = new VBox(8, list);
                     pane.setPadding(new Insets(8));
-                    showSidebar("Transcript: " + item.getTitle(), pane);
+                    showSidebar(Messages.format("transcript.title", item.getTitle()), pane);
                 });
             } catch (Exception e) {
-                setStatus("Could not load transcript: " + e.getMessage());
+                setStatus(Messages.format("status.transcript.load_failed", e.getMessage()));
             }
         });
     }
@@ -4638,22 +4650,22 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private void showSyncDialog() {
         ComboBox<String> providerBox = new ComboBox<>();
-        providerBox.getItems().addAll("Disabled", "gPodder.net", "Nextcloud");
+        providerBox.getItems().addAll(Messages.get("sync.provider.disabled"), "gPodder.net", "Nextcloud");
         String provider = DesktopPreferences.getSyncProvider();
         providerBox.setValue("nextcloud".equals(provider) ? "Nextcloud"
-                : ("gpodder".equals(provider) ? "gPodder.net" : "Disabled"));
+                : ("gpodder".equals(provider) ? "gPodder.net" : Messages.get("sync.provider.disabled")));
         TextField hostField = new TextField(DesktopPreferences.getSyncHost());
-        hostField.setPromptText("Host, e.g. gpodder.net or cloud.example.com");
+        hostField.setPromptText(Messages.get("sync.host.prompt"));
         TextField userField = new TextField(DesktopPreferences.getSyncUsername());
-        userField.setPromptText("Username");
+        userField.setPromptText(Messages.get("login.username.prompt"));
         javafx.scene.control.PasswordField passField = new javafx.scene.control.PasswordField();
         passField.setText(DesktopPreferences.getSyncPassword());
-        passField.setPromptText("Password (Nextcloud: app password)");
+        passField.setPromptText(Messages.get("sync.password.prompt"));
         TextField deviceField = new TextField(DesktopPreferences.getSyncDeviceCaption());
-        Label syncStatus = new Label(syncStatusText() + " — changes are saved automatically.");
+        Label syncStatus = new Label(Messages.format("sync.status.saved_automatically", syncStatusText()));
         syncStatus.setWrapText(true);
         javafx.scene.control.CheckBox autoSyncBox = new javafx.scene.control.CheckBox(
-                "Sync automatically (at startup and after playback)");
+                Messages.get("sync.auto"));
         autoSyncBox.setSelected(DesktopPreferences.getAutoSyncPlayback());
         Runnable save = () -> {
             String selected = providerBox.getValue();
@@ -4665,7 +4677,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             DesktopPreferences.setSyncDeviceCaption(deviceField.getText().trim());
             DesktopPreferences.setAutoSyncPlayback(autoSyncBox.isSelected());
             syncStatus.setText(syncStatusText());
-            setStatus("Sync settings saved");
+            setStatus(Messages.get("status.sync.settings_saved"));
         };
         autoSave(providerBox.valueProperty(), save);
         autoSave(hostField, save);
@@ -4673,38 +4685,38 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         autoSave(passField, save);
         autoSave(deviceField, save);
         autoSave(autoSyncBox.selectedProperty(), save);
-        Button testButton = new Button("Test login");
+        Button testButton = new Button(Messages.get("sync.test_login"));
         testButton.setOnAction(event -> {
             save.run();
-            syncStatus.setText("Testing login…");
+            syncStatus.setText(Messages.get("sync.testing_login"));
             Node original = showButtonSpinner(testButton);
             background.submit(() -> {
                 try {
                     syncManager.testLogin();
-                    Platform.runLater(() -> syncStatus.setText("Login successful"));
+                    Platform.runLater(() -> syncStatus.setText(Messages.get("sync.login_ok")));
                 } catch (Exception e) {
-                    Platform.runLater(() -> syncStatus.setText("Login failed: " + e.getMessage()));
+                    Platform.runLater(() -> syncStatus.setText(Messages.format("sync.login_failed", e.getMessage())));
                 } finally {
                     Platform.runLater(() -> hideButtonSpinner(testButton, original));
                 }
             });
         });
-        Button syncNowButton = new Button("Sync now");
+        Button syncNowButton = new Button(Messages.get("sync.now"));
         syncNowButton.setOnAction(event -> {
             save.run();
             Node[] original = new Node[1];
             runSync(
                     () -> {
                         original[0] = showButtonSpinner(syncNowButton);
-                        syncStatus.setText("Syncing…");
-                        setStatus("Syncing…");
+                        syncStatus.setText(Messages.get("sync.syncing"));
+                        setStatus(Messages.get("status.sync.started"));
                     },
                     message -> {
                         syncStatus.setText(message);
                         hideButtonSpinner(syncNowButton, original[0]);
                     });
         });
-        Button devicesButton = new Button("Import from another device…");
+        Button devicesButton = new Button(Messages.get("sync.import_devices"));
         devicesButton.setOnAction(event -> {
             save.run();
             showDevicesDialog();
@@ -4713,21 +4725,21 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         grid.setHgap(8);
         grid.setVgap(8);
         grid.setPadding(new Insets(12));
-        grid.add(new Label("Provider:"), 0, 0);
+        grid.add(new Label(Messages.get("sync.provider")), 0, 0);
         grid.add(providerBox, 1, 0);
-        grid.add(new Label("Host:"), 0, 1);
+        grid.add(new Label(Messages.get("common.host_label")), 0, 1);
         grid.add(hostField, 1, 1);
-        grid.add(new Label("Username:"), 0, 2);
+        grid.add(new Label(Messages.get("common.username_label")), 0, 2);
         grid.add(userField, 1, 2);
-        grid.add(new Label("Password:"), 0, 3);
+        grid.add(new Label(Messages.get("common.password_label")), 0, 3);
         grid.add(passField, 1, 3);
-        grid.add(new Label("Device name:"), 0, 4);
+        grid.add(new Label(Messages.get("sync.device_name")), 0, 4);
         grid.add(deviceField, 1, 4);
         grid.add(new HBox(8, testButton, syncNowButton), 0, 5, 2, 1);
         grid.add(devicesButton, 0, 6, 2, 1);
         grid.add(autoSyncBox, 0, 7, 2, 1);
         grid.add(syncStatus, 0, 8, 2, 1);
-        showModal("Sync settings", new VBox(grid));
+        showModal(Messages.get("sync.title"), new VBox(grid));
     }
 
     private String deviceImportHint() {
@@ -4737,8 +4749,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             for (de.danoeh.antennapod.net.sync.gpoddernet.model.GpodnetDevice device : devices) {
                 if (!DesktopPreferences.getSyncDeviceId().equals(device.getId())
                         && device.getSubscriptions() > 0) {
-                    return ". Nothing changed on this device — but other devices hold subscriptions."
-                            + " Use 'Import from another device…'.";
+                    return Messages.get("sync.hint.other_devices");
                 }
             }
         } catch (Exception e) {
@@ -4748,7 +4759,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void showDevicesDialog() {
-        Label status = new Label("Loading devices…");
+        Label status = new Label(Messages.get("devices.loading"));
         status.setWrapText(true);
         ListView<de.danoeh.antennapod.net.sync.gpoddernet.model.GpodnetDevice> list = new ListView<>();
         list.setCellFactory(view -> fullWidthCell(new ListCell<>() {
@@ -4761,10 +4772,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     setGraphic(null);
                     return;
                 }
-                Label title = new Label(device.getCaption() + " (" + device.getType() + ") — "
-                        + device.getSubscriptions() + " subscriptions");
+                Label title = new Label(Messages.format("devices.row", device.getCaption(), device.getType(),
+                        device.getSubscriptions()));
                 title.setWrapText(true);
-                Button importButton = new Button("Import subscriptions");
+                Button importButton = new Button(Messages.get("devices.import"));
                 boolean own = DesktopPreferences.getSyncDeviceId().equals(device.getId());
                 importButton.setDisable(own || device.getSubscriptions() <= 0);
                 importButton.setOnAction(event -> importDeviceSubscriptions(device, status));
@@ -4778,7 +4789,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         pane.setPadding(new Insets(8));
         list.setPrefHeight(280);
         VBox.setVgrow(list, Priority.ALWAYS);
-        showModal("Devices on sync account", pane);
+        showModal(Messages.get("devices.title"), pane);
         background.submit(() -> {
             try {
                 List<de.danoeh.antennapod.net.sync.gpoddernet.model.GpodnetDevice> devices =
@@ -4786,11 +4797,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 Platform.runLater(() -> {
                     list.getItems().setAll(devices);
                     status.setText(devices.isEmpty()
-                            ? "No other devices found (Nextcloud has no device list)."
-                            : "Select a device to import its subscriptions.");
+                            ? Messages.get("devices.none")
+                            : Messages.get("devices.select"));
                 });
             } catch (Exception e) {
-                Platform.runLater(() -> status.setText("Could not load devices: " + e.getMessage()));
+                Platform.runLater(() -> status.setText(Messages.format("devices.load_failed", e.getMessage())));
             }
         });
     }
@@ -4798,40 +4809,39 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private void importDeviceSubscriptions(
             de.danoeh.antennapod.net.sync.gpoddernet.model.GpodnetDevice device,
             Label status) {
-        status.setText("Importing from " + device.getCaption() + "…");
+        status.setText(Messages.format("devices.importing", device.getCaption()));
         background.submit(() -> {
             try {
                 int added = syncManager.importFromDevice(device.getId());
                 Platform.runLater(() -> {
-                    status.setText("Imported " + added + " subscriptions from " + device.getCaption());
+                    status.setText(Messages.format("devices.imported", added, device.getCaption()));
                     reloadFeeds(null);
                 });
-                setStatus("Imported " + added + " subscriptions from " + device.getCaption());
+                setStatus(Messages.format("devices.imported", added, device.getCaption()));
             } catch (Exception e) {
-                Platform.runLater(() -> status.setText("Import failed: " + e.getMessage()));
+                Platform.runLater(() -> status.setText(Messages.format("devices.import_failed", e.getMessage())));
             }
         });
     }
 
     private String syncStatusText() {
         if (!DesktopPreferences.isSyncEnabled()) {
-            return "Sync is disabled.";
+            return Messages.get("sync.status.disabled");
         }
-        return "Sync enabled (" + DesktopPreferences.getSyncProvider() + " as "
-                + DesktopPreferences.getSyncUsername() + ")." + lastSyncSuffix();
+        return Messages.format("sync.status.enabled", DesktopPreferences.getSyncProvider(),
+                DesktopPreferences.getSyncUsername()) + lastSyncSuffix();
     }
 
     private String syncResultText(SyncManager.SyncResult result) {
-        StringBuilder message = new StringBuilder("Synced: ")
-                .append(result.subscriptionsAdded).append(" subscriptions added, ")
-                .append(result.actionsUploaded).append(" actions uploaded, ")
-                .append(result.actionsApplied).append(" state updates applied");
+        StringBuilder message = new StringBuilder(Messages.format("sync.result",
+                result.subscriptionsAdded, result.actionsUploaded, result.actionsApplied));
         if (!result.playedItemIds.isEmpty()) {
-            message.append(" · ").append(result.playedItemIds.size()).append(" marked finished");
+            message.append(" · ").append(Messages.format("sync.result.marked_finished",
+                    result.playedItemIds.size()));
         }
         if (!result.unplayedItemIds.isEmpty()) {
-            message.append(" · ").append(result.unplayedItemIds.size())
-                    .append(" marked unfinished");
+            message.append(" · ").append(Messages.format("sync.result.marked_unfinished",
+                    result.unplayedItemIds.size()));
         }
         message.append(".").append(lastSyncSuffix());
         if (result.subscriptionsAdded == 0 && result.actionsUploaded == 0
@@ -4845,10 +4855,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private static String lastSyncSuffix() {
         long last = DesktopPreferences.getLastSyncTime();
         if (last <= 0) {
-            return " Never synced yet.";
+            return " " + Messages.get("sync.never_synced");
         }
-        return " Last synced "
-                + new SimpleDateFormat("d MMM HH:mm", Locale.US).format(new Date(last)) + ".";
+        return " " + Messages.format("sync.last_synced",
+                new SimpleDateFormat("d MMM HH:mm", Locale.US).format(new Date(last)));
     }
 
     private void updateSyncButtonTooltip() {
@@ -4856,9 +4866,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             return;
         }
         long last = DesktopPreferences.getLastSyncTime();
-        syncButton.setTooltip(new Tooltip(last <= 0 ? "Sync — never synced"
-                : "Sync — last synced "
-                        + new SimpleDateFormat("d MMM HH:mm", Locale.US).format(new Date(last))));
+        syncButton.setTooltip(new Tooltip(last <= 0 ? Messages.get("toolbar.sync.never_synced")
+                : Messages.format("toolbar.sync.last_synced",
+                        new SimpleDateFormat("d MMM HH:mm", Locale.US).format(new Date(last)))));
     }
 
     private void scheduleAutoSync() {
@@ -4892,7 +4902,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private void runSync(Runnable onStart, java.util.function.Consumer<String> onFinish) {
         if (!syncRunning.compareAndSet(false, true)) {
             if (onFinish != null) {
-                onFinish.accept("Sync already running");
+                onFinish.accept(Messages.get("status.sync.already_running"));
             }
             return;
         }
@@ -4915,8 +4925,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
                 String message = syncResultText(result);
                 String summary = result.playedItemIds.isEmpty()
-                        ? "Sync finished"
-                        : "Sync finished: " + result.playedItemIds.size() + " marked finished";
+                        ? Messages.get("status.sync.finished")
+                        : Messages.format("status.sync.finished_marked", result.playedItemIds.size());
                 Platform.runLater(() -> {
                     syncedItemIds.clear();
                     syncedItemIds.addAll(result.syncedItemIds);
@@ -4941,10 +4951,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             } catch (Exception e) {
                 Platform.runLater(() -> {
                     if (onFinish != null) {
-                        onFinish.accept("Sync failed: " + e.getMessage());
+                        onFinish.accept(Messages.format("status.sync.failed", e.getMessage()));
                     }
                 });
-                setStatus("Sync failed: " + e.getMessage());
+                setStatus(Messages.format("status.sync.failed", e.getMessage()));
             } finally {
                 syncRunning.set(false);
             }
@@ -4955,7 +4965,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (query.isEmpty()) {
             return;
         }
-        setStatus("Searching for \"" + query + "\"…");
+        setStatus(Messages.format("status.search.started", query));
         background.submit(() -> doSearch(query));
     }
 
@@ -4964,7 +4974,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (query.isEmpty()) {
             return;
         }
-        setStatus("Searching for \"" + query + "\"…");
+        setStatus(Messages.format("status.search.started", query));
         spinWhile(button, () -> doSearch(query));
     }
 
@@ -4973,9 +4983,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             List<PodcastSearchResult> results =
                     new CombinedSearcher().search(query).blockingGet();
             Platform.runLater(() -> showSearchResults(query, results));
-            setStatus("Found " + results.size() + " results for \"" + query + "\"");
+            setStatus(Messages.format("status.search.found", results.size(), query));
         } catch (Exception e) {
-            setStatus("Search failed: " + e.getMessage());
+            setStatus(Messages.format("status.search.failed", e.getMessage()));
         }
     }
 
@@ -5004,7 +5014,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
                 title.setText(result.title
                         + (result.author != null && !result.author.isEmpty() ? " — " + result.author : ""));
-                Button subscribeButton = new Button("Subscribe");
+                Button subscribeButton = new Button(Messages.get("common.subscribe"));
                 subscribeButton.setOnAction(event -> {
                     if (result.feedUrl != null) {
                         hideSidebar();
@@ -5041,7 +5051,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         VBox pane = new VBox(8, list);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(list, Priority.ALWAYS);
-        showSidebar("Search results: " + query, pane);
+        showSidebar(Messages.format("search.results.title", query), pane);
     }
 
     /**
@@ -5051,9 +5061,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
      */
     private void showPodcastDetails(PodcastSearchResult result) {
         Label author = new Label(result.author == null || result.author.isEmpty()
-                ? "Unknown author" : result.author);
+                ? Messages.get("podcast.unknown_author") : result.author);
         author.getStyleClass().add("muted-label");
-        Label meta = new Label("Loading details\u2026");
+        Label meta = new Label(Messages.get("podcast.loading_details"));
         meta.getStyleClass().add("muted-label");
         meta.setWrapText(true);
 
@@ -5073,7 +5083,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         HBox.setHgrow(headingBlock, Priority.ALWAYS);
         HBox header = new HBox(12, art, headingBlock);
 
-        Button subscribeButton = new Button("Subscribe");
+        Button subscribeButton = new Button(Messages.get("common.subscribe"));
         subscribeButton.setDefaultButton(true);
         subscribeButton.setDisable(result.feedUrl == null || result.feedUrl.isEmpty());
         subscribeButton.setOnAction(event -> {
@@ -5082,21 +5092,21 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             subscribe(result.feedUrl);
         });
         markSubscribed(subscribeButton, result.feedUrl);
-        Button websiteButton = new Button("Open website");
+        Button websiteButton = new Button(Messages.get("podcast.website"));
         websiteButton.setDisable(true);
-        Button copyButton = new Button("Copy feed URL");
+        Button copyButton = new Button(Messages.get("podcast.copy_feed_url"));
         copyButton.setDisable(result.feedUrl == null || result.feedUrl.isEmpty());
         copyButton.setOnAction(event -> {
             javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
             content.putString(result.feedUrl);
             javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
-            setStatus("Feed URL copied");
+            setStatus(Messages.get("status.feed_url_copied"));
         });
         HBox buttons = new HBox(8, subscribeButton, websiteButton, copyButton);
 
         WebView description = new WebView();
         description.setPrefHeight(260);
-        showHtml(description, Shownotes.toPage(null, "<p>Loading description\u2026</p>",
+        showHtml(description, Shownotes.toPage(null, "<p>" + Messages.get("podcast.loading_description") + "</p>",
                 ThemeManager.isDark()));
 
         Label feedUrlLabel = new Label(result.feedUrl);
@@ -5109,7 +5119,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         showModal(result.title, pane);
 
         if (result.feedUrl == null || result.feedUrl.isEmpty()) {
-            meta.setText("This result has no feed address.");
+            meta.setText(Messages.get("podcast.no_feed_address"));
             showHtml(description, Shownotes.toPage(null, "", ThemeManager.isDark()));
             return;
         }
@@ -5119,7 +5129,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 Platform.runLater(() -> {
                     meta.setText(describePodcast(feed));
                     String html = feed.getDescription() == null || feed.getDescription().isEmpty()
-                            ? "<p><i>This podcast has no description.</i></p>" : feed.getDescription();
+                            ? "<p><i>" + Messages.get("podcast.no_description") + "</i></p>" : feed.getDescription();
                     showHtml(description, Shownotes.toPage(null, html, ThemeManager.isDark()));
                     String link = feed.getLink();
                     websiteButton.setDisable(link == null || link.isEmpty());
@@ -5129,7 +5139,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 });
             } catch (Exception e) {
                 Platform.runLater(() -> {
-                    meta.setText("Could not load details: " + e.getMessage());
+                    meta.setText(Messages.format("podcast.load_failed", e.getMessage()));
                     showHtml(description, Shownotes.toPage(null, "", ThemeManager.isDark()));
                 });
             }
@@ -5140,13 +5150,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     static String describePodcast(Feed feed) {
         List<String> parts = new ArrayList<>();
         int episodes = feed.getItems() == null ? 0 : feed.getItems().size();
-        parts.add(episodes + (episodes == 1 ? " episode" : " episodes"));
+        parts.add(episodes == 1 ? Messages.get("count.episode.one")
+                : Messages.format("count.episode.other", episodes));
         if (feed.getLanguage() != null && !feed.getLanguage().isEmpty()) {
             parts.add(feed.getLanguage());
         }
         Date latest = newestPubDate(feed);
         if (latest != null) {
-            parts.add("latest " + new SimpleDateFormat("d MMM yyyy", Locale.US).format(latest));
+            parts.add(Messages.format("podcast.latest", new SimpleDateFormat("d MMM yyyy", Locale.US).format(latest)));
         }
         return String.join(" \u00b7 ", parts);
     }
@@ -5170,7 +5181,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (feedUrl == null || feedUrl.isEmpty() || !isSubscribed(feedUrl)) {
             return;
         }
-        subscribeButton.setText("Subscribed");
+        subscribeButton.setText(Messages.get("podcast.subscribed"));
         subscribeButton.setDisable(true);
         subscribeButton.setDefaultButton(false);
     }
@@ -5196,11 +5207,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     database.setItemState(item.getId(), item.getPlayState());
                     syncManager.recordPlayedState(item, played);
                 }
-                setStatus((played ? "Marked played: " : "Marked unplayed: ") + episodeCountText(items));
+                setStatus(played ? Messages.format("status.marked_played", episodeCountText(items))
+                        : Messages.format("status.marked_unplayed", episodeCountText(items)));
                 Platform.runLater(this::refilterEpisodes);
                 refreshFeedCounts();
             } catch (Exception e) {
-                setStatus("Could not update episodes: " + e.getMessage());
+                setStatus(Messages.format("status.episodes.update_failed", e.getMessage()));
             }
         });
     }
@@ -5223,7 +5235,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private static String episodeCountText(int count) {
-        return count == 1 ? "1 episode" : count + " episodes";
+        return count == 1 ? Messages.get("count.episode.one") : Messages.format("count.episode.other", count);
     }
 
     private void enqueue(FeedItem item) {
@@ -5236,9 +5248,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 for (FeedItem target : targets) {
                     database.addToQueue(target.getId());
                 }
-                setStatus("Added to queue: " + episodeCountText(targets));
+                setStatus(Messages.format("status.queue.added", episodeCountText(targets)));
             } catch (Exception e) {
-                setStatus("Could not add to queue: " + e.getMessage());
+                setStatus(Messages.format("status.queue.add_failed", e.getMessage()));
             }
         });
     }
@@ -5253,9 +5265,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 for (FeedItem target : targets) {
                     database.removeFromQueue(target.getId());
                 }
-                setStatus("Removed from queue: " + episodeCountText(targets));
+                setStatus(Messages.format("status.queue.removed", episodeCountText(targets)));
             } catch (Exception e) {
-                setStatus("Could not remove from queue: " + e.getMessage());
+                setStatus(Messages.format("status.queue.remove_failed", e.getMessage()));
             }
         });
     }
@@ -5266,7 +5278,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 List<FeedItem> queue = database.getQueue();
                 Platform.runLater(() -> showQueueDialog(queue));
             } catch (Exception e) {
-                setStatus("Could not load queue: " + e.getMessage());
+                setStatus(Messages.format("status.queue.load_failed", e.getMessage()));
             }
         });
     }
@@ -5318,11 +5330,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
                 Label title = new Label(item.getTitle());
                 title.setWrapText(true);
-                Button upButton = iconButton(Icons.up(), "Move up");
+                Button upButton = iconButton(Icons.up(), Messages.get("queue.move_up"));
                 upButton.setOnAction(event -> moveQueueItem(item, true, queueItems));
-                Button downButton = iconButton(Icons.down(), "Move down");
+                Button downButton = iconButton(Icons.down(), Messages.get("queue.move_down"));
                 downButton.setOnAction(event -> moveQueueItem(item, false, queueItems));
-                Button removeButton = new Button("Remove", Icons.remove());
+                Button removeButton = new Button(Messages.get("queue.remove"), Icons.remove());
                 removeButton.setOnAction(event -> removeQueueItem(item, queueItems));
                 HBox row = new HBox(8, title, upButton, downButton, removeButton);
                 HBox.setHgrow(title, Priority.ALWAYS);
@@ -5338,19 +5350,19 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
             }
         });
-        Button playAllButton = new Button("Play all");
+        Button playAllButton = new Button(Messages.get("queue.play_all"));
         playAllButton.setOnAction(event -> {
             if (!queueItems.isEmpty() && queueItems.get(0).getMedia() != null) {
                 playback.play(queueItems.get(0), new ArrayList<>(queueItems));
             }
         });
-        Button clearButton = new Button("Clear");
+        Button clearButton = new Button(Messages.get("queue.clear"));
         clearButton.setOnAction(event -> background.submit(() -> {
             try {
                 database.clearQueue();
                 Platform.runLater(queueItems::clear);
             } catch (Exception e) {
-                setStatus("Could not clear queue: " + e.getMessage());
+                setStatus(Messages.format("status.queue.clear_failed", e.getMessage()));
             }
         }));
         HBox buttons = new HBox(8, playAllButton, clearButton);
@@ -5358,7 +5370,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         VBox pane = new VBox(8, queueList, buttons);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(queueList, Priority.ALWAYS);
-        showSidebar("Queue", pane);
+        showSidebar(Messages.get("queue.title"), pane);
     }
 
     /** Marks a queue drag, so text dragged in from elsewhere is not taken for an episode. */
@@ -5402,7 +5414,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 List<FeedItem> queue = database.getQueue();
                 Platform.runLater(() -> queueItems.setAll(queue));
             } catch (Exception e) {
-                setStatus("Could not reorder queue: " + e.getMessage());
+                setStatus(Messages.format("status.queue.reorder_failed", e.getMessage()));
             }
         });
         return true;
@@ -5424,7 +5436,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 List<FeedItem> queue = database.getQueue();
                 Platform.runLater(() -> queueItems.setAll(queue));
             } catch (Exception e) {
-                setStatus("Could not reorder queue: " + e.getMessage());
+                setStatus(Messages.format("status.queue.reorder_failed", e.getMessage()));
             }
         });
     }
@@ -5435,7 +5447,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 database.removeFromQueue(item.getId());
                 Platform.runLater(() -> queueItems.remove(item));
             } catch (Exception e) {
-                setStatus("Could not remove from queue: " + e.getMessage());
+                setStatus(Messages.format("status.queue.remove_failed", e.getMessage()));
             }
         });
     }
@@ -5474,10 +5486,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             queued++;
         }
         if (queued == 0) {
-            setStatus("Nothing to download");
+            setStatus(Messages.get("status.download.nothing"));
             return;
         }
-        setStatus("Downloading " + episodeCountText(queued));
+        setStatus(Messages.format("status.download.started", episodeCountText(queued)));
         episodeList.refresh();
     }
 
@@ -5496,7 +5508,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         }
         if (deletable.isEmpty()) {
-            setStatus("Nothing to delete");
+            setStatus(Messages.get("status.delete.nothing"));
             return;
         }
         background.submit(() -> {
@@ -5516,14 +5528,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     }
                 }
                 if (inUse != null) {
-                    setStatus("Could not delete " + inUse.getHumanReadableIdentifier()
-                            + ": the file is in use");
+                    setStatus(Messages.format("status.delete.in_use", inUse.getHumanReadableIdentifier()));
                 } else {
-                    setStatus("Deleted downloads: "
-                            + (deleted == 1 ? "1 episode" : deleted + " episodes"));
+                    setStatus(Messages.format("status.delete.done", deleted == 1
+                            ? Messages.get("count.episode.one") : Messages.format("count.episode.other", deleted)));
                 }
             } catch (Exception e) {
-                setStatus("Could not delete download: " + e.getMessage());
+                setStatus(Messages.format("status.delete.failed", e.getMessage()));
             }
             Platform.runLater(() -> {
                 refilterEpisodes();
@@ -5609,17 +5620,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
                 if (media.getLocalFileUrl() != null) {
                     if (!deleteDownloadFile(media.getLocalFileUrl())) {
-                        setStatus("Could not auto-delete " + media.getHumanReadableIdentifier()
-                                + ": the file is in use");
+                        setStatus(Messages.format("status.auto_delete.in_use", media.getHumanReadableIdentifier()));
                         return;
                     }
                     media.setLocalFileUrl(null);
                     database.clearMediaDownload(media.getId());
-                    setStatus("Auto-deleted: " + media.getHumanReadableIdentifier());
+                    setStatus(Messages.format("status.auto_delete.done", media.getHumanReadableIdentifier()));
                     Platform.runLater(episodeList::refresh);
                 }
             } catch (Exception e) {
-                setStatus("Auto-delete failed: " + e.getMessage());
+                setStatus(Messages.format("status.auto_delete.failed", e.getMessage()));
             }
         });
     }
@@ -5682,13 +5692,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
         @Override
         public void onFinished(long mediaId, File file) {
-            setStatus("Auto-downloaded: " + item.getTitle());
+            setStatus(Messages.format("status.autodownload.done", item.getTitle()));
             Platform.runLater(episodeList::refresh);
         }
 
         @Override
         public void onError(long mediaId, Exception e) {
-            setStatus("Auto-download failed for " + item.getTitle() + ": " + e.getMessage());
+            setStatus(Messages.format("status.autodownload.item_failed", item.getTitle(), e.getMessage()));
         }
     }
 
@@ -5708,7 +5718,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     @Override
     public void onFinished(long mediaId, File file) {
         downloadProgress.remove(mediaId);
-        setStatus("Download finished: " + file.getName());
+        setStatus(Messages.format("status.download.finished", file.getName()));
         Platform.runLater(() -> {
             episodeList.refresh();
             Feed selected = feedList.getSelectionModel().getSelectedItem();
@@ -5722,7 +5732,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     public void onError(long mediaId, Exception e) {
         downloadProgress.remove(mediaId);
         setStatus(EpisodeDownloader.isCancellation(e)
-                ? "Download cancelled" : "Download failed: " + e.getMessage());
+                ? Messages.get("status.download.cancelled")
+                : Messages.format("status.download.failed", e.getMessage()));
         Platform.runLater(episodeList::refresh);
     }
 
@@ -5999,7 +6010,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             nowPlayingLabel.setText(title);
             nowPlayingLabel.setTooltip(title != null ? new Tooltip(title) : null);
         } else {
-            nowPlayingLabel.setText("Nothing playing");
+            nowPlayingLabel.setText(Messages.get("player.nothing_playing"));
             nowPlayingLabel.setTooltip(null);
         }
         updateNowPlayingArt(current);
@@ -6582,21 +6593,21 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         private static final double DOWNLOAD_BUTTON_WIDTH = 104;
         private final Label titleLabel = new Label();
         private final Label metaLabel = new Label();
-        private final Label syncBadge = new Label("SYNCED");
-        private final Label newBadge = new Label("NEW");
-        private final Label loadingBadge = new Label("LOADING");
+        private final Label syncBadge = new Label(Messages.get("episodes.badge.synced"));
+        private final Label newBadge = new Label(Messages.get("episodes.badge.new"));
+        private final Label loadingBadge = new Label(Messages.get("episodes.badge.loading"));
         private Region progressPulse;
         private final ImageView art = new ImageView();
-        private final Button playButton = iconButton(Icons.play(), "Play");
-        private final Button downloadButton = new Button("Download", Icons.download());
-        private final Button queueButton = iconButton(Icons.queueAdd(), "Add to queue");
-        private final Button favoriteButton = iconButton(Icons.star(false), "Favorite");
-        private final Button infoButton = iconButton(Icons.info(), "Episode details");
-        private final Button playedButton = iconButton(Icons.check(), "Mark played / unplayed");
+        private final Button playButton = iconButton(Icons.play(), Messages.get("common.play"));
+        private final Button downloadButton = new Button(Messages.get("episodes.download"), Icons.download());
+        private final Button queueButton = iconButton(Icons.queueAdd(), Messages.get("common.add_to_queue"));
+        private final Button favoriteButton = iconButton(Icons.star(false), Messages.get("episodes.favorite"));
+        private final Button infoButton = iconButton(Icons.info(), Messages.get("episodes.details"));
+        private final Button playedButton = iconButton(Icons.check(), Messages.get("episodes.toggle_played"));
         private final SimpleDateFormat dateFormat = new SimpleDateFormat("d MMM yyyy", Locale.US);
         private final Tooltip titleTooltip = new Tooltip();
         private final Tooltip metaTooltip = new Tooltip();
-        private final Tooltip playTooltip = new Tooltip("Play");
+        private final Tooltip playTooltip = new Tooltip(Messages.get("common.play"));
 
         EpisodeCell() {
             setPrefWidth(0);
@@ -6626,13 +6637,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             downloadButton.setPrefWidth(DOWNLOAD_BUTTON_WIDTH);
             downloadButton.setMaxWidth(DOWNLOAD_BUTTON_WIDTH);
             syncBadge.setTooltip(
-                    new Tooltip("Appeared in the last sync's episode actions"));
+                    new Tooltip(Messages.get("episodes.badge.synced.tooltip")));
             syncBadge.setVisible(false);
             syncBadge.setManaged(false);
-            newBadge.setTooltip(new Tooltip("New episode"));
+            newBadge.setTooltip(new Tooltip(Messages.get("episodes.badge.new.tooltip")));
             newBadge.setVisible(false);
             newBadge.setManaged(false);
-            loadingBadge.setTooltip(new Tooltip("Loading media"));
+            loadingBadge.setTooltip(new Tooltip(Messages.get("episodes.badge.loading.tooltip")));
             loadingBadge.setVisible(false);
             loadingBadge.setManaged(false);
             art.setFitWidth(40);
@@ -6778,11 +6789,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
             boolean isNew = item.isNew();
             if (isNew) {
-                meta.append("New");
+                meta.append(Messages.get("episodes.meta.new"));
             } else if (item.isPlayed()) {
-                meta.append("Played");
+                meta.append(Messages.get("episodes.meta.played"));
             } else {
-                meta.append("Unplayed");
+                meta.append(Messages.get("episodes.meta.unplayed"));
             }
             boolean downloaded = media != null && media.localFileAvailable();
             // a local folder's episode is the user's own file: nothing to download or delete
@@ -6790,26 +6801,27 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             downloadButton.setVisible(!localFile);
             downloadButton.setManaged(!localFile);
             if (localFile) {
-                meta.append(" · Local file");
+                meta.append(" · ").append(Messages.get("episodes.meta.local_file"));
             } else if (downloaded) {
-                meta.append(" · Downloaded");
-                downloadButton.setText("Delete");
+                meta.append(" · ").append(Messages.get("episodes.meta.downloaded"));
+                downloadButton.setText(Messages.get("episodes.delete"));
                 downloadButton.setGraphic(Icons.remove());
             } else if (media != null && downloader.isDownloading(media.getId())) {
                 Integer percent = downloadProgress.get(media.getId());
-                meta.append(" · Downloading")
-                        .append(percent != null && percent >= 0 ? " " + percent + "%" : "…");
-                downloadButton.setText("Cancel");
+                meta.append(" · ").append(percent != null && percent >= 0
+                        ? Messages.format("downloads.meta.progress", percent)
+                        : Messages.get("downloads.meta.downloading"));
+                downloadButton.setText(Messages.get("episodes.cancel"));
                 downloadButton.setGraphic(Icons.stop());
             } else {
-                downloadButton.setText("Download");
+                downloadButton.setText(Messages.get("episodes.download"));
                 downloadButton.setGraphic(Icons.download());
             }
             downloadButton.setDisable(media == null || media.getDownloadUrl() == null);
             boolean isCurrent = media != null && media.getId() == cellCurrentMediaId;
             boolean isLoading = media != null && media.getId() == loadingMediaId;
             if (isLoading) {
-                meta.append(" · Loading…");
+                meta.append(" · ").append(Messages.get("episodes.meta.loading"));
                 javafx.scene.control.ProgressIndicator spinner =
                         new javafx.scene.control.ProgressIndicator(-1);
                 spinner.setPrefSize(16, 16);
@@ -6820,10 +6832,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 boolean playingCurrent = isCurrent && cellPlaying;
                 playButton.setGraphic(playingCurrent ? Icons.pause() : Icons.play());
                 playButton.setDisable(media == null);
-                playTooltip.setText(playingCurrent ? "Pause" : "Play");
+                playTooltip.setText(playingCurrent ? Messages.get("player.pause") : Messages.get("common.play"));
             }
             if (isCurrent && !isLoading) {
-                meta.append(cellPlaying ? " · Playing" : " · Paused");
+                meta.append(" · ").append(cellPlaying ? Messages.get("episodes.meta.playing")
+                        : Messages.get("episodes.meta.paused"));
             }
             playedButton.setGraphic(item.isPlayed() ? Icons.replay() : Icons.check());
             metaLabel.setText(meta.toString());

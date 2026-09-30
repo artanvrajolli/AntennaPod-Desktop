@@ -122,17 +122,17 @@ public final class ProfileBackup {
         } catch (IOException | IllegalArgumentException e) {
             dbTemp.delete();
             settingsTemp.delete();
-            throw new IOException("Not an AntennaPod Desktop backup: " + e.getMessage(), e);
+            throw new IOException(Messages.format("error.backup.not_a_backup", e.getMessage()), e);
         }
         try {
             if (!hasDb) {
-                throw new IOException("Not an AntennaPod Desktop backup: it has no library in it");
+                throw new IOException(Messages.get("error.backup.no_library"));
             }
             int feeds;
             try {
                 feeds = countFeeds(dbTemp);
             } catch (SQLException e) {
-                throw new IOException("The library in this backup is damaged: " + e.getMessage(), e);
+                throw new IOException(Messages.format("error.backup.damaged", e.getMessage()), e);
             }
             Files.move(dbTemp.toPath(), stagedDb.toPath(), StandardCopyOption.REPLACE_EXISTING);
             if (hasSettings) {

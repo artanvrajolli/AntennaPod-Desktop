@@ -64,17 +64,17 @@ public final class UpdateDownloader {
     public static File download(UpdateChecker.Release release, ProgressListener listener)
             throws IOException {
         if (!release.hasInstaller()) {
-            throw new IOException("This release has no installer to download");
+            throw new IOException(Messages.get("error.update.no_installer"));
         }
         File dir = updateDir();
         if (!dir.isDirectory() && !dir.mkdirs() && !dir.isDirectory()) {
-            throw new IOException("Could not create the update folder, check that "
-                    + DesktopPreferences.getCacheDir() + " is writable");
+            throw new IOException(Messages.format("error.update.folder_not_created",
+                    DesktopPreferences.getCacheDir()));
         }
         // the name comes from the release; only its last part may pick where the file goes
         String safeName = new File(release.installerName).getName();
         if (safeName.isEmpty()) {
-            throw new IOException("This release has no installer to download");
+            throw new IOException(Messages.get("error.update.no_installer"));
         }
         File target = new File(dir, safeName);
         // best effort: drop a stale partial file from an older version of this download
@@ -87,7 +87,7 @@ public final class UpdateDownloader {
         try {
             temp = Files.createTempFile(dir.toPath(), safeName + "-", ".part");
         } catch (IOException | RuntimeException e) {
-            throw friendlyFileError("Could not write to the update folder", e);
+            throw friendlyFileError(Messages.get("error.update.write_folder"), e);
         }
         try {
             IOException lastFailure = null;
@@ -139,11 +139,11 @@ public final class UpdateDownloader {
         try (Response response = client.newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 throw retryableForStatus(response.code(),
-                        "Download failed (HTTP " + response.code() + ")");
+                        Messages.format("error.update.http", response.code()));
             }
             ResponseBody body = response.body();
             if (body == null) {
-                throw retryable("Download returned nothing");
+                throw retryable(Messages.get("error.update.empty"));
             }
             long expected = release.installerSize;
             long bytesRead = 0;
@@ -166,21 +166,20 @@ public final class UpdateDownloader {
                     }
                 }
             } catch (NoSuchFileException | AccessDeniedException e) {
-                throw friendlyFileError("Could not write to the update folder", e);
+                throw friendlyFileError(Messages.get("error.update.write_folder"), e);
             } catch (IOException e) {
                 if (isCancellation(e)) {
                     throw e;
                 }
-                throw retryable("Download was interrupted (" + e.getMessage() + ")");
+                throw retryable(Messages.format("error.update.interrupted", e.getMessage()));
             }
             if (bytesRead != expected) {
-                throw retryable("Download is incomplete (got " + bytesRead + " bytes, expected "
-                        + expected + "). Check the connection and try again");
+                throw retryable(Messages.format("error.update.incomplete", bytesRead, expected));
             }
             if (release.installerSha256 != null) {
                 String actual = HexFormat.of().formatHex(sha256.digest());
                 if (!actual.equals(release.installerSha256)) {
-                    throw new IOException("Download does not match the release's checksum");
+                    throw new IOException(Messages.get("error.update.checksum"));
                 }
             }
         } catch (IOException | RuntimeException e) {
@@ -204,9 +203,9 @@ public final class UpdateDownloader {
                 return;
             } catch (AccessDeniedException | NoSuchFileException e) {
                 lastFailure = friendlyFileError(
-                        "Could not save the update, the file may still be scanned", e);
+                        Messages.get("error.update.save_scanned"), e);
             } catch (IOException e) {
-                lastFailure = friendlyFileError("Could not save the update", e);
+                lastFailure = friendlyFileError(Messages.get("error.update.save"), e);
             }
             if (attempt < MOVE_ATTEMPTS) {
                 backoff(attempt);
@@ -259,14 +258,14 @@ public final class UpdateDownloader {
      * the user is told what to do instead of being shown a bare {@code .part} path.
      */
     private static IOException friendlyFileError(String what, Exception cause) {
-        String detail = "";
+        String detail = null;
         if (!(cause instanceof NoSuchFileException) && !(cause instanceof AccessDeniedException)
                 && cause.getMessage() != null && !cause.getMessage().isBlank()
                 && !looksLikeAPath(cause.getMessage())) {
-            detail = " (" + cause.getMessage() + ")";
+            detail = cause.getMessage();
         }
-        IOException out = new IOException(what + ": close any installer left open and try again"
-                + detail, cause);
+        IOException out = new IOException(detail == null ? Messages.format("error.update.file", what)
+                : Messages.format("error.update.file_detail", what, detail), cause);
         if (cause instanceof RetryableIOException) {
             return new RetryableIOException(out.getMessage(), out.getCause());
         }

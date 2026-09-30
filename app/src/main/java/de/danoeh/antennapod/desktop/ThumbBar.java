@@ -163,7 +163,7 @@ final class ThumbBar {
                 }
                 THUMBBUTTON middle = buttons[1];
                 middle.hIcon = playing ? pauseIcon : playIcon;
-                setTip(middle, playing ? "Pause" : "Play");
+                setTip(middle, playing ? Messages.get("player.pause") : Messages.get("common.play"));
                 middle.write();
                 if (!added) {
                     return;
@@ -201,7 +201,7 @@ final class ThumbBar {
     }
 
     private static String silenceTip(boolean enabled) {
-        return enabled ? "Skip silence: on" : "Skip silence: off";
+        return enabled ? Messages.get("player.skip_silence.on") : Messages.get("player.skip_silence.off");
     }
 
     /**
@@ -311,9 +311,9 @@ final class ThumbBar {
     private void buildButtons() {
         buttons = (THUMBBUTTON[]) new THUMBBUTTON().toArray(BUTTON_COUNT);
         showingSilenceOn = callbacks != null && callbacks.isSilenceSkipping();
-        fill(buttons[0], ID_PREVIOUS, previousIcon, "Previous");
-        fill(buttons[1], ID_PLAY_PAUSE, playIcon, "Play");
-        fill(buttons[2], ID_NEXT, nextIcon, "Next");
+        fill(buttons[0], ID_PREVIOUS, previousIcon, Messages.get("taskbar.previous"));
+        fill(buttons[1], ID_PLAY_PAUSE, playIcon, Messages.get("common.play"));
+        fill(buttons[2], ID_NEXT, nextIcon, Messages.get("taskbar.next"));
         fill(buttons[3], ID_SILENCE,
                 showingSilenceOn ? silenceOnIcon : silenceOffIcon,
                 silenceTip(showingSilenceOn));

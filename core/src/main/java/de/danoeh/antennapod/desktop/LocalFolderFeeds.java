@@ -99,7 +99,7 @@ public final class LocalFolderFeeds {
     static List<File> scan(File folder) throws IOException {
         List<File> files = new ArrayList<>();
         if (!folder.isDirectory()) {
-            throw new IOException("The folder is gone: " + folder);
+            throw new IOException(Messages.format("error.local_folder.gone", folder));
         }
         try (Stream<Path> paths = Files.walk(folder.toPath(), MAX_DEPTH)) {
             paths.map(Path::toFile).filter(File::isFile).filter(LocalFolderFeeds::isPlayable)
@@ -111,7 +111,7 @@ public final class LocalFolderFeeds {
     /** A feed with one episode per playable file, as a freshly parsed feed would be. */
     static Feed read(File folder) throws IOException {
         Feed feed = new Feed(feedUrlFor(folder), null, folder.getName());
-        feed.setDescription("Your audio files in " + folder.getAbsolutePath());
+        feed.setDescription(Messages.format("local_folder.description", folder.getAbsolutePath()));
         for (String cover : COVERS) {
             File image = new File(folder, cover);
             if (image.isFile()) {

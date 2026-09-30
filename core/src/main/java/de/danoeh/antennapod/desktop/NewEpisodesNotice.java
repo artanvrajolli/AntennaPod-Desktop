@@ -33,7 +33,8 @@ public final class NewEpisodesNotice {
             return null;
         }
         withNew.sort((a, b) -> Integer.compare(b.newEpisodes.size(), a.newEpisodes.size()));
-        String title = total == 1 ? "1 new episode" : total + " new episodes";
+        String title = total == 1 ? Messages.get("count.new_episode.one")
+                : Messages.format("count.new_episode.other", total);
         if (withNew.size() == 1 && total == 1) {
             FeedItem only = withNew.get(0).newEpisodes.get(0);
             return new NewEpisodesNotice(title, feedTitle(withNew.get(0)) + ": " + only.getTitle());
@@ -46,13 +47,13 @@ public final class NewEpisodesNotice {
             text.append(feedTitle(withNew.get(i))).append(" (").append(withNew.get(i).newEpisodes.size()).append(')');
         }
         if (withNew.size() > NAMED) {
-            text.append(" and ").append(withNew.size() - NAMED).append(" more");
+            text.append(' ').append(Messages.format("notice.more", withNew.size() - NAMED));
         }
         return new NewEpisodesNotice(title, text.toString());
     }
 
     private static String feedTitle(FeedUpdater.RefreshResult result) {
         String title = result.feed != null ? result.feed.getTitle() : null;
-        return title != null && !title.isEmpty() ? title : "A podcast";
+        return title != null && !title.isEmpty() ? title : Messages.get("notice.unknown_podcast");
     }
 }

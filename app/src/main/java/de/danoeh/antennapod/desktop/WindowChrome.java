@@ -123,11 +123,11 @@ public final class WindowChrome {
         HBox.setHgrow(dragArea, Priority.ALWAYS);
         installDragHandlers(dragArea);
 
-        Button minimizeButton = captionButton(Icons.windowMinimize(), "Minimise",
+        Button minimizeButton = captionButton(Icons.windowMinimize(), Messages.get("window.minimise"),
                 () -> stage.setIconified(true));
         maximizeButton.setGraphic(Icons.windowMaximize());
         maximizeButton.getStyleClass().addAll("window-button", "window-button-maximize");
-        maximizeButton.setTooltip(new Tooltip("Maximise"));
+        maximizeButton.setTooltip(new Tooltip(Messages.get("window.maximise")));
         maximizeButton.setFocusTraversable(false);
         maximizeButton.setOnAction(event -> toggleMaximized());
         stage.maximizedProperty().addListener((obs, wasMaximized, isMaximized) ->
@@ -135,7 +135,7 @@ public final class WindowChrome {
         updateMaximizeButton(stage.isMaximized());
         // the close button goes through the stage so close-to-tray still decides what happens
         Node closeGlyph = Icons.windowClose();
-        Button closeButton = captionButton(closeGlyph, "Close",
+        Button closeButton = captionButton(closeGlyph, Messages.get("common.close"),
                 () -> stage.fireEvent(new WindowEvent(stage, WindowEvent.WINDOW_CLOSE_REQUEST)));
         closeButton.getStyleClass().add("window-button-close");
         // Icons carry their fill as an inline style, which a stylesheet cannot override, so the
@@ -199,7 +199,7 @@ public final class WindowChrome {
 
     private void updateMaximizeButton(boolean maximized) {
         maximizeButton.setGraphic(maximized ? Icons.windowRestore() : Icons.windowMaximize());
-        maximizeButton.setTooltip(new Tooltip(maximized ? "Restore" : "Maximise"));
+        maximizeButton.setTooltip(new Tooltip(maximized ? Messages.get("window.restore") : Messages.get("window.maximise")));
     }
 
     private void toggleMaximized() {

@@ -179,7 +179,7 @@ public final class TrayManager {
         artworkView.setFitHeight(48);
         artworkView.setPreserveRatio(true);
         artworkView.setSmooth(true);
-        nowPlayingLabel = new Label("Nothing playing");
+        nowPlayingLabel = new Label(Messages.get("player.nothing_playing"));
         nowPlayingLabel.setWrapText(true);
         nowPlayingLabel.setMaxWidth(212);
         nowPlayingLabel.setStyle("-fx-font-weight: bold;");
@@ -193,12 +193,12 @@ public final class TrayManager {
         HBox.setHgrow(titles, Priority.ALWAYS);
         HBox header = new HBox(10, artworkView, titles);
         header.setAlignment(Pos.CENTER_LEFT);
-        playPauseButton = control(Icons.accent(Icons.play()), "Play", callbacks::onPlayPause);
+        playPauseButton = control(Icons.accent(Icons.play()), Messages.get("common.play"), callbacks::onPlayPause);
         playPauseButton.setMinSize(44, 36);
-        Button previous = control(Icons.previous(), "Previous episode", callbacks::onPrevious);
-        Button skipBack = control(Icons.replay10(), "Skip back", callbacks::onSkipBack);
-        Button skipForward = control(Icons.forward30(), "Skip forward", callbacks::onSkipForward);
-        Button next = control(Icons.next(), "Next episode", callbacks::onNext);
+        Button previous = control(Icons.previous(), Messages.get("player.previous"), callbacks::onPrevious);
+        Button skipBack = control(Icons.replay10(), Messages.get("tray.skip_back"), callbacks::onSkipBack);
+        Button skipForward = control(Icons.forward30(), Messages.get("tray.skip_forward"), callbacks::onSkipForward);
+        Button next = control(Icons.next(), Messages.get("player.next"), callbacks::onNext);
         episodeControls = List.of(previous, skipBack, skipForward, next);
         transportRow = new HBox(8, previous, skipBack, playPauseButton, skipForward, next);
         transportRow.setAlignment(Pos.CENTER);
@@ -218,23 +218,23 @@ public final class TrayManager {
         HBox progressRow = new HBox(6, positionLabel, progressSlider);
         progressRow.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(progressSlider, Priority.ALWAYS);
-        Button show = new Button("Show AntennaPod");
+        Button show = new Button(Messages.get("tray.show"));
         show.setDefaultButton(true);
         show.setOnAction(event -> {
             hideControls();
             callbacks.onShow();
         });
-        Button exit = new Button("Exit");
+        Button exit = new Button(Messages.get("tray.exit"));
         exit.setOnAction(event -> {
             hideControls();
             callbacks.onExit();
         });
-        pinButton = new Button("Keep open");
-        pinButton.setTooltip(new Tooltip("Keep these controls on screen as a mini player; drag to move"));
+        pinButton = new Button(Messages.get("tray.keep_open"));
+        pinButton.setTooltip(new Tooltip(Messages.get("tray.keep_open.tooltip")));
         pinButton.setOnAction(event -> setPinned(!pinned));
-        silenceToggle = new CheckBox("Skip silence");
+        silenceToggle = new CheckBox(Messages.get("player.skip_silence"));
         silenceToggle.setSelected(callbacks.isSilenceSkipping());
-        silenceToggle.setTooltip(new Tooltip("Play through quiet passages faster"));
+        silenceToggle.setTooltip(new Tooltip(Messages.get("tray.skip_silence.tooltip")));
         silenceToggle.setOnAction(event ->
                 callbacks.onSilenceSkipping(silenceToggle.isSelected()));
         HBox options = new HBox(8, silenceToggle);
@@ -310,7 +310,7 @@ public final class TrayManager {
     private void hideControls() {
         pinned = false;
         if (pinButton != null) {
-            pinButton.setText("Keep open");
+            pinButton.setText(Messages.get("tray.keep_open"));
         }
         if (controlsWindow != null) {
             controlsWindow.hide();
@@ -336,7 +336,7 @@ public final class TrayManager {
             return;
         }
         pinned = pin;
-        pinButton.setText(pin ? "Unpin" : "Keep open");
+        pinButton.setText(pin ? Messages.get("tray.unpin") : Messages.get("tray.keep_open"));
         if (pin) {
             DesktopPreferences.setMiniPlayerPosition(controlsWindow.getX(), controlsWindow.getY());
         } else {
@@ -412,14 +412,14 @@ public final class TrayManager {
         }
         boolean hasEpisode = nowPlaying != null && !nowPlaying.isEmpty();
         playPauseButton.setGraphic(Icons.accent(playing ? Icons.pause() : Icons.play()));
-        playPauseButton.setAccessibleText(playing ? "Pause" : "Play");
-        playPauseButton.getTooltip().setText(playing ? "Pause" : "Play");
+        playPauseButton.setAccessibleText(playing ? Messages.get("player.pause") : Messages.get("common.play"));
+        playPauseButton.getTooltip().setText(playing ? Messages.get("player.pause") : Messages.get("common.play"));
         setEpisodeControlsDisabled(!hasEpisode);
         if (!hasEpisode) {
             // the position ticks stop with the player, so nothing else clears the last one
             updateProgress(0, 0);
         }
-        nowPlayingLabel.setText(hasEpisode ? truncate(nowPlaying, 100) : "Nothing playing");
+        nowPlayingLabel.setText(hasEpisode ? truncate(nowPlaying, 100) : Messages.get("player.nothing_playing"));
         boolean hasFeed = hasEpisode && feedTitle != null && !feedTitle.isBlank();
         feedLabel.setText(hasFeed ? truncate(feedTitle.trim(), 60) : "");
         feedLabel.setVisible(hasFeed);
@@ -430,7 +430,8 @@ public final class TrayManager {
                 return;
             }
             String tooltip = hasEpisode
-                    ? (playing ? "Playing: " : "Paused: ") + nowPlaying
+                    ? (playing ? Messages.format("tray.tooltip.playing", nowPlaying)
+                            : Messages.format("tray.tooltip.paused", nowPlaying))
                             + (hasFeed ? " — " + feedTitle.trim() : "")
                     : "AntennaPod Desktop";
             trayIcon.setToolTip(truncate(tooltip, 120));
