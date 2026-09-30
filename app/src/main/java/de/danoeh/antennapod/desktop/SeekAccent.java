@@ -254,8 +254,8 @@ final class SeekAccent {
                         first.b2 = plane(axis, cut);
                         second.b1 = plane(axis, cut) + 1;
                     }
-                    first.count = sum(histo, first);
-                    second.count = sum(histo, second);
+                    first.shrink(histo);
+                    second.shrink(histo);
                     if (first.count == 0 || second.count == 0) {
                         return null;
                     }
@@ -360,6 +360,47 @@ final class SeekAccent {
                 }
             }
             return sum;
+        }
+
+        /**
+         * Tightens the box to the colors it actually holds and recounts it. Without this a half
+         * keeps its parent's bounds on the other two axes, its longest axis can be one whose
+         * pixels all sit in a single plane, and it is then taken as unsplittable while another
+         * axis would still separate two colors - whose average then comes out as a blend.
+         */
+        void shrink(int[] histo) {
+            int nr1 = r2;
+            int nr2 = r1;
+            int ng1 = g2;
+            int ng2 = g1;
+            int nb1 = b2;
+            int nb2 = b1;
+            int total = 0;
+            for (int r = r1; r <= r2; r++) {
+                for (int g = g1; g <= g2; g++) {
+                    for (int b = b1; b <= b2; b++) {
+                        int n = histo[(r << (2 * SIG_BITS)) | (g << SIG_BITS) | b];
+                        if (n > 0) {
+                            total += n;
+                            nr1 = Math.min(nr1, r);
+                            nr2 = Math.max(nr2, r);
+                            ng1 = Math.min(ng1, g);
+                            ng2 = Math.max(ng2, g);
+                            nb1 = Math.min(nb1, b);
+                            nb2 = Math.max(nb2, b);
+                        }
+                    }
+                }
+            }
+            count = total;
+            if (total > 0) {
+                r1 = nr1;
+                r2 = nr2;
+                g1 = ng1;
+                g2 = ng2;
+                b1 = nb1;
+                b2 = nb2;
+            }
         }
 
         private VBox copy() {

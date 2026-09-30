@@ -12,6 +12,20 @@ import org.junit.Test;
 
 public class SeekAccentTest {
     @Test
+    public void testDominantColorIsNotBlendedWithANeighbour() {
+        // after a cut each half must shrink to the colors it holds: with the parent's loose
+        // bounds the majority color's box could not be split again, and its average blended it
+        // with a neighbour (this set came out as #d56c7e instead of the majority's own color)
+        int[] mixed = new int[29];
+        int[] majority = new int[15];
+        for (int i = 0; i < mixed.length; i++) {
+            mixed[i] = i < 15 ? 0xFFE26F70 : i < 22 ? 0xFFB26C93 : 0xFFF1D1FE;
+        }
+        java.util.Arrays.fill(majority, 0xFFE26F70);
+        assertEquals(SeekAccent.fromArgb(majority), SeekAccent.fromArgb(mixed));
+    }
+
+    @Test
     public void testSolidRedStaysARedHex() {
         String accent = SeekAccent.fromAwt(filled(64, 64, new Color(220, 30, 30)));
         assertNotNull(accent);
