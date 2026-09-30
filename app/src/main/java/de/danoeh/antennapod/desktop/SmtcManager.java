@@ -144,6 +144,15 @@ public final class SmtcManager {
     private volatile SeekSink seekSink;
     private volatile long seekToken;
     private volatile boolean seekRegistered;
+    /** Whether this thread's RoInitialize succeeded, so shutdown balances it and only then. */
+    private volatile boolean roInitialized;
+    private volatile Runnable attachFailedHandler;
+    /** The window the card was fetched for; a new native window needs a new card. */
+    private volatile HWND boundWindow;
+    /** What the card shows, so a card fetched for a new window can be brought up to date. */
+    private volatile PendingEpisode lastEpisode;
+    private volatile int lastStatus = -1;
+    private final java.util.List<Object> retiredSinks = new java.util.ArrayList<>();
     private volatile Callbacks callbacks;
     private volatile java.util.function.Consumer<String> errorReporter;
     private volatile String lastReportedError;
@@ -206,7 +215,11 @@ public final class SmtcManager {
         }
         this.callbacks = callbacks;
         String title = stage.getTitle();
+        // Hiding a stage (closing to the tray) destroys its native window and showing it again
+        // creates a new one, and the card belongs to the window it was fetched for: follow it.
+        stage.addEventHandler(javafx.stage.WindowEvent.WINDOW_SHOWN, event -> rebind(title));
         submit(() -> {
+            boolean attached = false;
             try {
                 HWND window = awaitWindow(title);
                 if (window == null) {
@@ -218,51 +231,13 @@ public final class SmtcManager {
                     reportError("WinRT unavailable (" + hr + ")");
                     return;
                 }
-                Pointer factory = getActivationFactory(CLASS_CONTROLS, IID_INTEROP);
-                if (factory == null) {
-                    reportError("media controls unavailable");
-                    return;
-                }
-                Pointer controlsPtr;
-                try {
-                    controlsPtr = getForWindow(factory, window);
-                } finally {
-                    release(factory);
-                }
-                if (controlsPtr == null) {
-                    reportError("no media controls for this window");
-                    return;
-                }
-                controls = new Controls(controlsPtr);
-                Pointer second = queryInterface(controlsPtr, IID_CONTROLS_2);
-                if (second != null) {
-                    controls2 = new Controls2(second);
-                }
+                roInitialized = true;
                 dataWriterFactory = getActivationFactory(CLASS_DATA_WRITER, IID_DATA_WRITER_FACTORY);
                 streamRefStatics = getActivationFactory(CLASS_STREAM_REF, IID_STREAM_REF_STATICS);
-                controls.putIsPlayEnabled(true);
-                controls.putIsPauseEnabled(true);
-                controls.putIsStopEnabled(true);
-                controls.putIsPreviousEnabled(true);
-                controls.putIsNextEnabled(true);
-                buttonSink = new ButtonSink();
-                buttonToken = controls.addButtonPressed(buttonSink.pointer());
-                buttonRegistered = buttonToken != 0;
-                if (controls2 != null) {
-                    // Registering for position changes is what turns the card's
-                    // timeline from a readout into a bar the listener can drag.
-                    // Some sessions refuse it (E_NOTIMPL without app identity):
-                    // the timeline still shows, it just cannot be dragged.
-                    seekSink = new SeekSink();
-                    try {
-                        seekToken = controls2.addPlaybackPositionChangeRequested(seekSink.pointer());
-                        seekRegistered = seekToken != 0;
-                    } catch (Throwable t) {
-                        seekRegistered = false;
-                        reportError("card seeking unavailable: " + t.getMessage());
-                    }
+                if (!bindWindow(window)) {
+                    return;
                 }
-                controls.putIsEnabled(true);
+                attached = true;
                 PendingEpisode pending = pendingEpisode;
                 pendingEpisode = null;
                 if (pending != null) {
@@ -277,8 +252,154 @@ public final class SmtcManager {
                 // an unavailable shell interface is not worth breaking playback over
                 reportError("attach failed: " + t.getMessage());
                 t.printStackTrace();
+            } finally {
+                Runnable failed = attachFailedHandler;
+                if (!attached && failed != null) {
+                    failed.run();
+                }
             }
         });
+    }
+
+    /**
+     * Fetches the card for {@code window} and hooks up its buttons. On this manager's thread.
+     * False, reported, when the shell has no card to give.
+     */
+    private boolean bindWindow(HWND window) {
+        Pointer factory = getActivationFactory(CLASS_CONTROLS, IID_INTEROP);
+        if (factory == null) {
+            reportError("media controls unavailable");
+            return false;
+        }
+        Pointer controlsPtr;
+        try {
+            controlsPtr = getForWindow(factory, window);
+        } finally {
+            release(factory);
+        }
+        if (controlsPtr == null) {
+            reportError("no media controls for this window");
+            return false;
+        }
+        controls = new Controls(controlsPtr);
+        Pointer second = queryInterface(controlsPtr, IID_CONTROLS_2);
+        if (second != null) {
+            controls2 = new Controls2(second);
+        }
+        controls.putIsPlayEnabled(true);
+        controls.putIsPauseEnabled(true);
+        controls.putIsStopEnabled(true);
+        controls.putIsPreviousEnabled(true);
+        controls.putIsNextEnabled(true);
+        retireSinks();
+        buttonSink = new ButtonSink();
+        buttonToken = controls.addButtonPressed(buttonSink.pointer());
+        buttonRegistered = buttonToken != 0;
+        if (controls2 != null) {
+            // Registering for position changes is what turns the card's
+            // timeline from a readout into a bar the listener can drag.
+            // Some sessions refuse it (E_NOTIMPL without app identity):
+            // the timeline still shows, it just cannot be dragged.
+            seekSink = new SeekSink();
+            try {
+                seekToken = controls2.addPlaybackPositionChangeRequested(seekSink.pointer());
+                seekRegistered = seekToken != 0;
+            } catch (Throwable t) {
+                seekRegistered = false;
+                reportError("card seeking unavailable: " + t.getMessage());
+            }
+        }
+        controls.putIsEnabled(true);
+        boundWindow = window;
+        return true;
+    }
+
+    /** Lets go of the card of a window that is gone. On this manager's thread. */
+    private void unbindWindow() {
+        Controls oldControls = controls;
+        Controls2 oldControls2 = controls2;
+        controls = null;
+        controls2 = null;
+        boundWindow = null;
+        if (oldControls != null && buttonRegistered) {
+            try {
+                oldControls.removeButtonPressed(buttonToken);
+            } catch (Throwable ignored) {
+                // the window is gone; its card goes with it
+            }
+        }
+        buttonRegistered = false;
+        if (oldControls2 != null && seekRegistered) {
+            try {
+                oldControls2.removePlaybackPositionChangeRequested(seekToken);
+            } catch (Throwable ignored) {
+                // as above
+            }
+        }
+        seekRegistered = false;
+        if (oldControls2 != null) {
+            releaseQuietly(oldControls2.getPointer());
+        }
+        if (oldControls != null) {
+            releaseQuietly(oldControls.getPointer());
+        }
+        // the next timeline tick is pushed whatever the throttle last saw
+        lastTimelineMs = -1;
+        lastDurationMs = -1;
+    }
+
+    /**
+     * Keeps replaced sinks reachable for the life of the process: the shell may still hold the
+     * delegates it was given (see shutdown), and these are all that keeps their callbacks alive.
+     */
+    private void retireSinks() {
+        if (buttonSink != null) {
+            retiredSinks.add(buttonSink);
+        }
+        if (seekSink != null) {
+            retiredSinks.add(seekSink);
+        }
+        buttonSink = null;
+        seekSink = null;
+    }
+
+    /** Moves the card to the stage's new native window after it was hidden and shown again. */
+    private void rebind(String title) {
+        submit(() -> {
+            try {
+                if (!roInitialized || boundWindow == null) {
+                    // never attached, so there is nothing to move
+                    return;
+                }
+                HWND window = awaitWindow(title);
+                if (window == null || window.equals(boundWindow)) {
+                    return;
+                }
+                unbindWindow();
+                if (!bindWindow(window)) {
+                    return;
+                }
+                PendingEpisode episode = lastEpisode;
+                if (episode != null) {
+                    pushEpisode(episode.title, episode.artist, episode.album, episode.artwork);
+                }
+                int status = lastStatus;
+                if (status >= 0) {
+                    pushStatus(status);
+                }
+            } catch (Throwable t) {
+                reportError("reattach failed: " + t.getMessage());
+                t.printStackTrace();
+            }
+        });
+    }
+
+    /**
+     * Called, on this manager's thread, when {@link #attach} could not bring the card up. The
+     * media keys reach the app through the card, so without one they need another way in.
+     */
+    public void setAttachFailedHandler(Runnable handler) {
+        this.attachFailedHandler = handler;
     }
 
     /**
@@ -286,11 +407,24 @@ public final class SmtcManager {
      * only reads stream references, so a remote URL cannot be handed over directly.
      */
     public void setEpisode(String title, String artist, String album, File artwork) {
+        setEpisode(title, artist, album, artwork, null);
+    }
+
+    /**
+     * As above, dropped if {@code stillWanted} (when given) says otherwise by the time this
+     * card's thread gets to it. A caller on another thread checking before the call is not
+     * enough: an episode switch queued in between would be overwritten by the stale update.
+     */
+    public void setEpisode(String title, String artist, String album, File artwork,
+            java.util.function.BooleanSupplier stillWanted) {
         if (!isEnabled()) {
             return;
         }
         submit(() -> {
             try {
+                if (stillWanted != null && !stillWanted.getAsBoolean()) {
+                    return;
+                }
                 if (controls == null) {
                     pendingEpisode = new PendingEpisode(title, artist, album, artwork);
                     return;
@@ -369,6 +503,9 @@ public final class SmtcManager {
     }
 
     public void shutdown() {
+        if (!isEnabled()) {
+            return;
+        }
         submit(() -> {
             try {
                 if (controls != null && buttonRegistered && buttonSink != null) {
@@ -379,7 +516,9 @@ public final class SmtcManager {
                     }
                     buttonRegistered = false;
                 }
-                buttonSink = null;
+                // buttonSink and seekSink stay referenced: Windows may still hold the delegates
+                // (or be inside an Invoke) after remove_*, and they are the only strong
+                // references to the JNA callbacks and vtables it would call into
                 if (controls2 != null && seekRegistered && seekSink != null) {
                     try {
                         controls2.removePlaybackPositionChangeRequested(seekToken);
@@ -388,7 +527,6 @@ public final class SmtcManager {
                     }
                     seekRegistered = false;
                 }
-                seekSink = null;
                 if (controls != null) {
                     try {
                         controls.putIsEnabled(false);
@@ -414,10 +552,13 @@ public final class SmtcManager {
                 }
                 lastTimelineMs = -1;
                 lastDurationMs = -1;
-                try {
-                    ComBase.INSTANCE.RoUninitialize();
-                } catch (Throwable ignored) {
-                    // shutting down anyway
+                if (roInitialized) {
+                    roInitialized = false;
+                    try {
+                        ComBase.INSTANCE.RoUninitialize();
+                    } catch (Throwable ignored) {
+                        // shutting down anyway
+                    }
                 }
             } catch (Throwable t) {
                 t.printStackTrace();
@@ -476,11 +617,13 @@ public final class SmtcManager {
     }
 
     private void pushStatus(int status) {
+        lastStatus = status;
         controls.putIsEnabled(status != STATUS_STOPPED);
         controls.putPlaybackStatus(status);
     }
 
     private void pushEpisode(String title, String artist, String album, File artwork) {
+        lastEpisode = new PendingEpisode(title, artist, album, artwork);
         Pointer updaterPtr = controls.getDisplayUpdater();
         if (updaterPtr == null) {
             return;
@@ -564,7 +707,9 @@ public final class SmtcManager {
                         release(writer);
                     }
                     randomStream.seek(0);
-                    return new StreamRefStatics(streamRefStatics).createFromStream(stream);
+                    // CreateFromStream takes an IRandomAccessStream*: the activation pointer is
+                    // only IInspectable and need not share its vtable
+                    return new StreamRefStatics(streamRefStatics).createFromStream(random);
                 } finally {
                     release(output);
                 }

@@ -58,6 +58,15 @@ public final class WindowsTaskbar {
     private volatile int lastPercent = -1;
     private volatile int lastState = -1;
     private volatile ThumbBar thumbBar;
+    /**
+     * What the taskbar should show, kept even while nothing is attached: a window shown again
+     * after the tray, or a taskbar rebuilt by an Explorer restart, starts blank and is brought
+     * back up to date from these.
+     */
+    private volatile int wantedState = TBPF_NOPROGRESS;
+    private volatile int wantedPercent = -1;
+    private volatile boolean wantedPlaying;
+    private volatile boolean wantedSilence;
 
     public static boolean isEnabled() {
         return System.getProperty("os.name", "").toLowerCase(java.util.Locale.US).contains("win")
@@ -73,6 +82,10 @@ public final class WindowsTaskbar {
             return;
         }
         String title = stage.getTitle();
+        // Hiding a stage (closing to the tray) destroys its native window and showing it again
+        // creates a new one: progress and buttons have to follow it there.
+        stage.addEventHandler(javafx.stage.WindowEvent.WINDOW_SHOWN,
+                event -> reattach(title, controls));
         submit(() -> {
             try {
                 // show() returns before the native window is mapped, so it may not be findable yet
@@ -96,10 +109,8 @@ public final class WindowsTaskbar {
                 }
                 hwnd = window;
                 taskbarList = list;
-                // the window procedure belongs to the thread that created the window, so the
-                // subclassing is done there; the COM half of it comes back to this thread
-                javafx.application.Platform.runLater(
-                        () -> thumbBar = ThumbBar.install(window, list, controls, this::submit));
+                installThumbBar(window, list, controls);
+                repush();
             } catch (Throwable t) {
                 // an unavailable shell interface is not worth breaking playback over
                 t.printStackTrace();
@@ -107,14 +118,69 @@ public final class WindowsTaskbar {
         });
     }
 
+    /**
+     * The window procedure belongs to the thread that created the window, so the subclassing is
+     * done there; the COM half of it comes back to this thread.
+     */
+    private void installThumbBar(HWND window, TaskbarList3 list, ThumbBar.Callbacks controls) {
+        javafx.application.Platform.runLater(() -> {
+            ThumbBar bar = ThumbBar.install(window, list, controls, this::submit, this::repush);
+            thumbBar = bar;
+            if (bar != null) {
+                bar.setPlaying(wantedPlaying);
+                bar.setSilenceSkipping(wantedSilence);
+            }
+        });
+    }
+
+    /** Follows the stage to the native window it got when it was shown again. */
+    private void reattach(String title, ThumbBar.Callbacks controls) {
+        submit(() -> {
+            TaskbarList3 list = taskbarList;
+            HWND previous = hwnd;
+            if (list == null || previous == null) {
+                // never attached, so there is nothing to move
+                return;
+            }
+            HWND window = awaitWindow(title);
+            if (window == null || window.equals(previous)) {
+                return;
+            }
+            hwnd = window;
+            javafx.application.Platform.runLater(() -> {
+                ThumbBar old = thumbBar;
+                thumbBar = null;
+                if (old != null) {
+                    old.forgetDestroyedWindow();
+                }
+            });
+            installThumbBar(window, list, controls);
+            repush();
+        });
+    }
+
+    /** Pushes the wanted progress again, for a taskbar button that has just been (re)created. */
+    private void repush() {
+        run(list -> {
+            int state = wantedState;
+            int percent = wantedPercent;
+            if (state != TBPF_NOPROGRESS && percent >= 0) {
+                // setting a value switches the bar to normal, so the state goes last
+                list.setProgressValue(hwnd, percent, 100);
+            }
+            list.setProgressState(hwnd, state);
+        });
+    }
+
     /** Draws how far through the episode we are. A zero or unknown duration clears the fill. */
     public void setProgress(int positionMs, int durationMs) {
-        if (taskbarList == null) {
+        if (!isEnabled()) {
             return;
         }
         int percent = durationMs > 0
                 ? (int) Math.max(0, Math.min(100, (long) positionMs * 100 / durationMs)) : -1;
-        if (percent == lastPercent) {
+        wantedPercent = percent;
+        if (taskbarList == null || percent == lastPercent) {
             return;
         }
         lastPercent = percent;
@@ -134,11 +200,13 @@ public final class WindowsTaskbar {
      * without explanation.
      */
     public void setPlaybackState(boolean loaded, boolean playing) {
-        if (taskbarList == null) {
-            return;
-        }
         int state = !loaded ? TBPF_NOPROGRESS : playing ? TBPF_NORMAL : TBPF_PAUSED;
-        if (state == lastState) {
+        wantedState = state;
+        wantedPlaying = loaded && playing;
+        if (state == TBPF_NOPROGRESS) {
+            wantedPercent = -1;
+        }
+        if (taskbarList == null || state == lastState) {
             return;
         }
         lastState = state;
@@ -154,6 +222,7 @@ public final class WindowsTaskbar {
 
     /** Reflects the skip-silence toggle on the thumbnail toolbar's fourth button. */
     public void setSilenceSkipping(boolean enabled) {
+        wantedSilence = enabled;
         if (taskbarList == null) {
             return;
         }

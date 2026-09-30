@@ -1,5 +1,7 @@
 package de.danoeh.antennapod.desktop;
 
+import com.sun.jna.platform.win32.Advapi32Util;
+import com.sun.jna.platform.win32.WinReg;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
@@ -11,6 +13,8 @@ import java.util.concurrent.TimeUnit;
 
 final class SystemTheme {
     private static final long COMMAND_TIMEOUT_SECONDS = 5;
+    private static final String PERSONALIZE_KEY =
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
 
     private SystemTheme() {
     }
@@ -30,15 +34,34 @@ final class SystemTheme {
         }
     }
 
-    private static boolean isDarkWindows() throws Exception {
-        String output = run("reg", "query",
-                "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-                "/v", "AppsUseLightTheme");
-        int index = output.indexOf("REG_DWORD");
-        if (index < 0) {
+    /**
+     * Whether the Windows shell - taskbar, its thumbnail flyouts, Start - is dark. That is its own
+     * setting, separate from the app theme: a dark taskbar with light apps is the Windows 10
+     * default. Light when it cannot be read or on other systems.
+     */
+    static boolean isShellDark() {
+        try {
+            return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")
+                    && isWindowsValueZero("SystemUsesLightTheme");
+        } catch (Throwable t) {
             return false;
         }
-        return output.substring(index + "REG_DWORD".length()).trim().startsWith("0x0");
+    }
+
+    private static boolean isDarkWindows() {
+        return isWindowsValueZero("AppsUseLightTheme");
+    }
+
+    /**
+     * Reads a Personalize DWORD straight from the registry: this runs on the FX thread (theme
+     * previews, thumbnail icons), where starting reg.exe and waiting on it could stall the UI.
+     */
+    private static boolean isWindowsValueZero(String name) {
+        WinReg.HKEY root = WinReg.HKEY_CURRENT_USER;
+        if (!Advapi32Util.registryValueExists(root, PERSONALIZE_KEY, name)) {
+            return false;
+        }
+        return Advapi32Util.registryGetIntValue(root, PERSONALIZE_KEY, name) == 0;
     }
 
     private static boolean isDarkMac() throws Exception {
@@ -77,17 +100,26 @@ final class SystemTheme {
 
     private static String run(String... command) throws Exception {
         Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-        StringBuilder output = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                output.append(line).append('\n');
+        StringBuffer output = new StringBuffer();
+        // read on a thread of its own: readLine blocks until the process exits, so reading here
+        // would leave the timeout below with nothing to time out
+        Thread reader = new Thread(() -> {
+            try (BufferedReader in = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = in.readLine()) != null) {
+                    output.append(line).append('\n');
+                }
+            } catch (Exception ignored) {
+                // whatever was read so far is the answer
             }
-        }
+        }, "system-theme-reader");
+        reader.setDaemon(true);
+        reader.start();
         if (!process.waitFor(COMMAND_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
             process.destroyForcibly();
         }
+        reader.join(TimeUnit.SECONDS.toMillis(1));
         return output.toString();
     }
 }

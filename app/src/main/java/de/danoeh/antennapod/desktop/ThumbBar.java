@@ -82,6 +82,8 @@ final class ThumbBar {
      * owns the interface rather than made from wherever the message arrived.
      */
     private final java.util.function.Consumer<Runnable> onComThread;
+    /** Told when the shell (re)creates the taskbar button, so the progress can be pushed again. */
+    private final Runnable onButtonCreated;
 
     /**
      * Held for as long as the window lives. Windows keeps a raw pointer to this callback, so
@@ -97,16 +99,18 @@ final class ThumbBar {
     private HICON nextIcon;
     private HICON silenceOnIcon;
     private HICON silenceOffIcon;
-    private boolean added;
+    /** Whether the buttons are on the taskbar; written on the COM thread. */
+    private volatile boolean added;
     private boolean showingPause;
     private boolean showingSilenceOn;
 
     private ThumbBar(HWND hwnd, WindowsTaskbar.TaskbarList3 taskbarList, Callbacks callbacks,
-            java.util.function.Consumer<Runnable> onComThread) {
+            java.util.function.Consumer<Runnable> onComThread, Runnable onButtonCreated) {
         this.hwnd = hwnd;
         this.taskbarList = taskbarList;
         this.callbacks = callbacks;
         this.onComThread = onComThread;
+        this.onButtonCreated = onButtonCreated;
         this.taskbarButtonCreatedMessage =
                 Win32.INSTANCE.RegisterWindowMessage("TaskbarButtonCreated");
     }
@@ -120,12 +124,13 @@ final class ThumbBar {
      * side is not as expected, which leaves the window exactly as it was.
      */
     static ThumbBar install(HWND hwnd, WindowsTaskbar.TaskbarList3 taskbarList,
-            Callbacks callbacks, java.util.function.Consumer<Runnable> onComThread) {
+            Callbacks callbacks, java.util.function.Consumer<Runnable> onComThread,
+            Runnable onButtonCreated) {
         if (!isEnabled() || hwnd == null || taskbarList == null) {
             return null;
         }
         try {
-            ThumbBar bar = new ThumbBar(hwnd, taskbarList, callbacks, onComThread);
+            ThumbBar bar = new ThumbBar(hwnd, taskbarList, callbacks, onComThread, onButtonCreated);
             bar.buildIcons();
             bar.buildButtons();
             if (!bar.subclassWindow()) {
@@ -142,18 +147,27 @@ final class ThumbBar {
         }
     }
 
-    /** Swaps the middle button between play and pause. */
+    /**
+     * Swaps the middle button between play and pause. Before the buttons are on the taskbar
+     * this still updates them, so they go up showing the right one.
+     */
     void setPlaying(boolean playing) {
-        if (!added || playing == showingPause) {
+        if (playing == showingPause) {
             return;
         }
         showingPause = playing;
         onComThread.accept(() -> {
             try {
+                if (buttons == null) {
+                    return; // forgotten along with its window
+                }
                 THUMBBUTTON middle = buttons[1];
                 middle.hIcon = playing ? pauseIcon : playIcon;
                 setTip(middle, playing ? "Pause" : "Play");
                 middle.write();
+                if (!added) {
+                    return;
+                }
                 taskbarList.thumbBarUpdateButtons(hwnd, BUTTON_COUNT, buttons[0].getPointer());
             } catch (Throwable t) {
                 t.printStackTrace();
@@ -163,16 +177,22 @@ final class ThumbBar {
 
     /** Swaps the silence button between its on and off pictures. */
     void setSilenceSkipping(boolean enabled) {
-        if (!added || enabled == showingSilenceOn) {
+        if (enabled == showingSilenceOn) {
             return;
         }
         showingSilenceOn = enabled;
         onComThread.accept(() -> {
             try {
+                if (buttons == null) {
+                    return; // forgotten along with its window
+                }
                 THUMBBUTTON silence = buttons[3];
                 silence.hIcon = enabled ? silenceOnIcon : silenceOffIcon;
                 setTip(silence, silenceTip(enabled));
                 silence.write();
+                if (!added) {
+                    return;
+                }
                 taskbarList.thumbBarUpdateButtons(hwnd, BUTTON_COUNT, buttons[0].getPointer());
             } catch (Throwable t) {
                 t.printStackTrace();
@@ -184,10 +204,24 @@ final class ThumbBar {
         return enabled ? "Skip silence: on" : "Skip silence: off";
     }
 
+    /**
+     * For a window that has already been destroyed (a stage hidden to the tray): there is no
+     * procedure to put back - its handle may even belong to another window by now - so this only
+     * frees the icons, on the COM thread where any queued button update still uses them.
+     */
+    void forgetDestroyedWindow() {
+        previousWindowProc = null;
+        onComThread.accept(() -> {
+            added = false;
+            buttons = null;
+            destroyIcons();
+        });
+    }
+
     /** Puts the original window procedure back and frees the icons. */
     void dispose() {
         try {
-            if (previousWindowProc != null) {
+            if (previousWindowProc != null && User32.INSTANCE.IsWindow(hwnd)) {
                 Win32.INSTANCE.SetWindowLongPtr(hwnd, GWLP_WNDPROC, previousWindowProc);
                 previousWindowProc = null;
             }
@@ -225,7 +259,14 @@ final class ThumbBar {
     private LRESULT handleMessage(HWND window, int message, WPARAM wParam, LPARAM lParam) {
         try {
             if (message == taskbarButtonCreatedMessage) {
-                onComThread.accept(this::addButtons);
+                // sent when the button first appears and again whenever Explorer restarts and
+                // rebuilds the taskbar, which drops the buttons and the progress with it
+                onComThread.accept(() -> {
+                    addButtons();
+                    if (onButtonCreated != null) {
+                        onButtonCreated.run();
+                    }
+                });
             } else if (message == WM_COMMAND && highWord(wParam.intValue()) == THBN_CLICKED) {
                 dispatch(lowWord(wParam.intValue()));
                 return new LRESULT(0);
@@ -294,8 +335,13 @@ final class ThumbBar {
         }
     }
 
+    /**
+     * Puts the buttons on the taskbar button. Tried again on every TaskbarButtonCreated rather
+     * than only until it first works: after an Explorer restart the button is a new one without
+     * them. On a button that already has them the shell refuses, and that changes nothing here.
+     */
     private synchronized void addButtons() {
-        if (added || buttons == null) {
+        if (buttons == null) {
             return;
         }
         if (taskbarList.thumbBarAddButtons(hwnd, BUTTON_COUNT, buttons[0].getPointer())
@@ -308,8 +354,10 @@ final class ThumbBar {
 
     private void buildIcons() {
         int size = Math.max(User32.INSTANCE.GetSystemMetrics(WinUser.SM_CXSMICON), 16);
-        // the thumbnail toolbar follows the system theme, not the app's
-        Color ink = SystemTheme.isDark() ? new Color(0xF0, 0xF0, 0xF0) : new Color(0x20, 0x20, 0x20);
+        // the thumbnail flyout follows the taskbar's theme, which is not the apps theme: a dark
+        // taskbar with light apps is the Windows 10 default
+        Color ink = SystemTheme.isShellDark()
+                ? new Color(0xF0, 0xF0, 0xF0) : new Color(0x20, 0x20, 0x20);
         previousIcon = toIcon(draw(size, ink, Glyph.PREVIOUS));
         playIcon = toIcon(draw(size, ink, Glyph.PLAY));
         pauseIcon = toIcon(draw(size, ink, Glyph.PAUSE));

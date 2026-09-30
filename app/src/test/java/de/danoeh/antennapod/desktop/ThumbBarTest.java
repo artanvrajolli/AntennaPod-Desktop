@@ -78,7 +78,7 @@ public class ThumbBarTest {
 
     @Test
     public void testInstallOnNothingIsRefusedRatherThanThrowing() {
-        assertEquals(null, ThumbBar.install(null, null, null, Runnable::run));
+        assertEquals(null, ThumbBar.install(null, null, null, Runnable::run, null));
     }
 
     private static int opaquePixels(BufferedImage image) {

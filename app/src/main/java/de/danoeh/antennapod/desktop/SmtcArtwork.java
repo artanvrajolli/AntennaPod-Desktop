@@ -4,7 +4,9 @@ import de.danoeh.antennapod.net.common.AntennapodHttpClient;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.Locale;
+import java.util.function.BooleanSupplier;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
@@ -28,6 +30,16 @@ final class SmtcArtwork {
      * Returns null when there is nothing to show.
      */
     static File fetch(String url, File dir, long mediaId) {
+        return fetch(url, dir, mediaId, () -> true);
+    }
+
+    /**
+     * As above; {@code current} says whether the episode is still the one playing once the
+     * download is done. Fetches run concurrently, so only a current one may clear out the other
+     * episodes' artwork - a slow, stale fetch would otherwise delete the file the card is about to
+     * read for the episode that replaced it.
+     */
+    static File fetch(String url, File dir, long mediaId, BooleanSupplier current) {
         if (url == null || url.isEmpty() || mediaId <= 0) {
             return null;
         }
@@ -44,16 +56,26 @@ final class SmtcArtwork {
             if (bytes == null || bytes.length == 0) {
                 return null;
             }
-            File part = new File(dir, mediaId + ".part");
-            Files.write(part.toPath(), bytes);
-            Files.deleteIfExists(target.toPath());
-            Files.move(part.toPath(), target.toPath());
-            dropSiblings(dir, target);
+            // a part file of its own: switching A -> B -> A quickly runs two fetches for A
+            File part = File.createTempFile(mediaId + "-", PART_SUFFIX, dir);
+            try {
+                Files.write(part.toPath(), bytes);
+                Files.move(part.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            } finally {
+                Files.deleteIfExists(part.toPath());
+            }
+            if (current.getAsBoolean()) {
+                dropSiblings(dir, target);
+            }
             return target;
         } catch (IOException | RuntimeException e) {
             return null;
         }
     }
+
+    private static final String PART_SUFFIX = ".part";
+    /** A part file this old is left over from a crash, not a download still being written. */
+    private static final long STALE_PART_MS = 60_000;
 
     /** Drops artwork left over from earlier episodes, so the folder never grows. Best effort. */
     static void dropSiblings(File dir, File keep) {
@@ -66,7 +88,12 @@ final class SmtcArtwork {
         if (files == null) {
             return;
         }
+        long now = System.currentTimeMillis();
         for (File file : files) {
+            if (file.getName().endsWith(PART_SUFFIX) && now - file.lastModified() < STALE_PART_MS) {
+                // another fetch is writing it right now
+                continue;
+            }
             if (!file.equals(keep)) {
                 try {
                     Files.deleteIfExists(file.toPath());
