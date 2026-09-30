@@ -446,6 +446,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 shutdown();
             }
         });
+        // started with Windows: come up out of the way, in the tray once it exists
+        boolean startMinimized = getParameters().getRaw().contains(StartupRegistration.MINIMIZED_ARG);
+        if (startMinimized) {
+            stage.setIconified(true);
+        }
         stage.show();
         // the taskbar button only exists once the window is showing
         windowsTaskbar.attach(stage, new ThumbBar.Callbacks() {
@@ -576,6 +581,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         Platform.setImplicitExit(!trayActive);
 
+        if (startMinimized) {
+            if (trayActive) {
+                // the same hide as closing to the tray; the tray icon brings the window back
+                stage.hide();
+            }
+        }
         reloadFeeds(null);
         applyProxy();
         if (DesktopPreferences.getUpdateCheckEnabled()) {
@@ -3777,6 +3788,23 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 + "follow whichever player is currently active through the system media card, "
                 + "so turning this off just ignores them here and leaves them to other players."));
         grid.add(mediaKeysBox, 0, row++, 2, 1);
+        javafx.scene.control.CheckBox withWindowsBox = new javafx.scene.control.CheckBox(
+                "Start with Windows, in the tray");
+        withWindowsBox.setSelected(StartupRegistration.isEnabled());
+        withWindowsBox.setDisable(!StartupRegistration.isAvailable());
+        withWindowsBox.setTooltip(new Tooltip(StartupRegistration.isAvailable()
+                ? "Starts AntennaPod when you sign in, without opening its window"
+                : "Only the installed or unzipped app can start with Windows, not a run from source"));
+        withWindowsBox.selectedProperty().addListener((obs, was, on) -> {
+            if (!StartupRegistration.setEnabled(on)) {
+                setStatus("Could not change the Windows startup entry");
+                withWindowsBox.setSelected(StartupRegistration.isEnabled());
+            } else {
+                setStatus(on ? "AntennaPod starts with Windows, in the tray"
+                        : "AntennaPod no longer starts with Windows");
+            }
+        });
+        grid.add(withWindowsBox, 0, row++, 2, 1);
         grid.add(sectionLabel("Updates"), 0, row++, 2, 1);
         Label versionLabel = new Label("Version " + appVersion());
         versionLabel.getStyleClass().add("muted-label");

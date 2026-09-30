@@ -64,6 +64,7 @@ can go on a USB stick. Developers can do the same for a source run with
   taskbar button shows playback progress and the episode's artwork, and
   previous, play/pause, next and skip-silence buttons sit under the taskbar
   thumbnail
+- Can start with Windows straight into the tray (Settings → General → Window)
 - Keeps running in the tray when the window is closed (configurable), resumes
   a stream that stops before the episode is over, and keeps a temporary copy
   of the playing and next queued episode, dropped once it is played
