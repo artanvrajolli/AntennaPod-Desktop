@@ -223,12 +223,12 @@ public final class SmtcManager {
             try {
                 HWND window = awaitWindow(title);
                 if (window == null) {
-                    reportError("app window not found");
+                    reportError(Messages.get("media_card.error.no_window"));
                     return;
                 }
                 int hr = ComBase.INSTANCE.RoInitialize(RO_INIT_MULTITHREADED);
                 if (hr < 0) {
-                    reportError("WinRT unavailable (" + hr + ")");
+                    reportError(Messages.format("media_card.error.winrt_unavailable", hr));
                     return;
                 }
                 roInitialized = true;
@@ -250,7 +250,7 @@ public final class SmtcManager {
                 }
             } catch (Throwable t) {
                 // an unavailable shell interface is not worth breaking playback over
-                reportError("attach failed: " + t.getMessage());
+                reportError(Messages.format("media_card.error.attach_failed", t.getMessage()));
                 t.printStackTrace();
             } finally {
                 Runnable failed = attachFailedHandler;
@@ -268,7 +268,7 @@ public final class SmtcManager {
     private boolean bindWindow(HWND window) {
         Pointer factory = getActivationFactory(CLASS_CONTROLS, IID_INTEROP);
         if (factory == null) {
-            reportError("media controls unavailable");
+            reportError(Messages.get("media_card.error.controls_unavailable"));
             return false;
         }
         Pointer controlsPtr;
@@ -278,7 +278,7 @@ public final class SmtcManager {
             release(factory);
         }
         if (controlsPtr == null) {
-            reportError("no media controls for this window");
+            reportError(Messages.get("media_card.error.no_controls"));
             return false;
         }
         controls = new Controls(controlsPtr);
@@ -306,7 +306,7 @@ public final class SmtcManager {
                 seekRegistered = seekToken != 0;
             } catch (Throwable t) {
                 seekRegistered = false;
-                reportError("card seeking unavailable: " + t.getMessage());
+                reportError(Messages.format("media_card.error.seek_unavailable", t.getMessage()));
             }
         }
         controls.putIsEnabled(true);
@@ -388,7 +388,7 @@ public final class SmtcManager {
                     pushStatus(status);
                 }
             } catch (Throwable t) {
-                reportError("reattach failed: " + t.getMessage());
+                reportError(Messages.format("media_card.error.reattach_failed", t.getMessage()));
                 t.printStackTrace();
             }
         });
@@ -431,7 +431,7 @@ public final class SmtcManager {
                 }
                 pushEpisode(title, artist, album, artwork);
             } catch (Throwable t) {
-                reportError("episode update failed: " + t.getMessage());
+                reportError(Messages.format("media_card.error.episode_update_failed", t.getMessage()));
                 t.printStackTrace();
             }
         });
@@ -451,7 +451,7 @@ public final class SmtcManager {
                 }
                 pushStatus(status);
             } catch (Throwable t) {
-                reportError("status update failed: " + t.getMessage());
+                reportError(Messages.format("media_card.error.status_update_failed", t.getMessage()));
                 t.printStackTrace();
             }
         });

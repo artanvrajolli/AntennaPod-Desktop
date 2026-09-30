@@ -123,11 +123,11 @@ public final class EpisodeDownloader {
                 .cacheControl(new CacheControl.Builder().noStore().build()).get().build();
         try (Response response = AntennapodHttpClient.getHttpClient().newCall(request).execute()) {
             if (!response.isSuccessful()) {
-                throw new IOException("Download failed: " + response);
+                throw new IOException(Messages.format("error.download.http", response));
             }
             ResponseBody body = response.body();
             if (body == null) {
-                throw new IOException("Empty response");
+                throw new IOException(Messages.get("error.download.empty"));
             }
             long total = body.contentLength();
             long bytesRead = 0;

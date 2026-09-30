@@ -93,7 +93,7 @@ public final class CastServer implements AutoCloseable {
             probe.connect(InetAddress.getByName(host), 1900);
             InetAddress local = probe.getLocalAddress();
             if (local == null || local.isAnyLocalAddress()) {
-                throw new IOException("No network route to " + host);
+                throw new IOException(Messages.format("cast.no_route", host));
             }
             return local;
         }

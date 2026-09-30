@@ -64,7 +64,7 @@ public final class FeedUpdater {
     /** Thrown when a feed answers 401: it needs a username and password. */
     public static final class AuthRequiredException extends IOException {
         public AuthRequiredException(String url) {
-            super("This feed needs a username and password: " + url);
+            super(Messages.format("error.feed.auth_required", url));
         }
     }
 
@@ -385,11 +385,11 @@ public final class FeedUpdater {
                     throw new AuthRequiredException(url);
                 }
                 if (!response.isSuccessful()) {
-                    throw new IOException("Feed download failed: " + response);
+                    throw new IOException(Messages.format("error.feed.http", response));
                 }
                 ResponseBody body = response.body();
                 if (body == null) {
-                    throw new IOException("Empty feed response");
+                    throw new IOException(Messages.get("error.feed.empty"));
                 }
                 try (BufferedSink sink = Okio.buffer(Okio.sink(tempFile))) {
                     sink.writeAll(body.source());

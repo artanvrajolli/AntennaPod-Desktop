@@ -20,7 +20,7 @@ public final class TranscriptFetcher {
     public static Transcript fetch(FeedItem item) throws IOException {
         String url = item.getTranscriptUrl();
         if (url == null || url.isEmpty()) {
-            throw new IOException("Episode has no transcript URL");
+            throw new IOException(Messages.get("error.transcript.no_url"));
         }
         File cacheFile = cacheFile(item.getId(), url);
         if (cacheFile.exists()) {
@@ -36,7 +36,7 @@ public final class TranscriptFetcher {
         Transcript transcript = TranscriptParser.parse(text, item.getTranscriptType());
         if (transcript == null) {
             // not cached: an error page served with 200 would otherwise fail this episode for good
-            throw new IOException("Could not parse transcript (" + item.getTranscriptType() + ")");
+            throw new IOException(Messages.format("error.transcript.parse", item.getTranscriptType()));
         }
         store(cacheFile, text);
         return transcript;
@@ -47,11 +47,11 @@ public final class TranscriptFetcher {
         Request request = new Request.Builder().url(url).get().build();
         try (Response response = AntennapodHttpClient.getHttpClient().newCall(request).execute()) {
             if (!response.isSuccessful()) {
-                throw new IOException("Transcript download failed: " + response);
+                throw new IOException(Messages.format("error.transcript.http", response));
             }
             ResponseBody body = response.body();
             if (body == null) {
-                throw new IOException("Empty transcript response");
+                throw new IOException(Messages.get("error.transcript.empty"));
             }
             return body.string();
         }

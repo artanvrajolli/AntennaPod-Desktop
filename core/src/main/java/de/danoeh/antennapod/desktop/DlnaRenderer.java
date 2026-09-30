@@ -182,8 +182,8 @@ public final class DlnaRenderer {
             String body = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
                 String error = element(body, "errorDescription");
-                throw new IOException(action + " failed on " + name + ": "
-                        + (error != null ? error : "HTTP " + response.code()));
+                throw new IOException(Messages.format("dlna.action_failed", action, name,
+                        error != null ? error : Messages.format("dlna.http_error", response.code())));
             }
             return body;
         }

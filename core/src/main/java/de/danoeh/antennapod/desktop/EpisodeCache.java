@@ -100,7 +100,7 @@ public final class EpisodeCache {
                 try {
                     database.setMediaCacheFile(media.getId(), media.getCacheFileUrl());
                 } catch (SQLException e) {
-                    report("Could not update episode cache: " + e.getMessage());
+                    report(Messages.format("status.cache.update_failed", e.getMessage()));
                 }
             }
             return;
@@ -164,7 +164,7 @@ public final class EpisodeCache {
         } catch (Exception e) {
             target.delete();
             if (!EpisodeDownloader.isCancellation(e)) {
-                report("Could not cache \"" + media.getHumanReadableIdentifier() + "\": " + e.getMessage());
+                report(Messages.format("status.cache.cache_failed", media.getHumanReadableIdentifier(), e.getMessage()));
             }
         } finally {
             // only this run's own entry, as in EpisodeDownloader: an evicted run winding down
@@ -208,7 +208,7 @@ public final class EpisodeCache {
         try {
             database.setMediaCacheFile(media.getId(), null);
         } catch (SQLException e) {
-            report("Could not update episode cache: " + e.getMessage());
+            report(Messages.format("status.cache.update_failed", e.getMessage()));
         }
         return true;
     }
@@ -260,8 +260,8 @@ public final class EpisodeCache {
             }
         }
         if (evicted > 0) {
-            report("Episode cache trimmed: removed " + evicted
-                    + (evicted == 1 ? " episode" : " episodes"));
+            report(Messages.format("status.cache.trimmed", evicted == 1
+                    ? Messages.get("count.episode.one") : Messages.format("count.episode.other", evicted)));
         }
         return evicted;
     }
@@ -294,7 +294,7 @@ public final class EpisodeCache {
                 }
             }
         } catch (SQLException e) {
-            report("Could not clean up the episode cache: " + e.getMessage());
+            report(Messages.format("status.cache.cleanup_failed", e.getMessage()));
         }
         return removed;
     }
@@ -374,7 +374,7 @@ public final class EpisodeCache {
         try {
             return database.getCachedMedia();
         } catch (SQLException e) {
-            report("Could not read episode cache: " + e.getMessage());
+            report(Messages.format("status.cache.read_failed", e.getMessage()));
             return List.of();
         }
     }

@@ -8,11 +8,11 @@ import de.danoeh.antennapod.model.feed.FeedMedia;
  * episode already carries, so it is cheap enough to run for every row on the FX thread.
  */
 public enum EpisodeFilter {
-    ALL("All episodes"),
-    UNPLAYED("Unplayed"),
-    IN_PROGRESS("In progress"),
-    DOWNLOADED("Downloaded"),
-    FAVORITES("Favorites");
+    ALL(Messages.get("filter.all")),
+    UNPLAYED(Messages.get("filter.unplayed")),
+    IN_PROGRESS(Messages.get("filter.in_progress")),
+    DOWNLOADED(Messages.get("filter.downloaded")),
+    FAVORITES(Messages.get("filter.favorites"));
 
     private final String label;
 
