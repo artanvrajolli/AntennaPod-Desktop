@@ -106,6 +106,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Button episodeRefreshButton;
     private ComboBox<EpisodeFilter> episodeStateBox;
     private javafx.animation.Timeline downloadsTicker;
+    /** Casting to a DLNA renderer: the server the TV fetches from and the running session. */
+    private CastServer castServer;
+    private CastSession castSession;
+    private boolean castPlaying;
+    private HBox castBar;
+    private Label castLabel;
+    private Button castPlayPauseButton;
+    private Button castButton;
     /** Every subscription's tags, as last loaded; read and written on the FX thread only. */
     private final Map<Long, java.util.SortedSet<String>> feedTagMap = new HashMap<>();
     private ComboBox<String> tagBox;
@@ -467,7 +475,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
             @Override
             public void onPlayPause() {
-                playback.togglePlayPause();
+                togglePlayPause();
             }
 
             @Override
@@ -499,7 +507,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             public void onPlay() {
                 onCardButton(() -> {
                     if (!playback.isPlaying()) {
-                        playback.togglePlayPause();
+                        togglePlayPause();
                     }
                 });
             }
@@ -535,7 +543,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         trayActive = trayEnabled && trayManager.init(new TrayManager.Callbacks() {
             @Override
             public void onPlayPause() {
-                playback.togglePlayPause();
+                togglePlayPause();
             }
 
             @Override
@@ -550,12 +558,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
             @Override
             public void onSkipBack() {
-                playback.skip(-DesktopPreferences.getSkipBackSec() * 1000);
+                skipBy(-DesktopPreferences.getSkipBackSec() * 1000);
             }
 
             @Override
             public void onSkipForward() {
-                playback.skip(DesktopPreferences.getSkipForwardSec() * 1000);
+                skipBy(DesktopPreferences.getSkipForwardSec() * 1000);
             }
 
             @Override
@@ -1983,12 +1991,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         prevButton.setOnAction(event -> playback.playPrevious());
         skipBackButton = iconButton(Icons.replay10(), "");
         skipBackButton.setOnAction(event ->
-                playback.skip(-DesktopPreferences.getSkipBackSec() * 1000));
+                skipBy(-DesktopPreferences.getSkipBackSec() * 1000));
         playPauseButton = iconButton(Icons.accent(Icons.play(26)), "Play / pause");
-        playPauseButton.setOnAction(event -> playback.togglePlayPause());
+        playPauseButton.setOnAction(event -> togglePlayPause());
         skipForwardButton = iconButton(Icons.forward30(), "");
         skipForwardButton.setOnAction(event ->
-                playback.skip(DesktopPreferences.getSkipForwardSec() * 1000));
+                skipBy(DesktopPreferences.getSkipForwardSec() * 1000));
         Button nextButton = iconButton(Icons.next(), "Next episode");
         nextButton.setOnAction(event -> playback.playNext());
         Button stopButton = iconButton(Icons.stop(), "Stop");
@@ -2129,7 +2137,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         HBox.setHgrow(stack, Priority.ALWAYS);
         scrubRow.setOnScroll(event -> {
             if (Math.abs(event.getDeltaY()) >= 20 && playback.getCurrentMedia() != null) {
-                playback.skip(event.getDeltaY() > 0 ? 10000 : -10000);
+                skipBy(event.getDeltaY() > 0 ? 10000 : -10000);
                 event.consume();
             }
         });
@@ -2137,7 +2145,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         HBox transportRow = new HBox(8, prevButton, skipBackButton, playPauseHolder,
                 skipForwardButton, nextButton, stopButton);
         transportRow.setAlignment(Pos.CENTER);
-        HBox extrasRow = new HBox(8, speedBox, silenceButton, muteButton, volumeSlider, sleepButton);
+        castButton = iconButton(Icons.cast(), "Cast to a TV or speaker");
+        castButton.setOnAction(event -> showCastMenu());
+        HBox extrasRow = new HBox(8, speedBox, silenceButton, muteButton, volumeSlider, sleepButton,
+                castButton);
         extrasRow.setAlignment(Pos.CENTER_RIGHT);
         // keep the overlay only as wide as its content, otherwise it swallows
         // the mouse clicks meant for the transport buttons underneath
@@ -2175,7 +2186,220 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         HBox main = new HBox(12, artColumn, controlsColumn);
         main.setAlignment(Pos.CENTER_LEFT);
         main.setPadding(new Insets(8, 8, 6, 8));
-        return new VBox(main);
+        return new VBox(buildCastBar(), main);
+    }
+
+    /** "Casting to <TV>" with its own controls; shown only while an episode plays on a renderer. */
+    private HBox buildCastBar() {
+        castLabel = new Label();
+        castLabel.setStyle("-fx-font-weight: bold;");
+        castLabel.setMinWidth(0);
+        HBox.setHgrow(castLabel, Priority.ALWAYS);
+        castLabel.setMaxWidth(Double.MAX_VALUE);
+        Button back = iconButton(Icons.replay10(), "Back on the TV");
+        back.setOnAction(event -> skipBy(-DesktopPreferences.getSkipBackSec() * 1000));
+        castPlayPauseButton = iconButton(Icons.pause(), "Play / pause on the TV");
+        castPlayPauseButton.setOnAction(event -> togglePlayPause());
+        Button forward = iconButton(Icons.forward30(), "Forward on the TV");
+        forward.setOnAction(event -> skipBy(DesktopPreferences.getSkipForwardSec() * 1000));
+        Button stop = new Button("Stop casting", Icons.stop());
+        stop.setOnAction(event -> stopCasting(false));
+        HBox bar = new HBox(8, new javafx.scene.Group(Icons.cast()), castLabel, back, castPlayPauseButton,
+                forward, stop);
+        bar.setAlignment(Pos.CENTER_LEFT);
+        bar.setPadding(new Insets(6, 8, 0, 8));
+        bar.setVisible(false);
+        bar.setManaged(false);
+        castBar = bar;
+        return bar;
+    }
+
+    // ---------------------------------------------------------------- casting (DLNA)
+
+    /** Play/pause for the whole app: on the TV while casting, else the local player. */
+    private void togglePlayPause() {
+        CastSession session = castSession;
+        if (session == null) {
+            playback.togglePlayPause();
+            return;
+        }
+        if (castPlaying) {
+            session.pause();
+        } else {
+            session.resume();
+        }
+        castPlaying = !castPlaying;
+        updateCastBar(session.lastPositionMs(), -1);
+    }
+
+    /** Skip for the whole app: on the TV while casting, else the local player. */
+    private void skipBy(int deltaMs) {
+        CastSession session = castSession;
+        if (session == null) {
+            playback.skip(deltaMs);
+            return;
+        }
+        session.seek(Math.max(0, session.lastPositionMs() + deltaMs));
+    }
+
+    /** Looks for renderers on the network and lists them under the cast button. */
+    private void showCastMenu() {
+        javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
+        if (castSession != null) {
+            javafx.scene.control.MenuItem stop = new javafx.scene.control.MenuItem(
+                    "Stop casting to " + castSession.renderer().name);
+            stop.setOnAction(event -> stopCasting(false));
+            menu.getItems().addAll(stop, new javafx.scene.control.SeparatorMenuItem());
+        }
+        javafx.scene.control.MenuItem searching =
+                new javafx.scene.control.MenuItem("Looking for TVs and speakers…");
+        searching.setDisable(true);
+        menu.getItems().add(searching);
+        menu.show(castButton, javafx.geometry.Side.TOP, 0, 0);
+        background.submit(() -> {
+            List<DlnaRenderer> found;
+            try {
+                found = DlnaDiscovery.discover(3000);
+            } catch (Exception e) {
+                found = new ArrayList<>();
+                setStatus("Could not search the network: " + e.getMessage());
+            }
+            List<DlnaRenderer> renderers = found;
+            Platform.runLater(() -> {
+                menu.getItems().remove(searching);
+                if (renderers.isEmpty()) {
+                    javafx.scene.control.MenuItem none = new javafx.scene.control.MenuItem(
+                            "None found: the TV must be on, on this network, with DLNA or media sharing on");
+                    none.setDisable(true);
+                    menu.getItems().add(none);
+                }
+                for (DlnaRenderer renderer : renderers) {
+                    javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(renderer.name, Icons.cast());
+                    item.setOnAction(event -> startCasting(renderer));
+                    menu.getItems().add(item);
+                }
+                if (menu.isShowing()) {
+                    // re-show so the menu grows to its new items
+                    menu.hide();
+                    menu.show(castButton, javafx.geometry.Side.TOP, 0, 0);
+                }
+            });
+        });
+    }
+
+    /** Sends the loaded (or else the selected) episode to a renderer, from where it is. */
+    private void startCasting(DlnaRenderer renderer) {
+        FeedMedia current = playback.getCurrentMedia();
+        FeedMedia media = current;
+        int position;
+        if (media != null) {
+            position = playback.getPosition();
+        } else {
+            FeedItem selected = episodeList.getSelectionModel().getSelectedItem();
+            media = selected != null ? selected.getMedia() : null;
+            position = media != null ? media.getPosition() : 0;
+        }
+        if (media == null) {
+            setStatus("Play or select an episode first, then cast it");
+            return;
+        }
+        if (playback.isPlaying()) {
+            playback.pause();
+        }
+        if (castSession != null) {
+            stopCasting(false);
+        }
+        FeedMedia episode = media;
+        int start = Math.max(0, position);
+        try {
+            if (castServer == null) {
+                castServer = new CastServer();
+            }
+        } catch (java.io.IOException e) {
+            setStatus("Could not start casting: " + e.getMessage());
+            return;
+        }
+        CastSession session = new CastSession(renderer, castServer, new CastSession.Listener() {
+            @Override
+            public void onProgress(int positionMs, int durationMs, boolean playing) {
+                Platform.runLater(() -> {
+                    if (castSession == null) {
+                        return;
+                    }
+                    castPlaying = playing;
+                    updateCastBar(positionMs, durationMs);
+                });
+            }
+
+            @Override
+            public void onFinished() {
+                Platform.runLater(() -> stopCasting(true));
+            }
+
+            @Override
+            public void onError(String message) {
+                setStatus("Casting to " + renderer.name + ": " + message);
+            }
+        });
+        castSession = session;
+        castPlaying = true;
+        session.cast(episode, start);
+        String title = episode.getItem() != null ? episode.getItem().getTitle() : episode.getHumanReadableIdentifier();
+        castBar.setVisible(true);
+        castBar.setManaged(true);
+        castLabel.setUserData(renderer.name + " · " + title);
+        updateCastBar(start, episode.getDuration());
+        setStatus("Casting \"" + title + "\" to " + renderer.name);
+    }
+
+    private void updateCastBar(int positionMs, int durationMs) {
+        String what = castLabel.getUserData() != null ? castLabel.getUserData().toString() : "";
+        String time = formatDuration(Math.max(positionMs, 0))
+                + (durationMs > 0 ? " / " + formatDuration(durationMs) : "");
+        castLabel.setText("Casting to " + what + " · " + time);
+        castPlayPauseButton.setGraphic(castPlaying ? Icons.pause() : Icons.play());
+    }
+
+    /**
+     * Ends casting: the TV stops, and where it got to becomes the episode's position (or the
+     * episode is marked played when it finished there), so the PC carries on from there.
+     */
+    private void stopCasting(boolean finished) {
+        CastSession session = castSession;
+        if (session == null) {
+            return;
+        }
+        castSession = null;
+        castPlaying = false;
+        session.close();
+        castBar.setVisible(false);
+        castBar.setManaged(false);
+        FeedMedia media = session.media();
+        String device = session.renderer().name;
+        int reached = session.lastPositionMs();
+        FeedMedia current = playback.getCurrentMedia();
+        if (!finished && current != null && media != null && current.getId() == media.getId()) {
+            // the local player still has it loaded: line it up with where the TV stopped
+            playback.seek(reached);
+        }
+        if (media == null) {
+            return;
+        }
+        if (finished && media.getItem() != null) {
+            applyPlayedState(List.of(media.getItem()), true);
+            setStatus("Finished on " + device);
+            return;
+        }
+        background.submit(() -> {
+            try {
+                media.setPosition(reached);
+                database.updatePlaybackState(media);
+                setStatus("Stopped casting to " + device + " at " + formatDuration(reached));
+                Platform.runLater(this::refilterEpisodes);
+            } catch (Exception e) {
+                setStatus("Could not save the position: " + e.getMessage());
+            }
+        });
     }
 
     private static Label buildTimeLabel(Pos alignment) {
@@ -2441,14 +2665,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 event.consume();
                 break;
             case SPACE:
-                playback.togglePlayPause();
+                togglePlayPause();
                 event.consume();
                 break;
             case LEFT:
                 if (event.isControlDown()) {
                     playback.playPrevious();
                 } else {
-                    playback.skip(-5000);
+                    skipBy(-5000);
                 }
                 event.consume();
                 break;
@@ -2456,7 +2680,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 if (event.isControlDown()) {
                     playback.playNext();
                 } else {
-                    playback.skip(5000);
+                    skipBy(5000);
                 }
                 event.consume();
                 break;
@@ -2483,7 +2707,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             // is what is left when another player holds them and this window has the focus
             case PLAY:
             case PAUSE:
-                playback.togglePlayPause();
+                togglePlayPause();
                 event.consume();
                 break;
             case TRACK_NEXT:
@@ -2541,7 +2765,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         mediaKeys = new MediaKeys(new MediaKeys.Callbacks() {
             @Override
             public void onPlayPause() {
-                playback.togglePlayPause();
+                togglePlayPause();
             }
 
             @Override
@@ -6544,6 +6768,17 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             // ignore
         }
         try {
+            // quitting stops the TV too, and closes the port it fetched from
+            if (castSession != null) {
+                castSession.close();
+            }
+            if (castServer != null) {
+                castServer.close();
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        try {
             playback.shutdown();
         } catch (Exception e) {
             // ignore
@@ -6645,7 +6880,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     FeedMedia current = playback.getCurrentMedia();
                     if (item.getMedia() != null && current != null
                             && item.getMedia().getId() == current.getId()) {
-                        playback.togglePlayPause();
+                        togglePlayPause();
                     } else {
                         playback.play(item, playbackOrder());
                     }

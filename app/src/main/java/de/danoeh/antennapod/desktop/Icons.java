@@ -217,6 +217,15 @@ public final class Icons {
                 + capsule(128, 128, 170, 128, 20));
     }
 
+    /** A screen with broadcast waves rising from its bottom-left corner: send to a TV. */
+    public static Node cast() {
+        return icon(polygon(true, 40, 112, 40, 56, 216, 56, 216, 200, 136, 200, 136, 182,
+                        198, 182, 198, 74, 58, 74, 58, 112)
+                + circle(54, 188, 14)
+                + band(40, 202, 48, 16, 270, 360)
+                + band(40, 202, 84, 16, 270, 360));
+    }
+
     /** A clock face whose rim is an anti-clockwise arrow. */
     public static Node history() {
         return icon(arcArrow(128, 128, 88, 22, 250, 530, true)
