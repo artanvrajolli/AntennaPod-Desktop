@@ -732,6 +732,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         MenuButton moreMenu = new MenuButton("More", Icons.more());
         moreMenu.getItems().addAll(
                 toolbarMenuItem("Mark all as seen", Icons.check(), this::markAllSeen),
+                toolbarMenuItem("Mini player", Icons.play(), this::showMiniPlayer),
                 toolbarMenuItem("Add local folder…", Icons.folder(), this::addLocalFolder),
                 toolbarMenuItem("Import…", Icons.download(), this::importOpml),
                 toolbarMenuItem("Export…", Icons.upload(), this::exportOpml),
@@ -2254,6 +2255,18 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         spinWhile(episodeRefreshButton, () -> doRefreshFeed(feed));
     }
 
+    /**
+     * Swaps the window for the small always-on-top controls; "Show AntennaPod" on them brings
+     * the window back. They live in the tray, so without one there is nothing to swap to.
+     */
+    private void showMiniPlayer() {
+        if (!trayActive || !trayManager.showMiniPlayer()) {
+            setStatus("The mini player needs the tray icon, which is switched off or unavailable");
+            return;
+        }
+        mainStage.hide();
+    }
+
     /** Every keyboard shortcut, as the F1 list shows them. */
     static final String[][] SHORTCUTS = {
             {"Space", "Play / pause"},
@@ -2269,6 +2282,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             {"F5", "Check this podcast for new episodes"},
             {"Ctrl+F5", "Refresh all podcasts"},
             {"Ctrl+,", "Settings"},
+            {"Ctrl+Shift+M", "Mini player"},
             {"F1", "This list"},
     };
 
@@ -2327,6 +2341,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             case COMMA:
                 if (ctrl) {
                     showSettings();
+                    return true;
+                }
+                return false;
+            case M:
+                if (ctrl && event.isShiftDown()) {
+                    showMiniPlayer();
                     return true;
                 }
                 return false;

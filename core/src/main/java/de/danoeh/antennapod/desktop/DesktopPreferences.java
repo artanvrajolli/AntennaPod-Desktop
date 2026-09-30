@@ -241,6 +241,18 @@ public final class DesktopPreferences {
         PREFS.putBoolean("closeToTray", enabled);
     }
 
+    /** Where the mini player was last left on screen, or null before it was ever placed. */
+    public static double[] getMiniPlayerPosition() {
+        double x = PREFS.getDouble("miniPlayerX", Double.NaN);
+        double y = PREFS.getDouble("miniPlayerY", Double.NaN);
+        return Double.isNaN(x) || Double.isNaN(y) ? null : new double[]{x, y};
+    }
+
+    public static void setMiniPlayerPosition(double x, double y) {
+        PREFS.putDouble("miniPlayerX", x);
+        PREFS.putDouble("miniPlayerY", y);
+    }
+
     public static boolean getNotifyNewEpisodes() {
         return PREFS.getBoolean("notifyNewEpisodes", true);
     }

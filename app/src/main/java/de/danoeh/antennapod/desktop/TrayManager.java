@@ -105,13 +105,34 @@ public final class TrayManager {
         controlsWindow.setScene(new Scene(buildControls(callbacks)));
         ThemeManager.style(controlsWindow.getScene());
         controlsWindow.focusedProperty().addListener((obs, previous, focused) -> {
-            if (!focused) {
+            // a pinned mini player stays up while the user works elsewhere
+            if (!focused && !pinned) {
                 controlsWindow.hide();
             }
         });
         controlsWindow.getScene().setOnKeyPressed(event -> {
             if (event.getCode() == KeyCode.ESCAPE) {
-                controlsWindow.hide();
+                hideControls();
+            }
+        });
+        // pinned, the panel is the window's only handle: drag it anywhere on its background
+        double[] grab = new double[2];
+        boolean[] moving = {false};
+        controlsWindow.getScene().setOnMousePressed(event -> {
+            // the seek slider and the buttons keep their own drags and clicks
+            moving[0] = !startsOnControl(event.getPickResult().getIntersectedNode());
+            grab[0] = controlsWindow.getX() - event.getScreenX();
+            grab[1] = controlsWindow.getY() - event.getScreenY();
+        });
+        controlsWindow.getScene().setOnMouseDragged(event -> {
+            if (pinned && moving[0]) {
+                controlsWindow.setX(event.getScreenX() + grab[0]);
+                controlsWindow.setY(event.getScreenY() + grab[1]);
+            }
+        });
+        controlsWindow.getScene().setOnMouseReleased(event -> {
+            if (pinned) {
+                DesktopPreferences.setMiniPlayerPosition(controlsWindow.getX(), controlsWindow.getY());
             }
         });
         trayIcon = new TrayIcon(defaultIcon, "AntennaPod Desktop");
@@ -208,6 +229,9 @@ public final class TrayManager {
             hideControls();
             callbacks.onExit();
         });
+        pinButton = new Button("Keep open");
+        pinButton.setTooltip(new Tooltip("Keep these controls on screen as a mini player; drag to move"));
+        pinButton.setOnAction(event -> setPinned(!pinned));
         silenceToggle = new CheckBox("Skip silence");
         silenceToggle.setSelected(callbacks.isSilenceSkipping());
         silenceToggle.setTooltip(new Tooltip("Play through quiet passages faster"));
@@ -215,7 +239,7 @@ public final class TrayManager {
                 callbacks.onSilenceSkipping(silenceToggle.isSelected()));
         HBox options = new HBox(8, silenceToggle);
         options.setAlignment(Pos.CENTER_LEFT);
-        HBox actions = new HBox(8, show, exit);
+        HBox actions = new HBox(8, show, pinButton, exit);
         actions.setAlignment(Pos.CENTER);
         VBox panel = new VBox(10, header, new Separator(), transportRow, progressRow,
                 new Separator(), options, actions);
@@ -284,9 +308,68 @@ public final class TrayManager {
     }
 
     private void hideControls() {
+        pinned = false;
+        if (pinButton != null) {
+            pinButton.setText("Keep open");
+        }
         if (controlsWindow != null) {
             controlsWindow.hide();
         }
+    }
+
+    static boolean startsOnControl(javafx.scene.Node node) {
+        for (javafx.scene.Node n = node; n != null; n = n.getParent()) {
+            // labels (the title, the time) are text to grab, not controls to operate
+            if (n instanceof javafx.scene.control.Control && !(n instanceof Label)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether the controls stay up as a mini player instead of closing when focus leaves. */
+    private boolean pinned;
+    private Button pinButton;
+
+    private void setPinned(boolean pin) {
+        if (controlsWindow == null) {
+            return;
+        }
+        pinned = pin;
+        pinButton.setText(pin ? "Unpin" : "Keep open");
+        if (pin) {
+            DesktopPreferences.setMiniPlayerPosition(controlsWindow.getX(), controlsWindow.getY());
+        } else {
+            controlsWindow.hide();
+        }
+    }
+
+    /**
+     * Opens the controls as a mini player: pinned, always on top, where it was last left (or
+     * in the bottom-right corner). False when there is no tray, which the controls live in.
+     */
+    public boolean showMiniPlayer() {
+        if (trayIcon == null || controlsWindow == null) {
+            return false;
+        }
+        if (silenceToggle != null && callbacks != null) {
+            silenceToggle.setSelected(callbacks.isSilenceSkipping());
+        }
+        controlsWindow.show();
+        controlsWindow.sizeToScene();
+        Rectangle2D bounds = Screen.getPrimary().getVisualBounds();
+        double[] saved = DesktopPreferences.getMiniPlayerPosition();
+        double x = saved != null ? saved[0] : bounds.getMaxX() - controlsWindow.getWidth() - 16;
+        double y = saved != null ? saved[1] : bounds.getMaxY() - controlsWindow.getHeight() - 16;
+        // a position left on a screen that is gone now falls back onto the primary one
+        if (Screen.getScreensForRectangle(x, y, controlsWindow.getWidth(), controlsWindow.getHeight()).isEmpty()) {
+            x = bounds.getMaxX() - controlsWindow.getWidth() - 16;
+            y = bounds.getMaxY() - controlsWindow.getHeight() - 16;
+        }
+        controlsWindow.setX(x);
+        controlsWindow.setY(y);
+        setPinned(true);
+        return true;
     }
 
     private void showControls() {
