@@ -1139,6 +1139,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void showModal(String title, Node content) {
+        showModal(title, content, false);
+    }
+
+    /**
+     * @param scrollsItself true for content with scrolling of its own (Settings: one scroll
+     *                      pane per tab); it then gets no second scroll pane around it, only
+     *                      the height cap, which is what showed two scroll bars side by side
+     */
+    private void showModal(String title, Node content, boolean scrollsItself) {
         Label modalTitle = new Label(title);
         modalTitle.getStyleClass().add("sidebar-title");
         modalTitle.setMaxWidth(Double.MAX_VALUE);
@@ -1153,13 +1162,23 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         VBox contentBox = new VBox(content);
         contentBox.getStyleClass().add("sidebar-content");
         VBox.setVgrow(content, Priority.ALWAYS);
-        ScrollPane scroller = new ScrollPane(contentBox);
-        scroller.setFitToWidth(true);
-        scroller.getStyleClass().add("modal-scroll");
-        scroller.maxHeightProperty().bind(appShell.heightProperty().subtract(160));
-        VBox.setVgrow(scroller, Priority.ALWAYS);
+        Region body;
+        if (scrollsItself) {
+            contentBox.maxHeightProperty().bind(appShell.heightProperty().subtract(160));
+            body = contentBox;
+        } else {
+            ScrollPane scroller = new ScrollPane(contentBox);
+            scroller.setFitToWidth(true);
+            // content that fits fills the viewport exactly, so no scroll bar appears for a
+            // pixel of rounding; taller content (min height above the viewport) still scrolls
+            scroller.setFitToHeight(true);
+            scroller.getStyleClass().add("modal-scroll");
+            scroller.maxHeightProperty().bind(appShell.heightProperty().subtract(160));
+            body = scroller;
+        }
+        VBox.setVgrow(body, Priority.ALWAYS);
 
-        VBox card = new VBox(header, scroller);
+        VBox card = new VBox(header, body);
         card.getStyleClass().add("modal-card");
         card.setMinWidth(420);
         card.setPrefWidth(560);
@@ -4523,7 +4542,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         VBox.setVgrow(tabs, Priority.ALWAYS);
         HBox savedBar = new HBox(savedLabel);
         savedBar.setPadding(new Insets(6, 12, 10, 12));
-        showModal("Settings", new VBox(tabs, savedBar));
+        showModal("Settings", new VBox(tabs, savedBar), true);
     }
 
     /** A fresh grid for one settings tab. */
