@@ -10,3 +10,6 @@ out/
 Thumbs.db
 installer/
 AntennaPod-Desktop-Setup-*.exe
+
+# agent worktrees (Claude Code)
+.claude/worktrees/
