@@ -56,7 +56,8 @@ public final class EpisodeDownloader {
     }
 
     public synchronized void enqueue(FeedMedia media, ProgressListener listener) {
-        if (isDownloading(media.getId())) {
+        // a local folder's file is already here, and is not the downloader's to fetch or replace
+        if (isDownloading(media.getId()) || LocalFolderFeeds.isLocalMedia(media)) {
             return;
         }
         AtomicReference<Future<?>> self = new AtomicReference<>();

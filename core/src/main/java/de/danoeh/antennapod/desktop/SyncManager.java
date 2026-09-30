@@ -183,7 +183,7 @@ public class SyncManager {
         List<String> stillPending = new ArrayList<>();
         int added = 0;
         for (String url : wanted) {
-            if (!localUrls.contains(url)) {
+            if (!localUrls.contains(url) && !LocalFolderFeeds.isLocalFeedUrl(url)) {
                 try {
                     feedUpdater.subscribeKeepingUrl(url);
                     added++;
@@ -196,7 +196,8 @@ public class SyncManager {
         database.setSyncState(STATE_PENDING_SUBSCRIPTIONS, String.join("\n", stillPending));
         for (String url : changes.getRemoved()) {
             Feed feed = database.getFeedByDownloadUrl(url);
-            if (feed != null) {
+            // a local folder is never the server's to remove, whatever it reports
+            if (feed != null && !feed.isLocalFeed()) {
                 feedUpdater.unsubscribe(feed.getId());
             }
         }
@@ -205,9 +206,12 @@ public class SyncManager {
         // fail are kept in the pending list; adds already done are skipped as local next time)
         database.setSyncState(STATE_SUB_TIMESTAMP, String.valueOf(changes.getTimestamp()));
 
+        // local folders stay on this computer: their paths mean nothing to other devices
         Set<String> currentLocal = new HashSet<>();
         for (Feed feed : database.getAllFeeds()) {
-            currentLocal.add(feed.getDownloadUrl());
+            if (!feed.isLocalFeed()) {
+                currentLocal.add(feed.getDownloadUrl());
+            }
         }
         Set<String> snapshot = new HashSet<>(database.getSyncSubscriptionSnapshot());
         List<String> toAdd = new ArrayList<>();
@@ -386,7 +390,7 @@ public class SyncManager {
                 feed = database.getFeed(item.getFeedId());
                 item.setFeed(feed);
             }
-            if (feed == null || media.getDownloadUrl() == null) {
+            if (feed == null || feed.isLocalFeed() || media.getDownloadUrl() == null) {
                 return;
             }
             EpisodeAction.Builder builder = new EpisodeAction.Builder(item, EpisodeAction.Action.PLAY);
@@ -413,7 +417,7 @@ public class SyncManager {
                 feed = database.getFeed(item.getFeedId());
                 item.setFeed(feed);
             }
-            if (feed == null || item.getMedia().getDownloadUrl() == null) {
+            if (feed == null || feed.isLocalFeed() || item.getMedia().getDownloadUrl() == null) {
                 return;
             }
             int totalSec = totalSeconds(item.getMedia());

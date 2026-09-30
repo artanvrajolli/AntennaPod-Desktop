@@ -38,11 +38,22 @@ public final class OpmlImporter {
     }
 
     public void exportToWriter(Writer writer) throws Exception {
-        OpmlWriter.writeDocument(database.getAllFeeds(), writer);
+        OpmlWriter.writeDocument(exportableFeeds(), writer);
     }
 
     public void exportHtmlToWriter(Writer writer) throws Exception {
-        HtmlWriter.writeDocument(database.getAllFeeds(), writer);
+        HtmlWriter.writeDocument(exportableFeeds(), writer);
+    }
+
+    /** Every subscription but local folders, whose paths mean nothing to another app. */
+    private java.util.List<de.danoeh.antennapod.model.feed.Feed> exportableFeeds() throws Exception {
+        java.util.List<de.danoeh.antennapod.model.feed.Feed> feeds = new java.util.ArrayList<>();
+        for (de.danoeh.antennapod.model.feed.Feed feed : database.getAllFeeds()) {
+            if (!feed.isLocalFeed()) {
+                feeds.add(feed);
+            }
+        }
+        return feeds;
     }
 
     public static final class ImportResult {

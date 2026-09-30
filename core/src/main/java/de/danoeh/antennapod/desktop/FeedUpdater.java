@@ -194,10 +194,11 @@ public final class FeedUpdater {
             if (media == null) {
                 continue;
             }
-            if (media.getLocalFileUrl() != null) {
+            // only what the app downloaded or cached itself: a local folder's files are the user's
+            if (LocalFolderFeeds.isAppOwned(media.getLocalFileUrl())) {
                 new File(media.getLocalFileUrl()).delete();
             }
-            if (media.getCacheFileUrl() != null) {
+            if (LocalFolderFeeds.isAppOwned(media.getCacheFileUrl())) {
                 new File(media.getCacheFileUrl()).delete();
             }
         }
@@ -210,7 +211,76 @@ public final class FeedUpdater {
         new File(DesktopPreferences.getEpisodeCacheDir(), String.valueOf(feedId)).delete();
     }
 
+    /**
+     * Subscribes to a folder of audio files: each playable file is an episode that plays from
+     * where it is. Subscribing again to the same folder returns the existing subscription.
+     */
+    public Feed subscribeLocalFolder(File folder) throws Exception {
+        Feed existing = database.getFeedByDownloadUrl(LocalFolderFeeds.feedUrlFor(folder));
+        if (existing != null) {
+            return existing;
+        }
+        Feed scanned = LocalFolderFeeds.read(folder);
+        database.inTransaction(() -> {
+            database.insertFeed(scanned);
+            for (FeedItem item : distinctItems(scanned.getItems())) {
+                item.setFeedId(scanned.getId());
+                item.setPlayState(FeedItem.UNPLAYED);
+                long itemId = database.insertItem(scanned.getId(), item);
+                item.getMedia().setItemId(itemId);
+                database.insertMedia(itemId, item.getMedia());
+            }
+            return null;
+        });
+        return database.getFeed(scanned.getId());
+    }
+
+    /**
+     * A local folder's refresh: files added since are new episodes, and episodes whose file is
+     * gone leave the list (their rows only; nothing on disk is touched).
+     */
+    private List<FeedItem> rescanLocalFolder(Feed feed) throws Exception {
+        File folder = LocalFolderFeeds.folderOf(feed);
+        if (folder == null) {
+            return new ArrayList<>();
+        }
+        Feed scanned = LocalFolderFeeds.read(folder);
+        return database.inTransaction(() -> {
+            if (!database.feedExists(feed.getId())) {
+                return new ArrayList<FeedItem>();
+            }
+            Map<String, FeedItem> known = new HashMap<>();
+            for (FeedItem item : database.getItemsOfFeed(feed.getId())) {
+                known.put(item.getIdentifyingValue(), item);
+            }
+            List<FeedItem> added = new ArrayList<>();
+            for (FeedItem item : distinctItems(scanned.getItems())) {
+                if (known.remove(item.getIdentifyingValue()) != null) {
+                    continue;
+                }
+                item.setFeedId(feed.getId());
+                item.setFeed(feed);
+                item.setNew();
+                long itemId = database.insertItem(feed.getId(), item);
+                item.getMedia().setItemId(itemId);
+                database.insertMedia(itemId, item.getMedia());
+                added.add(item);
+            }
+            for (FeedItem gone : known.values()) {
+                database.deleteItem(gone.getId());
+            }
+            if (scanned.getImageUrl() != null && !scanned.getImageUrl().equals(feed.getImageUrl())) {
+                feed.setImageUrl(scanned.getImageUrl());
+                database.updateFeed(feed);
+            }
+            return added;
+        });
+    }
+
     public List<FeedItem> refresh(Feed feed) throws Exception {
+        if (feed.isLocalFeed()) {
+            return rescanLocalFolder(feed);
+        }
         Feed downloaded = downloadAndParse(feed.getDownloadUrl());
         // the download is done outside the transaction; only storing it holds the database
         return database.inTransaction(() -> store(feed, downloaded));

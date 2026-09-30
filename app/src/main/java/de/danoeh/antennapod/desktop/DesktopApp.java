@@ -732,6 +732,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         MenuButton moreMenu = new MenuButton("More", Icons.more());
         moreMenu.getItems().addAll(
                 toolbarMenuItem("Mark all as seen", Icons.check(), this::markAllSeen),
+                toolbarMenuItem("Add local folder…", Icons.folder(), this::addLocalFolder),
                 toolbarMenuItem("Import…", Icons.download(), this::importOpml),
                 toolbarMenuItem("Export…", Icons.upload(), this::exportOpml),
                 toolbarMenuItem("Settings", Icons.settings(), this::showSettings),
@@ -3069,6 +3070,33 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
     }
 
+    /**
+     * Adds a folder of the user's audio files as a subscription. The files play from where they
+     * are and are never moved, changed or deleted by the app; a refresh picks up added files.
+     */
+    private void addLocalFolder() {
+        javafx.stage.DirectoryChooser chooser = new javafx.stage.DirectoryChooser();
+        chooser.setTitle("Add a folder of audio files");
+        File folder = chooser.showDialog(feedList.getScene().getWindow());
+        if (folder == null) {
+            return;
+        }
+        setStatus("Adding " + folder.getName() + "…");
+        background.submit(() -> {
+            try {
+                Feed feed = feedUpdater.subscribeLocalFolder(folder);
+                int episodes = feed.getItems() != null ? feed.getItems().size() : 0;
+                setStatus(episodes == 0
+                        ? "Added " + feed.getTitle() + ", but it has no playable files"
+                                + " (MP3, M4A, M4B, AAC, WAV, AIFF or MP4) yet"
+                        : "Added " + feed.getTitle() + ": " + episodeCountText(episodes));
+                reloadFeeds(feed.getId());
+            } catch (Exception e) {
+                setStatus("Could not add the folder: " + e.getMessage());
+            }
+        });
+    }
+
     private void backUpProfile(Button button) {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("Back up AntennaPod Desktop");
@@ -5311,7 +5339,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         List<FeedMedia> deletable = new ArrayList<>();
         for (FeedItem item : items) {
             FeedMedia media = item.getMedia();
-            if (media != null && media.localFileAvailable() && media.getLocalFileUrl() != null) {
+            if (media != null && media.localFileAvailable() && media.getLocalFileUrl() != null
+                    && !LocalFolderFeeds.isLocalMedia(media)) {
                 deletable.add(media);
             }
         }
@@ -5361,6 +5390,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
      * the download recorded instead of leaving an orphaned file behind. Background threads only.
      */
     private static boolean deleteDownloadFile(String path) {
+        // the last line of defence: only files in the app's own download and cache folders
+        // are ever deleted; a local folder's files (or anything else) are the user's
+        if (!LocalFolderFeeds.isAppOwned(path)) {
+            return false;
+        }
         File file = new File(path);
         for (int attempt = 0; attempt < 10; attempt++) {
             if (!file.exists() || file.delete()) {
@@ -5378,7 +5412,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     /** Deletes the playback cache's copy of an episode; true if there was one. */
     private static boolean deleteCachedCopy(FeedMedia media) {
-        if (media.getCacheFileUrl() == null) {
+        if (!LocalFolderFeeds.isAppOwned(media.getCacheFileUrl())) {
             return false;
         }
         new File(media.getCacheFileUrl()).delete();
@@ -5400,7 +5434,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private static boolean hasDownloaded(List<FeedItem> items) {
         for (FeedItem item : items) {
             FeedMedia media = item.getMedia();
-            if (media != null && media.localFileAvailable() && media.getLocalFileUrl() != null) {
+            if (media != null && media.localFileAvailable() && media.getLocalFileUrl() != null
+                    && !LocalFolderFeeds.isLocalMedia(media)) {
                 return true;
             }
         }
@@ -5411,6 +5446,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         background.submit(() -> {
             try {
                 if (media.getItem() == null || media.getItem().getFeedId() == 0) {
+                    return;
+                }
+                if (LocalFolderFeeds.isLocalMedia(media)) {
+                    // auto-delete is for downloads; a local folder's file stays where it is
                     return;
                 }
                 FeedPrefs prefs = database.getFeedPrefs(media.getItem().getFeedId());
@@ -6594,7 +6633,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 meta.append("Unplayed");
             }
             boolean downloaded = media != null && media.localFileAvailable();
-            if (downloaded) {
+            // a local folder's episode is the user's own file: nothing to download or delete
+            boolean localFile = LocalFolderFeeds.isLocalMedia(media);
+            downloadButton.setVisible(!localFile);
+            downloadButton.setManaged(!localFile);
+            if (localFile) {
+                meta.append(" · Local file");
+            } else if (downloaded) {
                 meta.append(" · Downloaded");
                 downloadButton.setText("Delete");
                 downloadButton.setGraphic(Icons.remove());

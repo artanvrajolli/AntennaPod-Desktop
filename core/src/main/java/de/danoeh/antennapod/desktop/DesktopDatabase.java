@@ -191,6 +191,22 @@ public final class DesktopDatabase implements AutoCloseable {
         }
     }
 
+    /** Removes one episode's rows (chapters, queue entry, media, item); no file is touched. */
+    public synchronized void deleteItem(long itemId) throws SQLException {
+        inSqlTransaction(() -> {
+            for (String sql : new String[]{
+                    "DELETE FROM chapters WHERE item_id = ?",
+                    "DELETE FROM queue WHERE item_id = ?",
+                    "DELETE FROM feed_media WHERE item_id = ?",
+                    "DELETE FROM feed_items WHERE id = ?"}) {
+                try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+                    stmt.setLong(1, itemId);
+                    stmt.executeUpdate();
+                }
+            }
+        });
+    }
+
     public synchronized void deleteFeed(long feedId) throws SQLException {
         try (PreparedStatement chapters = connection.prepareStatement(
                 "DELETE FROM chapters WHERE item_id IN (SELECT id FROM feed_items WHERE feed_id = ?)");
@@ -493,7 +509,10 @@ public final class DesktopDatabase implements AutoCloseable {
         try (Statement stmt = connection.createStatement();
              ResultSet rs = stmt.executeQuery(
                      "SELECT fi.* FROM feed_items fi JOIN feed_media fm ON fm.item_id = fi.id"
+                             + " JOIN feeds f ON f.id = fi.feed_id"
                              + " WHERE fm.local_file_url IS NOT NULL AND fm.download_date > 0"
+                             // a local folder's files are the user's own, not downloads
+                             + " AND f.download_url NOT LIKE 'antennapod_local:%'"
                              + " ORDER BY fm.download_date DESC, fi.id DESC")) {
             while (rs.next()) {
                 items.add(readItem(rs));

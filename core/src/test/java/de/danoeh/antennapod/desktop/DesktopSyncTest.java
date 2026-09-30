@@ -197,6 +197,31 @@ public class DesktopSyncTest {
     }
 
     @Test
+    public void testLocalFoldersNeverReachTheServer() throws Exception {
+        FeedUpdater updater = new FeedUpdater(database);
+        File folder = tempFolder.newFolder("own-audio");
+        File file = new File(folder, "talk.mp3");
+        Files.write(file.toPath(), new byte[]{1, 2, 3});
+        Feed local = updater.subscribeLocalFolder(folder);
+        Feed remote = updater.subscribe(baseUrl + "/local.xml");
+        // even a server that claims the folder was removed elsewhere cannot unsubscribe it
+        fakeService.remoteRemoved.add(local.getDownloadUrl());
+
+        SyncManager manager = new TestSyncManager(database, updater, fakeService);
+        FeedItem item = database.getFeed(local.getId()).getItems().get(0);
+        item.getMedia().setPosition(1000);
+        manager.recordPlayAction(item.getMedia());
+        manager.recordPlayedState(item, true);
+        assertTrue("no episode actions for local files", database.getQueuedSyncActions().isEmpty());
+
+        manager.sync();
+        assertTrue(fakeService.uploadedAdded.contains(remote.getDownloadUrl()));
+        assertFalse(fakeService.uploadedAdded.contains(local.getDownloadUrl()));
+        assertTrue(database.feedExists(local.getId()));
+        assertTrue(file.isFile());
+    }
+
+    @Test
     public void testEpisodeActionUploadAndDownload() throws Exception {
         FeedUpdater updater = new FeedUpdater(database);
         Feed feed = updater.subscribe(baseUrl + "/local.xml");
