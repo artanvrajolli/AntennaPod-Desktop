@@ -654,6 +654,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     }
                 }
                 setStatus("Auto-refresh done: " + total + " new episodes");
+                notifyNewEpisodes(results);
                 refreshFeedCounts();
                 Platform.runLater(() -> {
                     Feed selected = feedList.getSelectionModel().getSelectedItem();
@@ -2786,6 +2787,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
             setStatus("Refresh done: " + total + " new episodes"
                     + (errors > 0 ? ", " + errors + " failed" : ""));
+            notifyNewEpisodes(results);
             refreshFeedCounts();
             Platform.runLater(() -> {
                 Feed selected = feedList.getSelectionModel().getSelectedItem();
@@ -2795,6 +2797,21 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             });
         } catch (Exception e) {
             setStatus("Refresh failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * One Windows notification for a refresh of every subscription that brought new episodes.
+     * It goes through the tray icon, so there is none without one; a refresh of the podcast
+     * being looked at says nothing beyond the status line.
+     */
+    private void notifyNewEpisodes(List<FeedUpdater.RefreshResult> results) {
+        if (!trayActive || !DesktopPreferences.getNotifyNewEpisodes()) {
+            return;
+        }
+        NewEpisodesNotice notice = NewEpisodesNotice.of(results);
+        if (notice != null) {
+            trayManager.notify(notice.title, notice.text);
         }
     }
 
@@ -3805,6 +3822,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         });
         grid.add(withWindowsBox, 0, row++, 2, 1);
+        javafx.scene.control.CheckBox notifyBox = new javafx.scene.control.CheckBox(
+                "Show a notification when a refresh finds new episodes");
+        notifyBox.setSelected(DesktopPreferences.getNotifyNewEpisodes());
+        notifyBox.setTooltip(new Tooltip("After refreshing every podcast, by hand or on the schedule;"
+                + " notifications need the tray icon"));
+        notifyBox.selectedProperty().addListener((obs, was, on) -> DesktopPreferences.setNotifyNewEpisodes(on));
+        grid.add(notifyBox, 0, row++, 2, 1);
         grid.add(sectionLabel("Updates"), 0, row++, 2, 1);
         Label versionLabel = new Label("Version " + appVersion());
         versionLabel.getStyleClass().add("muted-label");

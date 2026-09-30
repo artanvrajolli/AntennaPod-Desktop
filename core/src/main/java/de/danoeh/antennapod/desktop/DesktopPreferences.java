@@ -241,6 +241,14 @@ public final class DesktopPreferences {
         PREFS.putBoolean("closeToTray", enabled);
     }
 
+    public static boolean getNotifyNewEpisodes() {
+        return PREFS.getBoolean("notifyNewEpisodes", true);
+    }
+
+    public static void setNotifyNewEpisodes(boolean enabled) {
+        PREFS.putBoolean("notifyNewEpisodes", enabled);
+    }
+
     /** Whether the keyboard's media keys control this app even when another window has focus. */
     public static boolean getMediaKeysEnabled() {
         return PREFS.getBoolean("mediaKeysEnabled", true);
