@@ -634,17 +634,41 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private ToolBar buildToolbar() {
-        TextField urlField = new TextField();
-        urlField.setPromptText("Feed URL to subscribe…");
-        urlField.setPrefWidth(280);
-        Button subscribeButton = new Button("Subscribe", Icons.add());
-        subscribeButton.setOnAction(event -> startSubscribe(subscribeButton, urlField.getText()));
-        TextField searchField = new TextField();
-        searchField.setPromptText("Search podcasts…");
-        searchField.setPrefWidth(220);
-        Button searchButton = new Button("Search", Icons.search());
-        searchButton.setOnAction(event -> startSearch(searchButton, searchField.getText()));
-        searchField.setOnAction(event -> startSearch(searchButton, searchField.getText()));
+        // one field for both ways of adding a podcast: an address subscribes, anything else searches
+        TextField inputField = new TextField();
+        inputField.setPromptText("Search podcasts or paste a feed URL…");
+        inputField.setPrefWidth(340);
+        Button goButton = new Button("Search", Icons.search());
+        // sized for the wider label so the toolbar does not shift as the label flips while typing;
+        // measured once the skin exists, since an unskinned button has no preferred width yet
+        goButton.skinProperty().addListener((obs, oldSkin, skin) -> {
+            if (skin != null && goButton.getMinWidth() == Region.USE_COMPUTED_SIZE) {
+                String shown = goButton.getText();
+                goButton.setText("Subscribe");
+                double wide = goButton.prefWidth(-1);
+                goButton.setText(shown);
+                goButton.setMinWidth(Math.max(wide, goButton.prefWidth(-1)));
+            }
+        });
+        inputField.textProperty().addListener((obs, oldText, newText) -> {
+            boolean url = FeedInput.looksLikeFeedUrl(newText);
+            goButton.setText(url ? "Subscribe" : "Search");
+            goButton.setGraphic(url ? Icons.add() : Icons.search());
+        });
+        Runnable go = () -> {
+            // the button is disabled while a subscribe or search runs; Enter must not start another
+            if (goButton.isDisabled()) {
+                return;
+            }
+            String text = inputField.getText();
+            if (FeedInput.looksLikeFeedUrl(text)) {
+                startSubscribe(goButton, text);
+            } else {
+                startSearch(goButton, text);
+            }
+        };
+        goButton.setOnAction(event -> go.run());
+        inputField.setOnAction(event -> go.run());
         Button refreshAllButton = new Button("Refresh all", Icons.refresh());
         refreshAllButton.setOnAction(event -> {
             setStatus("Refreshing all podcasts…");
@@ -678,8 +702,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         // inputs stay left, actions sit at the far right
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        return new ToolBar(urlField, subscribeButton, searchField, searchButton,
-                spacer, refreshAllButton, syncButton, libraryMenu, moreMenu);
+        return new ToolBar(inputField, goButton, spacer, refreshAllButton, syncButton, libraryMenu, moreMenu);
     }
 
     private static MenuItem toolbarMenuItem(String text, Node icon, Runnable action) {
@@ -741,14 +764,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
             }
         });
-        Button refreshButton = new Button("Refresh");
-        refreshButton.setOnAction(event -> {
-            Feed selected = feedList.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                setStatus("Refreshing " + selected.getTitle() + "…");
-                spinWhile(refreshButton, () -> doRefreshFeed(selected));
-            }
-        });
+        // refreshing the open subscription lives in the episode header, next to its list
         Button settingsButton = new Button("Feed settings");
         settingsButton.setOnAction(event -> {
             Feed selected = feedList.getSelectionModel().getSelectedItem();
@@ -756,7 +772,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 showFeedSettings(selected);
             }
         });
-        HBox buttons = new HBox(8, refreshButton, settingsButton);
+        HBox buttons = new HBox(8, settingsButton);
         buttons.setPadding(new Insets(8));
         VBox pane = new VBox(4, new Label("Subscriptions"), feedFilterField, feedList, buttons);
         pane.setPadding(new Insets(8));
@@ -957,10 +973,20 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         Region backdrop = new Region();
         backdrop.getStyleClass().add("modal-backdrop");
         backdrop.setPickOnBounds(true);
-        backdrop.addEventHandler(MouseEvent.ANY, mouseEvent -> mouseEvent.consume());
 
         StackPane overlay = new StackPane(backdrop, card);
         overlay.getStyleClass().add("modal-overlay");
+        // a click outside the card closes the modal, like Escape and the close button; JavaFX
+        // only delivers the click when press and release both land on the backdrop, so dragging
+        // a text selection out of the card and letting go outside it leaves the modal open
+        backdrop.addEventHandler(MouseEvent.ANY, mouseEvent -> {
+            if (mouseEvent.getEventType() == MouseEvent.MOUSE_CLICKED
+                    && mouseEvent.getButton() == MouseButton.PRIMARY) {
+                appShell.getChildren().remove(overlay);
+            }
+            // nothing behind the modal reacts while it is open
+            mouseEvent.consume();
+        });
         closeButton.setOnAction(event -> appShell.getChildren().remove(overlay));
         appShell.getChildren().add(overlay);
     }
@@ -1472,8 +1498,23 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         episodeFilterField.setPromptText("Search episodes");
         episodeFilterField.setPrefWidth(180);
         episodeFilterField.textProperty().addListener((obs, oldText, newText) -> applyEpisodeFilter());
-        HBox header = new HBox(8, feedTitleLabel, episodeFilterField, sortBox, playAllButton);
-        HBox.setHgrow(feedTitleLabel, Priority.ALWAYS);
+        Button refreshButton = new Button("Refresh", Icons.refresh());
+        refreshButton.setTooltip(new Tooltip("Check this podcast for new episodes"));
+        refreshButton.setOnAction(event -> {
+            Feed feed = selectedFeed;
+            if (feed == null) {
+                setStatus("Select a podcast first");
+                return;
+            }
+            setStatus("Refreshing " + feed.getTitle() + "…");
+            spinWhile(refreshButton, () -> doRefreshFeed(feed));
+        });
+        // title on the left, the list's controls pushed to the right edge
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox header = new HBox(8, feedTitleLabel, spacer, episodeFilterField, sortBox,
+                refreshButton, playAllButton);
+        header.setAlignment(Pos.CENTER_LEFT);
         episodeList = new ListView<>(visibleEpisodes);
         episodeList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         episodeList.setCellFactory(list -> new EpisodeCell());
@@ -3740,7 +3781,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (query.isEmpty()) {
             return;
         }
-        setStatus("Searching for \"" + query + "…");
+        setStatus("Searching for \"" + query + "\"…");
         background.submit(() -> doSearch(query));
     }
 
@@ -3749,7 +3790,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         if (query.isEmpty()) {
             return;
         }
-        setStatus("Searching for \"" + query + "…");
+        setStatus("Searching for \"" + query + "\"…");
         spinWhile(button, () -> doSearch(query));
     }
 
