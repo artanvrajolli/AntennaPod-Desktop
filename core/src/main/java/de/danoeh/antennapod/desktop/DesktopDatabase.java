@@ -76,6 +76,9 @@ public final class DesktopDatabase implements AutoCloseable {
             stmt.execute("CREATE TABLE IF NOT EXISTS feed_credentials ("
                     + "feed_id INTEGER PRIMARY KEY REFERENCES feeds(id) ON DELETE CASCADE, "
                     + "username TEXT NOT NULL, password TEXT NOT NULL)");
+            stmt.execute("CREATE TABLE IF NOT EXISTS feed_tags ("
+                    + "feed_id INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE, "
+                    + "tag TEXT NOT NULL, PRIMARY KEY (feed_id, tag))");
         }
         // databases from before per-feed sort carry no sort_code column at all
         ensureColumn("feed_preferences", "sort_code", "TEXT DEFAULT 'newest'");
@@ -199,9 +202,12 @@ public final class DesktopDatabase implements AutoCloseable {
              PreparedStatement prefs = connection.prepareStatement("DELETE FROM feed_preferences WHERE feed_id = ?");
              PreparedStatement credentials = connection.prepareStatement(
                 "DELETE FROM feed_credentials WHERE feed_id = ?");
+             PreparedStatement tags = connection.prepareStatement("DELETE FROM feed_tags WHERE feed_id = ?");
              PreparedStatement feed = connection.prepareStatement("DELETE FROM feeds WHERE id = ?")) {
             credentials.setLong(1, feedId);
             credentials.executeUpdate();
+            tags.setLong(1, feedId);
+            tags.executeUpdate();
             chapters.setLong(1, feedId);
             chapters.executeUpdate();
             queue.setLong(1, feedId);
@@ -1256,6 +1262,47 @@ public final class DesktopDatabase implements AutoCloseable {
             stmt.setString(8, prefs.sortCode);
             stmt.executeUpdate();
         }
+    }
+
+    /** Every subscription's tags, by feed id; subscriptions without tags are absent. */
+    public synchronized Map<Long, java.util.SortedSet<String>> getFeedTags() throws SQLException {
+        Map<Long, java.util.SortedSet<String>> tags = new HashMap<>();
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT feed_id, tag FROM feed_tags")) {
+            while (rs.next()) {
+                tags.computeIfAbsent(rs.getLong("feed_id"),
+                        id -> new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER)).add(rs.getString("tag"));
+            }
+        }
+        return tags;
+    }
+
+    /**
+     * Replaces a subscription's tags. Tags are trimmed, blank ones dropped, and two spellings
+     * differing only in case count as one (the first one given is kept).
+     */
+    public synchronized void setFeedTags(long feedId, java.util.Collection<String> tags) throws SQLException {
+        java.util.SortedSet<String> clean = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        for (String tag : tags) {
+            String trimmed = tag != null ? tag.trim() : "";
+            if (!trimmed.isEmpty()) {
+                clean.add(trimmed);
+            }
+        }
+        inSqlTransaction(() -> {
+            try (PreparedStatement delete = connection.prepareStatement("DELETE FROM feed_tags WHERE feed_id = ?")) {
+                delete.setLong(1, feedId);
+                delete.executeUpdate();
+            }
+            try (PreparedStatement insert = connection.prepareStatement(
+                    "INSERT INTO feed_tags (feed_id, tag) VALUES (?, ?)")) {
+                for (String tag : clean) {
+                    insert.setLong(1, feedId);
+                    insert.setString(2, tag);
+                    insert.executeUpdate();
+                }
+            }
+        });
     }
 
     /** The username and password a feed is fetched with, or null when it has none. */

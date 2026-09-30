@@ -106,6 +106,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Button episodeRefreshButton;
     private ComboBox<EpisodeFilter> episodeStateBox;
     private javafx.animation.Timeline downloadsTicker;
+    /** Every subscription's tags, as last loaded; read and written on the FX thread only. */
+    private final Map<Long, java.util.SortedSet<String>> feedTagMap = new HashMap<>();
+    private ComboBox<String> tagBox;
+    private boolean tagBoxProgrammatic;
+    private static final String ALL_TAGS = "All subscriptions";
     private VBox sidebar;
     private SplitPane listsSplit;
     private VBox feedPane;
@@ -783,6 +788,21 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         feedFilterField = new TextField();
         feedFilterField.setPromptText("Search subscriptions");
         feedFilterField.textProperty().addListener((obs, oldText, newText) -> applyFeedFilter());
+        // only there once some subscription has a tag
+        tagBox = new ComboBox<>();
+        tagBox.setMaxWidth(Double.MAX_VALUE);
+        tagBox.setTooltip(new Tooltip("Show the subscriptions with one tag; right-click a"
+                + " subscription and choose Tags… to tag it"));
+        tagBox.setVisible(false);
+        tagBox.setManaged(false);
+        tagBox.setOnAction(event -> {
+            if (tagBoxProgrammatic) {
+                return;
+            }
+            String chosen = ALL_TAGS.equals(tagBox.getValue()) ? "" : tagBox.getValue();
+            prefsWriter.submit(() -> DesktopPreferences.setFeedTagFilter(chosen));
+            applyFeedFilter();
+        });
         feedList = new ListView<>(visibleFeeds);
         feedList.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
         feedList.setPrefWidth(280);
@@ -812,7 +832,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         HBox buttons = new HBox(8, settingsButton);
         buttons.setPadding(new Insets(8));
-        VBox pane = new VBox(4, new Label("Subscriptions"), feedFilterField, feedList, buttons);
+        VBox pane = new VBox(4, new Label("Subscriptions"), tagBox, feedFilterField, feedList, buttons);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(feedList, Priority.ALWAYS);
         return pane;
@@ -829,11 +849,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         javafx.scene.control.MenuItem settings =
                 new javafx.scene.control.MenuItem("Feed settings");
         settings.setOnAction(event -> showFeedSettings(feed));
+        javafx.scene.control.MenuItem tags = new javafx.scene.control.MenuItem("Tags…");
+        tags.setOnAction(event -> showFeedTagsModal(feed));
         javafx.scene.control.MenuItem unsubscribe =
                 new javafx.scene.control.MenuItem("Unsubscribe");
         unsubscribe.setStyle("-fx-text-fill: #d9534f;");
         unsubscribe.setOnAction(event -> unsubscribe(feed));
-        menu.getItems().addAll(refresh, markSeen, settings,
+        menu.getItems().addAll(refresh, markSeen, settings, tags,
                 new javafx.scene.control.SeparatorMenuItem(), unsubscribe);
         return menu;
     }
@@ -876,7 +898,132 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private void applyFeedFilter() {
         String query = feedFilterField.getText().trim().toLowerCase(Locale.ROOT);
-        visibleFeeds.setPredicate(feed -> query.isEmpty() || feedSearchText(feed).contains(query));
+        String tag = tagBox != null && tagBox.isVisible() && tagBox.getValue() != null
+                && !ALL_TAGS.equals(tagBox.getValue()) ? tagBox.getValue() : null;
+        // a new predicate clears the list's selection; the open subscription stays selected
+        // whenever it is still shown
+        Feed selected = feedList.getSelectionModel().getSelectedItem();
+        visibleFeeds.setPredicate(feed -> (tag == null || hasTag(feed, tag))
+                && (query.isEmpty() || feedSearchText(feed).contains(query)));
+        if (selected != null && visibleFeeds.contains(selected)
+                && feedList.getSelectionModel().getSelectedItem() != selected) {
+            feedList.getSelectionModel().select(selected);
+        }
+    }
+
+    private boolean hasTag(Feed feed, String tag) {
+        java.util.SortedSet<String> tags = feedTagMap.get(feed.getId());
+        return tags != null && tags.contains(tag);
+    }
+
+    /** Every tag in use, sorted, ignoring case. */
+    private java.util.SortedSet<String> allTags() {
+        java.util.SortedSet<String> all = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        for (java.util.SortedSet<String> tags : feedTagMap.values()) {
+            all.addAll(tags);
+        }
+        return all;
+    }
+
+    /** Takes freshly loaded tags: the picker lists them and keeps (or restores) its choice. */
+    private void applyFeedTags(Map<Long, java.util.SortedSet<String>> tags) {
+        feedTagMap.clear();
+        feedTagMap.putAll(tags);
+        java.util.SortedSet<String> all = allTags();
+        String wanted = tagBox.getValue() != null ? tagBox.getValue() : DesktopPreferences.getFeedTagFilter();
+        tagBoxProgrammatic = true;
+        try {
+            List<String> choices = new ArrayList<>();
+            choices.add(ALL_TAGS);
+            choices.addAll(all);
+            tagBox.getItems().setAll(choices);
+            tagBox.setValue(all.contains(wanted) ? all.tailSet(wanted).first() : ALL_TAGS);
+        } finally {
+            tagBoxProgrammatic = false;
+        }
+        tagBox.setVisible(!all.isEmpty());
+        tagBox.setManaged(!all.isEmpty());
+        applyFeedFilter();
+    }
+
+    private void reloadFeedTags() {
+        background.submit(() -> {
+            try {
+                Map<Long, java.util.SortedSet<String>> tags = database.getFeedTags();
+                Platform.runLater(() -> applyFeedTags(tags));
+            } catch (Exception e) {
+                setStatus("Could not load tags: " + e.getMessage());
+            }
+        });
+    }
+
+    /** Ticks a subscription's tags on and off, or adds new ones. */
+    private void showFeedTagsModal(Feed feed) {
+        java.util.SortedSet<String> current = feedTagMap.getOrDefault(feed.getId(),
+                new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER));
+        VBox boxes = new VBox(6);
+        List<javafx.scene.control.CheckBox> checks = new ArrayList<>();
+        java.util.function.Consumer<String> addCheck = tag -> {
+            for (javafx.scene.control.CheckBox check : checks) {
+                if (check.getText().equalsIgnoreCase(tag)) {
+                    check.setSelected(true);
+                    return;
+                }
+            }
+            javafx.scene.control.CheckBox check = new javafx.scene.control.CheckBox(tag);
+            check.setSelected(current.contains(tag) || !allTags().contains(tag));
+            checks.add(check);
+            boxes.getChildren().add(check);
+        };
+        allTags().forEach(addCheck);
+        Label none = new Label("No tags yet. Add one below, e.g. \"Commute\" or \"Work\".");
+        none.getStyleClass().add("muted-label");
+        none.setVisible(checks.isEmpty());
+        none.setManaged(checks.isEmpty());
+        TextField newTag = new TextField();
+        newTag.setPromptText("New tag");
+        Button add = new Button("Add", Icons.add());
+        Runnable addNew = () -> {
+            String tag = newTag.getText().trim();
+            if (!tag.isEmpty()) {
+                addCheck.accept(tag);
+                newTag.clear();
+                none.setVisible(false);
+                none.setManaged(false);
+            }
+            newTag.requestFocus();
+        };
+        add.setOnAction(event -> addNew.run());
+        newTag.setOnAction(event -> addNew.run());
+        HBox.setHgrow(newTag, Priority.ALWAYS);
+        Button save = new Button("Save");
+        save.setDefaultButton(true);
+        VBox pane = new VBox(10, boxes, none, new HBox(8, newTag, add));
+        save.setOnAction(event -> {
+            List<String> chosen = new ArrayList<>();
+            for (javafx.scene.control.CheckBox check : checks) {
+                if (check.isSelected()) {
+                    chosen.add(check.getText());
+                }
+            }
+            appShell.getChildren().remove(modalOverlayOf(pane));
+            background.submit(() -> {
+                try {
+                    database.setFeedTags(feed.getId(), chosen);
+                    setStatus(chosen.isEmpty() ? "Tags removed from " + feed.getTitle()
+                            : feed.getTitle() + " tagged " + String.join(", ", chosen));
+                    reloadFeedTags();
+                } catch (Exception e) {
+                    setStatus("Could not save tags: " + e.getMessage());
+                }
+            });
+        });
+        HBox buttons = new HBox(8, save);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+        pane.getChildren().add(buttons);
+        pane.setPadding(new Insets(12));
+        showModal("Tags: " + (feed.getTitle() != null ? feed.getTitle() : feed.getDownloadUrl()), pane);
+        Platform.runLater(newTag::requestFocus);
     }
 
     private static String feedSearchText(Feed feed) {
@@ -2513,7 +2660,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 List<Feed> all = database.getAllFeeds();
                 Map<Long, Long> lastPlayed = database.getFeedLastPlayedTimes();
                 Map<Long, int[]> counts = database.getFeedCounts();
+                Map<Long, java.util.SortedSet<String>> tags = database.getFeedTags();
                 Platform.runLater(() -> {
+                    applyFeedTags(tags);
                     feedCounts.clear();
                     feedCounts.putAll(counts);
                     feedLastPlayed.clear();

@@ -433,6 +433,15 @@ public final class DesktopPreferences {
         }
     }
 
+    /** The tag the subscription list is narrowed to, or "" for all subscriptions. */
+    public static String getFeedTagFilter() {
+        return PREFS.get("feedTagFilter", "");
+    }
+
+    public static void setFeedTagFilter(String tag) {
+        PREFS.put("feedTagFilter", tag != null ? tag : "");
+    }
+
     public static EpisodeFilter getEpisodeFilter() {
         return EpisodeFilter.fromName(PREFS.get("episodeFilter", EpisodeFilter.ALL.name()));
     }
