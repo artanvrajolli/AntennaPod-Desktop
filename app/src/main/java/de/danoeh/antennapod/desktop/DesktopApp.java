@@ -434,6 +434,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         });
         stage.setScene(scene);
+        nameInputs();
         mainStage = stage;
         stage.setOnCloseRequest(event -> {
             if (trayActive && DesktopPreferences.getCloseToTray()) {
@@ -1643,6 +1644,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             if (empty || feed == null) {
                 setGraphic(null);
                 setContextMenu(null);
+                setAccessibleText(null);
                 return;
             }
             titleLabel.setText(feed.getTitle() != null ? feed.getTitle() : feed.getDownloadUrl());
@@ -1651,6 +1653,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             int newCount = counts != null ? counts[1] : 0;
             String unplayedText = unplayed > 0 ? unplayed + " unplayed" : "";
             countLabel.setText(unplayedText);
+            setAccessibleText(titleLabel.getText() + (unplayedText.isEmpty() ? "" : ", " + unplayedText)
+                    + (counts != null && counts[1] > 0 ? ", " + counts[1] + " new" : ""));
             boolean hasNew = newCount > 0;
             newCountBadge.setText(String.valueOf(newCount));
             newCountTooltip.setText(newCount == 1 ? "1 new episode" : newCount + " new episodes");
@@ -1932,7 +1936,46 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         Button button = new Button("", graphic);
         button.getStyleClass().add("icon-button");
         button.setTooltip(new Tooltip(tooltip));
+        nameFromTooltip(button);
         return button;
+    }
+
+    /**
+     * Gives a control with no text of its own (an icon button) its tooltip as the name a screen
+     * reader announces, kept in step when the tooltip or its text changes later.
+     */
+    static void nameFromTooltip(javafx.scene.control.Control control) {
+        javafx.beans.value.ChangeListener<String> onText =
+                (obs, oldText, text) -> control.setAccessibleText(text);
+        control.tooltipProperty().addListener((obs, oldTip, tip) -> {
+            if (oldTip != null) {
+                oldTip.textProperty().removeListener(onText);
+            }
+            if (tip != null) {
+                tip.textProperty().addListener(onText);
+            }
+            control.setAccessibleText(tip != null ? tip.getText() : null);
+        });
+        Tooltip current = control.getTooltip();
+        if (current != null) {
+            current.textProperty().addListener(onText);
+            control.setAccessibleText(current.getText());
+        }
+    }
+
+    /** Names the inputs a screen reader would otherwise announce only by kind ("combo box"). */
+    private void nameInputs() {
+        addField.setAccessibleText("Search podcasts or paste a feed URL");
+        feedFilterField.setAccessibleText("Search subscriptions");
+        tagBox.setAccessibleText("Show subscriptions with tag");
+        episodeFilterField.setAccessibleText("Search this podcast's episodes");
+        episodeStateBox.setAccessibleText("Show episodes");
+        sortBox.setAccessibleText("Episode order");
+        feedList.setAccessibleText("Subscriptions");
+        episodeList.setAccessibleText("Episodes");
+        speedBox.setAccessibleText("Playback speed");
+        volumeSlider.setAccessibleText("Volume");
+        seekSlider.setAccessibleText("Position in episode");
     }
 
     private VBox buildPlayerBar() {
@@ -2066,6 +2109,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
         sleepButton = new Button("", Icons.clock());
         sleepButton.setTooltip(new Tooltip("Sleep timer"));
+        nameFromTooltip(sleepButton);
         sleepButton.setOnAction(event -> showSleepTimerMenu());
 
         chapterLabel = new Label("");
@@ -6713,6 +6757,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
+                setAccessibleText(null);
                 return;
             }
             titleLabel.setText(item.getTitle());
@@ -6782,6 +6827,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
             playedButton.setGraphic(item.isPlayed() ? Icons.replay() : Icons.check());
             metaLabel.setText(meta.toString());
+            // the row is a graphic, so say it whole to a screen reader: title, then its details
+            setAccessibleText(item.getTitle() + ". " + meta);
             metaTooltip.setText(meta.toString());
             boolean synced = syncedItemIds.contains(item.getId());
             syncBadge.setVisible(synced);
