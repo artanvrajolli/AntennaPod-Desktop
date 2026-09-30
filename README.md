@@ -21,10 +21,20 @@ From the [**Releases page**](https://github.com/artanvrajolli/AntennaPod-Desktop
 Your data (subscriptions, downloads, playback positions) lives in
 `%APPDATA%\AntennaPod`, so both ways share the same library.
 
+**Portable mode**: create a folder named `data` next to `AntennaPod-Desktop.exe`
+and the app keeps everything there instead — library, downloads and settings
+(in `data\settings.properties` rather than the registry) — so the whole folder
+can go on a USB stick. Developers can do the same for a source run with
+`gradlew :app:run -Pportable=<folder>`, which leaves the normal profile alone.
+
 ## Features
 
 - Subscribe by URL, OPML import/export (+ HTML export), podcast search
-  (Apple, fyyd, Podcast Index) with cover art in results
+  (Apple, fyyd, Podcast Index) with cover art in results — one field for both:
+  paste a feed address to subscribe, type anything else to search
+- Password-protected (premium/supporter) feeds: the app asks for the login when
+  a feed needs one, or takes it from a `https://user:pass@…` link; it is stored
+  per feed (Feed settings), never in the feed's URL
 - Streaming + downloads with progress, per-feed auto-download rules and
   auto-delete after playing
 - Playback queue, per-feed sort orders, ▶ Play-all from oldest to newest

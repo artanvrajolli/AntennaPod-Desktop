@@ -18,6 +18,16 @@ public class BasicAuthorizationInterceptor implements Interceptor {
     private static final String TAG = "BasicAuthInterceptor";
     private static final String HEADER_AUTHORIZATION = "Authorization";
 
+    /**
+     * Desktop: requests carry no DownloadRequest tag, so a challenged request asks this for the
+     * "user:pass" of its URL instead (see FeedCredentials). Null when there is none.
+     */
+    private static volatile java.util.function.Function<okhttp3.HttpUrl, String> credentialLookup;
+
+    public static void setCredentialLookup(java.util.function.Function<okhttp3.HttpUrl, String> lookup) {
+        credentialLookup = lookup;
+    }
+
     @Override
     @NonNull
     public Response intercept(Chain chain) throws IOException {
@@ -51,6 +61,12 @@ public class BasicAuthorizationInterceptor implements Interceptor {
                         || !TextUtils.isEmpty(downloadRequest.getPassword()))) {
                 userInfo = downloadRequest.getUsername() + ":" + downloadRequest.getPassword();
             }
+        }
+
+        java.util.function.Function<okhttp3.HttpUrl, String> lookup = credentialLookup;
+        if (TextUtils.isEmpty(userInfo) && lookup != null) {
+            // the host that challenged us: after a redirect that is the final location
+            userInfo = lookup.apply(response.request().url());
         }
 
         if (TextUtils.isEmpty(userInfo)) {

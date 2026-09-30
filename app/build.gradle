@@ -43,4 +43,9 @@ tasks.named('jar') {
 
 tasks.named('run') {
     jvmArgs = ['--enable-native-access=javafx.media']
+    // gradlew :app:run -Pportable=<folder> runs on a separate profile (portable mode): library,
+    // downloads and settings in that folder, leaving %APPDATA% and the registry alone
+    if (project.hasProperty('portable')) {
+        systemProperty 'antennapod.desktop.portable', file(project.property('portable')).absolutePath
+    }
 }

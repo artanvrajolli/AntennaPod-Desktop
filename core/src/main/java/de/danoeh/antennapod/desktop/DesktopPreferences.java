@@ -4,15 +4,56 @@ import java.io.File;
 import java.util.prefs.Preferences;
 
 public final class DesktopPreferences {
-    private static final Preferences PREFS = Preferences.userNodeForPackage(DesktopPreferences.class);
+    /** Names a folder to run from in portable mode, overriding the {@code data} folder check. */
+    public static final String PORTABLE_PROPERTY = "antennapod.desktop.portable";
+    /** A folder with this name next to the exe switches portable mode on. */
+    public static final String PORTABLE_FOLDER = "data";
+    private static final String PORTABLE_SETTINGS = "settings.properties";
+
+    private static final Preferences PREFS = openPreferences();
 
     private DesktopPreferences() {
+    }
+
+    private static Preferences openPreferences() {
+        File portable = getPortableDir();
+        return portable != null
+                ? new FilePreferences(new File(portable, PORTABLE_SETTINGS))
+                : Preferences.userNodeForPackage(DesktopPreferences.class);
+    }
+
+    /**
+     * The folder holding the whole profile (library, downloads, settings) in portable mode, or
+     * null when the app keeps its data in %APPDATA% and its settings in the registry. Portable
+     * mode is on when a {@code data} folder sits next to the installed or unzipped exe
+     * (jpackage names the exe in {@code jpackage.app-path}), or when a folder is named in the
+     * {@link #PORTABLE_PROPERTY} system property.
+     */
+    public static File getPortableDir() {
+        String forced = System.getProperty(PORTABLE_PROPERTY);
+        if (forced != null && !forced.isEmpty()) {
+            return new File(forced).getAbsoluteFile();
+        }
+        return portableDirNextTo(System.getProperty("jpackage.app-path"));
+    }
+
+    static File portableDirNextTo(String exePath) {
+        if (exePath == null || exePath.isEmpty()) {
+            return null;
+        }
+        File exeDir = new File(exePath).getAbsoluteFile().getParentFile();
+        File dir = exeDir != null ? new File(exeDir, PORTABLE_FOLDER) : null;
+        return dir != null && dir.isDirectory() ? dir : null;
     }
 
     public static File getDataDir() {
         String override = System.getProperty("antennapod.desktop.dataDir");
         if (override != null && !override.isEmpty()) {
             return new File(override);
+        }
+        File portable = getPortableDir();
+        if (portable != null) {
+            return portable;
         }
         String os = System.getProperty("os.name", "").toLowerCase();
         File base;

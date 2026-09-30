@@ -295,6 +295,12 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         database = new DesktopDatabase(DesktopPreferences.getDatabaseFile());
         feedUpdater = new FeedUpdater(database);
+        try {
+            // before the first refresh, so protected feeds are fetched with their login
+            feedUpdater.reloadCredentials();
+        } catch (Exception e) {
+            setStatus("Could not load feed logins: " + e.getMessage());
+        }
         downloader = new EpisodeDownloader(database);
         background = Executors.newCachedThreadPool(r -> {
             Thread thread = new Thread(r, "desktop-background");
@@ -2469,12 +2475,91 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     private void doSubscribe(String url) {
         try {
-            Feed feed = feedUpdater.subscribe(url);
-            setStatus("Subscribed to " + feed.getTitle());
-            reloadFeeds(feed.getId());
+            subscribeAndShow(url, null);
         } catch (Exception e) {
+            if (FeedUpdater.isAuthRequired(e)) {
+                setStatus("This feed needs a username and password");
+                Platform.runLater(() -> showFeedLoginModal(url));
+                return;
+            }
             setStatus("Subscribe failed: " + e.getMessage());
         }
+    }
+
+    private void subscribeAndShow(String url, FeedCredentials.Login login) throws Exception {
+        Feed feed = login != null ? feedUpdater.subscribe(url, login) : feedUpdater.subscribe(url);
+        setStatus("Subscribed to " + feed.getTitle());
+        reloadFeeds(feed.getId());
+    }
+
+    /**
+     * Asks for the login of a password-protected feed and subscribes with it. The modal stays
+     * open while it tries and after a rejected login, so the fields keep their focus and text;
+     * closing and reopening it handed the focus back to the toolbar field.
+     */
+    private void showFeedLoginModal(String url) {
+        Label intro = new Label("This feed is password-protected. Premium and supporter feeds"
+                + " usually send the login with the feed link, or show it on your account page.");
+        intro.setWrapText(true);
+        Label address = new Label(FeedCredentials.withoutUserInfo(url));
+        address.getStyleClass().add("muted-label");
+        address.setWrapText(true);
+        TextField userField = new TextField();
+        userField.setPromptText("Username");
+        javafx.scene.control.PasswordField passField = new javafx.scene.control.PasswordField();
+        passField.setPromptText("Password");
+        Button subscribeButton = new Button("Subscribe", Icons.add());
+        subscribeButton.setDefaultButton(true);
+        VBox pane = new VBox(10, intro, address, userField, passField);
+        Runnable submit = () -> {
+            String user = userField.getText().trim();
+            if (user.isEmpty()) {
+                userField.requestFocus();
+                return;
+            }
+            if (subscribeButton.isDisabled()) {
+                return;
+            }
+            FeedCredentials.Login login = new FeedCredentials.Login(user, passField.getText());
+            setStatus("Subscribing to " + FeedCredentials.withoutUserInfo(url) + "…");
+            spinWhile(subscribeButton, () -> {
+                try {
+                    subscribeAndShow(url, login);
+                    Platform.runLater(() -> appShell.getChildren().remove(modalOverlayOf(pane)));
+                } catch (Exception e) {
+                    boolean rejected = FeedUpdater.isAuthRequired(e);
+                    setStatus(rejected ? "The feed did not accept that username and password"
+                            : "Subscribe failed: " + e.getMessage());
+                    Platform.runLater(() -> {
+                        intro.setText(rejected
+                                ? "The feed did not accept that username and password."
+                                        + " Check them and try again."
+                                : "Could not subscribe: " + e.getMessage());
+                        passField.selectAll();
+                        passField.requestFocus();
+                    });
+                }
+            });
+        };
+        subscribeButton.setOnAction(event -> submit.run());
+        passField.setOnAction(event -> submit.run());
+        userField.setOnAction(event -> passField.requestFocus());
+        HBox buttons = new HBox(8, subscribeButton);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+        pane.getChildren().add(buttons);
+        pane.setPadding(new Insets(12));
+        showModal("Feed login", pane);
+        Platform.runLater(userField::requestFocus);
+    }
+
+    /** The modal overlay a piece of modal content sits in, or null once it is closed. */
+    private Node modalOverlayOf(Node content) {
+        for (Node node = content; node != null; node = node.getParent()) {
+            if (node.getStyleClass().contains("modal-overlay")) {
+                return node;
+            }
+        }
+        return null;
     }
 
     private void refreshFeed(Feed feed) {
@@ -2490,7 +2575,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             reloadEpisodesIfShowing(feed);
             refreshFeedCounts();
         } catch (Exception e) {
-            setStatus("Refresh failed: " + e.getMessage());
+            setStatus(FeedUpdater.isAuthRequired(e)
+                    ? feed.getTitle() + " needs a username and password: add them in Feed settings"
+                    : "Refresh failed: " + e.getMessage());
         }
     }
 
@@ -2947,14 +3034,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         background.submit(() -> {
             try {
                 FeedPrefs prefs = database.getFeedPrefs(feed.getId());
-                Platform.runLater(() -> showFeedSettingsDialog(feed, prefs));
+                FeedCredentials.Login login = database.getFeedCredentials(feed.getId());
+                Platform.runLater(() -> showFeedSettingsDialog(feed, prefs, login));
             } catch (Exception e) {
                 setStatus("Could not load feed settings: " + e.getMessage());
             }
         });
     }
 
-    private void showFeedSettingsDialog(Feed feed, FeedPrefs prefs) {
+    private void showFeedSettingsDialog(Feed feed, FeedPrefs prefs, FeedCredentials.Login login) {
         javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
         grid.setHgap(8);
         grid.setVgap(8);
@@ -3037,7 +3125,40 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         autoSave(sortBox.valueProperty(), () -> saveSortCode(feed, sortCode(sortBox.getValue())));
         Label savedHint = new Label("Changes are saved automatically.");
         savedHint.setWrapText(true);
-        grid.add(savedHint, 0, row, 2, 1);
+        grid.add(savedHint, 0, row++, 2, 1);
+        // the login is saved on request, not per keystroke, and is tried out right away
+        grid.add(sectionLabel("Login (password-protected feeds)"), 0, row++, 2, 1);
+        grid.add(new Label("Username:"), 0, row);
+        TextField userField = new TextField(login != null ? login.username : "");
+        grid.add(userField, 1, row++);
+        grid.add(new Label("Password:"), 0, row);
+        javafx.scene.control.PasswordField passField = new javafx.scene.control.PasswordField();
+        passField.setText(login != null ? login.password : "");
+        grid.add(passField, 1, row++);
+        Button saveLogin = new Button("Save login");
+        saveLogin.setOnAction(event -> {
+            String user = userField.getText().trim();
+            FeedCredentials.Login entered = user.isEmpty()
+                    ? null : new FeedCredentials.Login(user, passField.getText());
+            spinWhile(saveLogin, () -> {
+                try {
+                    feedUpdater.setCredentials(feed.getId(), entered);
+                    if (entered == null) {
+                        setStatus("Login removed from " + feed.getTitle());
+                        return;
+                    }
+                    setStatus("Login saved; refreshing " + feed.getTitle() + "…");
+                    doRefreshFeed(feed);
+                } catch (Exception e) {
+                    setStatus("Could not save the login: " + e.getMessage());
+                }
+            });
+        });
+        Label loginHint = new Label("Leave the username empty to remove the login.");
+        loginHint.getStyleClass().add("muted-label");
+        loginHint.setWrapText(true);
+        grid.add(new HBox(8, saveLogin), 1, row++);
+        grid.add(loginHint, 1, row++);
         showSidebar("Feed settings: " + feed.getTitle(), new VBox(grid));
     }
 
@@ -3296,6 +3417,20 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             background.submit(() -> checkForUpdates(true));
         });
         grid.add(checkUpdatesButton, 0, row++, 2, 1);
+        grid.add(sectionLabel("Data"), 0, row++, 2, 1);
+        File dataDir = DesktopPreferences.getDataDir();
+        boolean portable = DesktopPreferences.getPortableDir() != null;
+        Label dataLabel = new Label((portable ? "Portable mode: library, downloads and settings are in "
+                : "Library and downloads are in ") + dataDir.getAbsolutePath()
+                + (portable ? "" : ". Settings are kept in the Windows registry; to carry everything in"
+                        + " one folder instead, create a folder named \"" + DesktopPreferences.PORTABLE_FOLDER
+                        + "\" next to AntennaPod-Desktop.exe."));
+        dataLabel.getStyleClass().add("muted-label");
+        dataLabel.setWrapText(true);
+        grid.add(dataLabel, 0, row++, 2, 1);
+        Button openDataButton = new Button("Open data folder", Icons.folder());
+        openDataButton.setOnAction(event -> getHostServices().showDocument(dataDir.toURI().toString()));
+        grid.add(new HBox(8, openDataButton), 0, row++, 2, 1);
         tabs.getTabs().add(settingsTab("General", grid));
 
         // ---- Playback ------------------------------------------------------

@@ -50,7 +50,44 @@ public final class FeedUpdater {
     }
 
     public Feed subscribe(String url) throws Exception {
-        return subscribe(url, false);
+        return subscribe(url, false, null);
+    }
+
+    /**
+     * Subscribes to a password-protected feed. The login may also come written into the URL
+     * ({@code https://user:pass@host/feed}); either way it is stored for the feed, never in its URL.
+     */
+    public Feed subscribe(String url, FeedCredentials.Login login) throws Exception {
+        return subscribe(url, false, login);
+    }
+
+    /** Thrown when a feed answers 401: it needs a username and password. */
+    public static final class AuthRequiredException extends IOException {
+        public AuthRequiredException(String url) {
+            super("This feed needs a username and password: " + url);
+        }
+    }
+
+    /** Whether a failure (or anything it wraps) is a feed asking for a login. */
+    public static boolean isAuthRequired(Throwable error) {
+        for (Throwable e = error; e != null; e = e.getCause()) {
+            if (e instanceof AuthRequiredException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Re-reads every stored login into the HTTP stacks, e.g. at startup or after a change. */
+    public void reloadCredentials() throws Exception {
+        FeedCredentials.install();
+        FeedCredentials.setAll(database.getCredentialsByHost());
+    }
+
+    /** Stores (or with null, removes) a feed's login and makes it effective right away. */
+    public void setCredentials(long feedId, FeedCredentials.Login login) throws Exception {
+        database.setFeedCredentials(feedId, login);
+        reloadCredentials();
     }
 
     /**
@@ -61,17 +98,33 @@ public final class FeedUpdater {
      * target URL as a new subscription and offered the original one again.
      */
     public Feed subscribeKeepingUrl(String url) throws Exception {
-        return subscribe(url, true);
+        return subscribe(url, true, null);
     }
 
-    private Feed subscribe(String url, boolean keepGivenUrl) throws Exception {
-        String prepared = prepareAndLookup(url);
+    private Feed subscribe(String url, boolean keepGivenUrl, FeedCredentials.Login login)
+            throws Exception {
+        FeedCredentials.Login inUrl = FeedCredentials.fromUserInfo(UrlChecker.prepareUrl(url));
+        if (login == null) {
+            login = inUrl;
+        }
+        String prepared = prepareAndLookup(FeedCredentials.withoutUserInfo(UrlChecker.prepareUrl(url)));
+        if (login != null) {
+            // effective for this fetch already; stored for the feed once it exists
+            FeedCredentials.install();
+            FeedCredentials.put(FeedCredentials.hostOf(prepared), login);
+        }
         String finalUrl = RedirectChecker.getFinalUrl(prepared);
+        if (login != null) {
+            FeedCredentials.put(FeedCredentials.hostOf(finalUrl), login);
+        }
         Feed existing = database.getFeedByDownloadUrl(prepared);
         if (existing == null && !finalUrl.equals(prepared)) {
             existing = database.getFeedByDownloadUrl(finalUrl);
         }
         if (existing != null) {
+            if (login != null) {
+                setCredentials(existing.getId(), login);
+            }
             return existing;
         }
         Feed downloaded = downloadAndParse(finalUrl);
@@ -81,8 +134,12 @@ public final class FeedUpdater {
         // NEW means "arrived after the subscription was stored". The back catalogue
         // of a fresh subscription is not news, so subscribe stores UNPLAYED;
         // only refresh() flags arrivals as NEW.
+        FeedCredentials.Login feedLogin = login;
         database.inTransaction(() -> {
             database.insertFeed(downloaded);
+            if (feedLogin != null) {
+                database.setFeedCredentials(downloaded.getId(), feedLogin);
+            }
             for (FeedItem item : distinctItems(downloaded.getItems())) {
                 item.setFeedId(downloaded.getId());
                 item.setFeed(downloaded);
@@ -99,6 +156,10 @@ public final class FeedUpdater {
             }
             return null;
         });
+        if (feedLogin != null) {
+            // now that its episodes are stored, their hosts answer with the login too
+            reloadCredentials();
+        }
         return database.getFeed(downloaded.getId());
     }
 
@@ -243,6 +304,9 @@ public final class FeedUpdater {
         try {
             Request request = new Request.Builder().url(url).get().build();
             try (Response response = AntennapodHttpClient.getHttpClient().newCall(request).execute()) {
+                if (response.code() == 401) {
+                    throw new AuthRequiredException(url);
+                }
                 if (!response.isSuccessful()) {
                     throw new IOException("Feed download failed: " + response);
                 }

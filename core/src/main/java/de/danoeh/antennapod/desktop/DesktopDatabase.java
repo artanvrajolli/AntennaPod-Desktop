@@ -72,6 +72,10 @@ public final class DesktopDatabase implements AutoCloseable {
                     + "auto_delete INTEGER DEFAULT -1, include_filter TEXT DEFAULT '', "
                     + "exclude_filter TEXT DEFAULT '', min_duration INTEGER DEFAULT -1, "
                     + "sort_code TEXT DEFAULT 'newest')");
+            // apart from feed_preferences, whose writers re-save every column they read
+            stmt.execute("CREATE TABLE IF NOT EXISTS feed_credentials ("
+                    + "feed_id INTEGER PRIMARY KEY REFERENCES feeds(id) ON DELETE CASCADE, "
+                    + "username TEXT NOT NULL, password TEXT NOT NULL)");
         }
         // databases from before per-feed sort carry no sort_code column at all
         ensureColumn("feed_preferences", "sort_code", "TEXT DEFAULT 'newest'");
@@ -193,7 +197,11 @@ public final class DesktopDatabase implements AutoCloseable {
                 "DELETE FROM feed_media WHERE item_id IN (SELECT id FROM feed_items WHERE feed_id = ?)");
              PreparedStatement items = connection.prepareStatement("DELETE FROM feed_items WHERE feed_id = ?");
              PreparedStatement prefs = connection.prepareStatement("DELETE FROM feed_preferences WHERE feed_id = ?");
+             PreparedStatement credentials = connection.prepareStatement(
+                "DELETE FROM feed_credentials WHERE feed_id = ?");
              PreparedStatement feed = connection.prepareStatement("DELETE FROM feeds WHERE id = ?")) {
+            credentials.setLong(1, feedId);
+            credentials.executeUpdate();
             chapters.setLong(1, feedId);
             chapters.executeUpdate();
             queue.setLong(1, feedId);
@@ -1162,6 +1170,82 @@ public final class DesktopDatabase implements AutoCloseable {
             stmt.setString(8, prefs.sortCode);
             stmt.executeUpdate();
         }
+    }
+
+    /** The username and password a feed is fetched with, or null when it has none. */
+    public synchronized FeedCredentials.Login getFeedCredentials(long feedId) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "SELECT username, password FROM feed_credentials WHERE feed_id = ?")) {
+            stmt.setLong(1, feedId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next()
+                        ? new FeedCredentials.Login(rs.getString("username"), rs.getString("password"))
+                        : null;
+            }
+        }
+    }
+
+    /** Stores a feed's login; null or an empty username removes it. */
+    public synchronized void setFeedCredentials(long feedId, FeedCredentials.Login login)
+            throws SQLException {
+        if (login == null || login.username.isEmpty()) {
+            try (PreparedStatement stmt = connection.prepareStatement(
+                    "DELETE FROM feed_credentials WHERE feed_id = ?")) {
+                stmt.setLong(1, feedId);
+                stmt.executeUpdate();
+            }
+            return;
+        }
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "INSERT INTO feed_credentials (feed_id, username, password) VALUES (?, ?, ?)"
+                        + " ON CONFLICT(feed_id) DO UPDATE SET username = excluded.username,"
+                        + " password = excluded.password")) {
+            stmt.setLong(1, feedId);
+            stmt.setString(2, login.username);
+            stmt.setString(3, login.password);
+            stmt.executeUpdate();
+        }
+    }
+
+    /**
+     * Every stored login with the hosts it answers for: the feed's own and those of its episode
+     * files, which protected feeds usually serve from the same server.
+     */
+    public synchronized Map<String, FeedCredentials.Login> getCredentialsByHost() throws SQLException {
+        Map<String, FeedCredentials.Login> byHost = new java.util.LinkedHashMap<>();
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(
+                     "SELECT c.feed_id, c.username, c.password, f.download_url FROM feed_credentials c"
+                             + " JOIN feeds f ON f.id = c.feed_id")) {
+            List<Long> feedIds = new ArrayList<>();
+            List<FeedCredentials.Login> logins = new ArrayList<>();
+            while (rs.next()) {
+                FeedCredentials.Login login =
+                        new FeedCredentials.Login(rs.getString("username"), rs.getString("password"));
+                String host = FeedCredentials.hostOf(rs.getString("download_url"));
+                if (host != null) {
+                    byHost.put(host, login);
+                }
+                feedIds.add(rs.getLong("feed_id"));
+                logins.add(login);
+            }
+            for (int i = 0; i < feedIds.size(); i++) {
+                try (PreparedStatement media = connection.prepareStatement(
+                        "SELECT DISTINCT fm.download_url FROM feed_media fm"
+                                + " JOIN feed_items fi ON fi.id = fm.item_id WHERE fi.feed_id = ?")) {
+                    media.setLong(1, feedIds.get(i));
+                    try (ResultSet urls = media.executeQuery()) {
+                        while (urls.next()) {
+                            String host = FeedCredentials.hostOf(urls.getString(1));
+                            if (host != null) {
+                                byHost.putIfAbsent(host, logins.get(i));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return byHost;
     }
 
     public synchronized void saveChapters(long itemId, List<Chapter> chapters) throws SQLException {
