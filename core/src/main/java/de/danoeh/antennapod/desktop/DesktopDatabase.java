@@ -88,6 +88,11 @@ public final class DesktopDatabase implements AutoCloseable {
         ensureColumn("feed_items", "transcript_type", "TEXT");
         ensureColumn("feed_items", "synced_position", "INTEGER DEFAULT -1");
         ensureColumn("feed_media", "cache_file_url", "TEXT");
+        // Podcasting 2.0: funding links and people of a podcast, people and soundbites of an episode
+        ensureColumn("feeds", "funding", "TEXT");
+        ensureColumn("feeds", "persons", "TEXT");
+        ensureColumn("feed_items", "persons", "TEXT");
+        ensureColumn("feed_items", "soundbites", "TEXT");
     }
 
     private void ensureColumn(String table, String column, String definition) throws SQLException {
@@ -318,7 +323,33 @@ public final class DesktopDatabase implements AutoCloseable {
         feed.setLanguage(rs.getString("language"));
         feed.setImageUrl(rs.getString("image_url"));
         feed.setState(rs.getInt("state"));
+        feed.setPaymentLinks(de.danoeh.antennapod.model.feed.FeedFunding.extractPaymentLinks(rs.getString("funding")));
+        feed.setPersons(PodcastExtras.personsFromJson(rs.getString("persons")));
         return feed;
+    }
+
+    /** Stores a podcast's funding links and people, as its last fetch listed them. */
+    public synchronized void saveFeedExtras(Feed feed) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "UPDATE feeds SET funding = ?, persons = ? WHERE id = ?")) {
+            java.util.ArrayList<de.danoeh.antennapod.model.feed.FeedFunding> funding = feed.getPaymentLinks();
+            setNullable(stmt, 1, funding == null || funding.isEmpty() ? null
+                    : de.danoeh.antennapod.model.feed.FeedFunding.getPaymentLinksAsString(funding));
+            setNullable(stmt, 2, PodcastExtras.personsToJson(feed.getPersons()));
+            stmt.setLong(3, feed.getId());
+            stmt.executeUpdate();
+        }
+    }
+
+    /** Stores an episode's people and soundbites, as its last fetch listed them. */
+    public synchronized void saveItemExtras(long itemId, FeedItem item) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "UPDATE feed_items SET persons = ?, soundbites = ? WHERE id = ?")) {
+            setNullable(stmt, 1, PodcastExtras.personsToJson(item.getPersons()));
+            setNullable(stmt, 2, PodcastExtras.soundbitesToJson(item.getSoundbites()));
+            stmt.setLong(3, itemId);
+            stmt.executeUpdate();
+        }
     }
 
     public synchronized long insertItem(long feedId, FeedItem item) throws SQLException {
@@ -450,6 +481,8 @@ public final class DesktopDatabase implements AutoCloseable {
         if (transcriptUrl != null && !transcriptUrl.isEmpty()) {
             item.setTranscriptUrl(transcriptType, transcriptUrl);
         }
+        item.setPersons(PodcastExtras.personsFromJson(rs.getString("persons")));
+        item.setSoundbites(PodcastExtras.soundbitesFromJson(rs.getString("soundbites")));
         List<Chapter> chapters = getChapters(item.getId());
         if (!chapters.isEmpty()) {
             item.setChapters(chapters);

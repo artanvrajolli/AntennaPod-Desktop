@@ -4391,7 +4391,53 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         transcriptButton.setOnAction(event -> showTranscript(item));
         HBox buttons = new HBox(8, websiteButton, transcriptButton);
         buttons.setPadding(new Insets(8));
-        VBox pane = new VBox(4, meta, webView, buttons);
+        Feed ownFeed = null;
+        for (Feed feed : feeds) {
+            if (feed.getId() == item.getFeedId()) {
+                ownFeed = feed;
+                break;
+            }
+        }
+        // Podcasting 2.0: who is on it (the episode's own list, else the podcast's), and how to
+        // support the podcast
+        java.util.List<de.danoeh.antennapod.model.feed.PodcastPerson> people = item.getPersons() != null
+                ? item.getPersons() : ownFeed != null ? ownFeed.getPersons() : null;
+        VBox pane = new VBox(4, meta);
+        if (people != null && !people.isEmpty()) {
+            pane.getChildren().add(peopleRow(people));
+        }
+        pane.getChildren().addAll(webView, buttons);
+        if (ownFeed != null && ownFeed.getPaymentLinks() != null) {
+            for (de.danoeh.antennapod.model.feed.FeedFunding funding : ownFeed.getPaymentLinks()) {
+                if (funding.url == null || funding.url.isEmpty()) {
+                    continue;
+                }
+                String label = funding.content != null && !funding.content.isBlank()
+                        ? funding.content.trim() : "Support this podcast";
+                Button support = new Button(label, Icons.favorite());
+                support.setTooltip(new Tooltip(funding.url));
+                support.setOnAction(event -> getHostServices().showDocument(funding.url));
+                buttons.getChildren().add(support);
+            }
+        }
+        java.util.List<de.danoeh.antennapod.model.feed.Soundbite> soundbites = item.getSoundbites();
+        if (soundbites != null && !soundbites.isEmpty() && item.getMedia() != null) {
+            Label bitesLabel = new Label("Soundbites");
+            bitesLabel.setStyle("-fx-font-weight: bold;");
+            bitesLabel.setPadding(new Insets(4, 8, 0, 8));
+            VBox bites = new VBox(4);
+            bites.setPadding(new Insets(0, 8, 0, 8));
+            for (de.danoeh.antennapod.model.feed.Soundbite soundbite : soundbites) {
+                Button play = new Button(formatDuration(soundbite.startMs) + " · "
+                        + (soundbite.title.isEmpty() ? formatDuration(soundbite.durationMs) + " highlight"
+                                : soundbite.title), Icons.play());
+                play.setTooltip(new Tooltip("Play from " + formatDuration(soundbite.startMs)));
+                play.setOnAction(event -> seekToChapter(item, soundbite.startMs));
+                bites.getChildren().add(play);
+            }
+            pane.getChildren().add(pane.getChildren().size() - 1, bitesLabel);
+            pane.getChildren().add(pane.getChildren().size() - 1, bites);
+        }
         List<de.danoeh.antennapod.model.feed.Chapter> chapters = item.getChapters();
         if (chapters != null && !chapters.isEmpty()) {
             Label chaptersLabel = new Label("Chapters");
@@ -4426,6 +4472,47 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         VBox.setVgrow(webView, Priority.ALWAYS);
         showSidebar(item.getTitle() != null ? item.getTitle() : "Episode", pane);
+    }
+
+    /** "Hosts: Ada · Guests: Grace" with each name a link when the feed gives one. */
+    private javafx.scene.layout.FlowPane peopleRow(
+            java.util.List<de.danoeh.antennapod.model.feed.PodcastPerson> people) {
+        javafx.scene.layout.FlowPane row = new javafx.scene.layout.FlowPane(6, 2);
+        row.setPadding(new Insets(0, 8, 0, 8));
+        java.util.Map<String, java.util.List<de.danoeh.antennapod.model.feed.PodcastPerson>> byRole =
+                new java.util.LinkedHashMap<>();
+        for (de.danoeh.antennapod.model.feed.PodcastPerson person : people) {
+            byRole.computeIfAbsent(person.role, role -> new ArrayList<>()).add(person);
+        }
+        boolean first = true;
+        for (java.util.Map.Entry<String, java.util.List<de.danoeh.antennapod.model.feed.PodcastPerson>> entry
+                : byRole.entrySet()) {
+            if (!first) {
+                row.getChildren().add(new Label("·"));
+            }
+            first = false;
+            Label role = new Label(peopleRoleLabel(entry.getKey(), entry.getValue().size()) + ":");
+            role.getStyleClass().add("muted-label");
+            row.getChildren().add(role);
+            for (de.danoeh.antennapod.model.feed.PodcastPerson person : entry.getValue()) {
+                if (person.href != null) {
+                    javafx.scene.control.Hyperlink link = new javafx.scene.control.Hyperlink(person.name);
+                    link.setPadding(Insets.EMPTY);
+                    link.setOnAction(event -> getHostServices().showDocument(person.href));
+                    row.getChildren().add(link);
+                } else {
+                    row.getChildren().add(new Label(person.name));
+                }
+            }
+        }
+        return row;
+    }
+
+    /** "Host" / "Hosts", "Guest", or the feed's own role name, capitalised. */
+    static String peopleRoleLabel(String role, int count) {
+        String name = role == null || role.isEmpty() ? "host" : role;
+        String label = Character.toUpperCase(name.charAt(0)) + name.substring(1);
+        return count > 1 && !label.endsWith("s") ? label + "s" : label;
     }
 
     private void showTranscript(FeedItem item) {

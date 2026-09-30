@@ -137,6 +137,7 @@ public final class FeedUpdater {
         FeedCredentials.Login feedLogin = login;
         database.inTransaction(() -> {
             database.insertFeed(downloaded);
+            database.saveFeedExtras(downloaded);
             if (feedLogin != null) {
                 database.setFeedCredentials(downloaded.getId(), feedLogin);
             }
@@ -145,6 +146,7 @@ public final class FeedUpdater {
                 item.setFeed(downloaded);
                 item.setPlayState(FeedItem.UNPLAYED);
                 long itemId = database.insertItem(downloaded.getId(), item);
+                database.saveItemExtras(itemId, item);
                 if (item.getMedia() != null) {
                     item.getMedia().setItemId(itemId);
                     database.insertMedia(itemId, item.getMedia());
@@ -301,6 +303,9 @@ public final class FeedUpdater {
             feed.setImageUrl(downloaded.getImageUrl());
         }
         database.updateFeed(feed);
+        feed.setPaymentLinks(downloaded.getPaymentLinks());
+        feed.setPersons(downloaded.getPersons());
+        database.saveFeedExtras(feed);
 
         Map<String, FeedItem> knownItems = new HashMap<>();
         for (FeedItem known : database.getItemsOfFeed(feed.getId())) {
@@ -314,6 +319,7 @@ public final class FeedUpdater {
                 parsed.setFeed(feed);
                 parsed.setNew();
                 long itemId = database.insertItem(feed.getId(), parsed);
+                database.saveItemExtras(itemId, parsed);
                 if (parsed.getMedia() != null) {
                     parsed.getMedia().setItemId(itemId);
                     database.insertMedia(itemId, parsed.getMedia());
@@ -328,6 +334,7 @@ public final class FeedUpdater {
             } else {
                 known.updateFromOther(parsed);
                 database.updateItem(known);
+                database.saveItemExtras(known.getId(), known);
                 FeedMedia media = known.getMedia();
                 if (media != null && media.getId() > 0) {
                     database.updateMediaFromFeed(media);

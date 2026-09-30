@@ -181,6 +181,47 @@ public class FeedItem implements Serializable {
         if (other.getTranscriptType() != null) {
             podcastIndexTranscriptType = other.podcastIndexTranscriptType;
         }
+        if (other.persons != null) {
+            persons = other.persons;
+        }
+        if (other.soundbites != null) {
+            soundbites = other.soundbites;
+        }
+    }
+
+    /** Hosts and guests of this episode ({@code <podcast:person>} on the item), or null. */
+    private java.util.ArrayList<PodcastPerson> persons;
+    /** Highlights of this episode ({@code <podcast:soundbite>}), or null. */
+    private java.util.ArrayList<Soundbite> soundbites;
+
+    public java.util.ArrayList<PodcastPerson> getPersons() {
+        return persons;
+    }
+
+    public void setPersons(java.util.ArrayList<PodcastPerson> persons) {
+        this.persons = persons;
+    }
+
+    public void addPerson(PodcastPerson person) {
+        if (persons == null) {
+            persons = new java.util.ArrayList<>();
+        }
+        persons.add(person);
+    }
+
+    public java.util.ArrayList<Soundbite> getSoundbites() {
+        return soundbites;
+    }
+
+    public void setSoundbites(java.util.ArrayList<Soundbite> soundbites) {
+        this.soundbites = soundbites;
+    }
+
+    public void addSoundbite(Soundbite soundbite) {
+        if (soundbites == null) {
+            soundbites = new java.util.ArrayList<>();
+        }
+        soundbites.add(soundbite);
     }
 
     public long getId() {

@@ -357,6 +357,28 @@ public class Feed implements Serializable {
         return fundingList;
     }
 
+    public void setPaymentLinks(ArrayList<FeedFunding> fundingList) {
+        this.fundingList = fundingList;
+    }
+
+    /** The podcast's own hosts and contributors ({@code <podcast:person>} on the channel). */
+    private ArrayList<PodcastPerson> persons;
+
+    public ArrayList<PodcastPerson> getPersons() {
+        return persons;
+    }
+
+    public void setPersons(ArrayList<PodcastPerson> persons) {
+        this.persons = persons;
+    }
+
+    public void addPerson(PodcastPerson person) {
+        if (persons == null) {
+            persons = new ArrayList<>();
+        }
+        persons.add(person);
+    }
+
     public String getLanguage() {
         return language;
     }
