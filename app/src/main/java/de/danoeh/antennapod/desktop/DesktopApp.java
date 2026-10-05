@@ -207,6 +207,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private Node volumeTrack;
     /** Painted volume stop, so the track is only restyled on visible movement. */
     private double paintedVolumePercent = -1;
+    /** Theme the volume track was last painted for, so a theme switch repaints it. */
+    private boolean paintedVolumeDark;
     private ComboBox<String> speedBox;
     private Button silenceButton;
     private ProgressIndicator loadingSpinner;
@@ -4522,6 +4524,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 applyProxy();
                 scheduleAutoRefresh();
                 ThemeManager.applySavedMode();
+                paintVolumeTrack();
                 savedLabel.setText(
                         Messages.get("settings.saved_note"));
                 setStatus(Messages.get("status.settings.saved"));
@@ -6266,7 +6269,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
     }
 
-    /** Paints the volume slider's fill in neutral grey, leaving the accent to the seek bar. */
+    /**
+     * Paints the volume slider's fill in a strong neutral, close to the text colour, so the
+     * level reads at a glance while the accent stays with the seek bar.
+     */
     private void paintVolumeTrack() {
         if (volumeSlider == null) {
             return;
@@ -6278,12 +6284,13 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             return;
         }
         double percent = clampTrackPercent(volumeSlider.getValue() * 100.0);
-        if (Math.abs(percent - paintedVolumePercent) < 1) {
+        boolean dark = ThemeManager.isDark();
+        if (Math.abs(percent - paintedVolumePercent) < 1 && dark == paintedVolumeDark) {
             return;
         }
         paintedVolumePercent = percent;
-        boolean dark = ThemeManager.isDark();
-        String fill = dark ? "#8d8d8d" : "#9e9e9e";
+        paintedVolumeDark = dark;
+        String fill = dark ? "#d6d6d6" : "#505050";
         String rest = dark ? "#5f5f5f" : "#c9c9c9";
         volumeTrack.setStyle(String.format(Locale.US,
                 "-fx-background-color: linear-gradient(to right, %s 0%%, %s %.2f%%,"
