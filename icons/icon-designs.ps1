@@ -274,3 +274,6 @@ $IconDesigns['progress-ring'] = @{
         DrawPlayTriangle $g (Solid '#FFFFFF') 266 256 124
     }
 }
+
+# the redesign round, in its own file; its entries carry Set = 'redesigns'
+. (Join-Path $PSScriptRoot 'icon-designs-redesigns.ps1')

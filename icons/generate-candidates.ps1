@@ -6,18 +6,29 @@
 #                                       taskbar/tray sizes on dark and light
 #
 #   powershell -ExecutionPolicy Bypass -File icons/generate-candidates.ps1
+#   powershell -ExecutionPolicy Bypass -File icons/generate-candidates.ps1 -Set redesigns
+#
+# -Set picks the round: 'candidates' (the first ten, into icons/candidates/) or
+# 'redesigns' (icon-designs-redesigns.ps1, into icons/redesigns/). Either way
+# 00 is the shipped icon, for comparison.
 #
 # Adopt one with: icons/generate-icons.ps1 -Design <design>
+param(
+    [ValidateSet('candidates', 'redesigns')]
+    [string]$Set = 'candidates'
+)
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $root 'icon-designs.ps1')
 
-$outDir = Join-Path $root 'candidates'
+$outDir = Join-Path $root $Set
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 Get-ChildItem $outDir -Filter '*.png' | Remove-Item
 
-$keys = @($IconDesigns.Keys)
+$keys = @('gradient-mesh') + @($IconDesigns.Keys | Where-Object {
+    $_ -ne 'gradient-mesh' -and $(if ($Set -eq 'candidates') { -not $IconDesigns[$_].Set } else { $IconDesigns[$_].Set -eq $Set })
+})
 for ($i = 0; $i -lt $keys.Count; $i++) {
     Save-Icon $IconDesigns[$keys[$i]].Draw 512 (Join-Path $outDir ('{0:D2}-{1}.png' -f $i, $keys[$i]))
 }
@@ -36,7 +47,8 @@ $g.Clear((Color '#E9EAEE'))
 $titleFont = New-Object System.Drawing.Font('Segoe UI Semibold', 16)
 $labelFont = New-Object System.Drawing.Font('Segoe UI Semibold', 11)
 $ink = Solid '#1C1D22'
-$g.DrawString('AntennaPod Desktop - icon candidates (00 is the shipped icon)', $titleFont, $ink, 20, 14)
+$heading = if ($Set -eq 'redesigns') { 'icon redesigns' } else { 'icon candidates' }
+$g.DrawString("AntennaPod Desktop - $heading (00 is the shipped icon)", $titleFont, $ink, 20, 14)
 
 $smallSizes = @(48, 32, 24, 16)
 for ($i = 0; $i -lt $keys.Count; $i++) {

@@ -54,6 +54,47 @@ Re-render them after editing a design:
 powershell -ExecutionPolicy Bypass -File icons/generate-candidates.ps1
 ```
 
+## Redesigns
+
+A second round of 26 designs lives in `icon-designs-redesigns.ps1` (loaded by
+`icon-designs.ps1`, so the keys work everywhere the first ten do). Their renders
+and contact sheet are in `redesigns/`:
+
+![icon redesigns](redesigns/contact-sheet.png)
+
+| # | Key | Idea |
+|---|-----|------|
+| 01 | `pod-antenna` | a pea pod with an antenna and signal arcs; the middle pea is a play button |
+| 02 | `feed-play` | the feed (RSS) arcs, with a play triangle for the dot |
+| 03 | `equalizer` | five rounded bars, pink to violet, on deep purple |
+| 04 | `vinyl` | a record with grooves, a sheen and a play label |
+| 05 | `cassette` | a cassette tape on a warm gradient |
+| 06 | `mic-waves` | a studio microphone with sound waves either side |
+| 07 | `queue-stack` | stacked episode cards, the front one with play and a progress line |
+| 08 | `satellite-dish` | a dish sending signal arcs |
+| 09 | `rabbit-ears` | a retro TV with antenna ears and play on the screen |
+| 10 | `a-play` | an "A" whose crossbar is a play triangle |
+| 11 | `p-ring` | a "P" whose bowl is a ring around play |
+| 12 | `orb` | a glossy violet sphere with play |
+| 13 | `duotone` | diagonal pink/indigo split, white play badge |
+| 14 | `pixel-play` | play triangle in pixel blocks, cyan to pink |
+| 15 | `ripple` | ripples spreading from a play badge on mint |
+| 16 | `sunrise` | a sun rising over sound waves |
+| 17 | `glass-play` | the shipped mesh behind a frosted glass card |
+| 18 | `neon` | neon ring and play on black |
+| 19 | `paper-waves` | layered paper waves under a play badge |
+| 20 | `seek-capsule` | a seek bar with the play knob, echoing the player |
+| 21 | `hex-badge` | play on a green hexagon |
+| 22 | `orbit` | a planet with a ring, play on the planet |
+| 23 | `mesh-antenna` | the shipped mesh and badge, antenna mast in place of play |
+| 24 | `mesh-wave` | the shipped mesh and badge, a waveform in place of play |
+| 25 | `mono-line` | a line-drawn pod with antenna on off-white, orange play pea |
+| 26 | `bookmark-play` | a bookmark ribbon with play: the saved episode |
+
+```powershell
+powershell -ExecutionPolicy Bypass -File icons/generate-candidates.ps1 -Set redesigns
+```
+
 To adopt one, export it by key; this rewrites `app.ico`, the preview and the
 runtime PNGs:
 
