@@ -6259,8 +6259,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     /**
-     * Paints the volume slider's fill in a strong neutral, close to the text colour, so the
-     * level reads at a glance while the accent stays with the seek bar.
+     * Paints the volume slider's fill in the accent, the colour of its thumb dot, so the level
+     * reads as one piece with the dot.
      */
     private void paintVolumeTrack() {
         if (volumeSlider == null) {
@@ -6279,7 +6279,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         paintedVolumePercent = percent;
         paintedVolumeDark = dark;
-        String fill = dark ? "#d6d6d6" : "#505050";
+        // the dark theme's thumb is -fx-accent; the light theme keeps Modena's white thumb,
+        // and a white fill would vanish there, so the fill is the accent in both
+        String fill = "-fx-accent";
         String rest = dark ? "#5f5f5f" : "#c9c9c9";
         volumeTrack.setStyle(String.format(Locale.US,
                 "-fx-background-color: linear-gradient(to right, %s 0%%, %s %.2f%%,"
