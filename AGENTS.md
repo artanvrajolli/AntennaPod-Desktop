@@ -153,13 +153,19 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   bump `version = '...'` in `app/build.gradle`, push, and stop committing —
   it appears on its own.
 - Version is defined only in `app/build.gradle`; the CI reads it from there.
-- `packaging/windows/main.wxs` is jpackage's own WiX template (JDK 21) with one
-  addition: the exit dialog's optional checkbox starts the app when the wizard
-  is closed. It is passed with `--resource-dir`, and `--win-dir-chooser` is what
-  brings in the wizard it sits on - without it jpackage builds a progress-only
-  installer that closes itself. Keep the file in step if the JDK's template
+- `packaging/windows/main.wxs` is jpackage's own WiX template (JDK 21) with the
+  setup wizard replaced by ours (`ApodUI`): Welcome (Install / Options...) ->
+  Progress -> Finished, worded as an update when an older version is installed
+  (`JP_UPGRADABLE_FOUND`) and as Repair / Remove when this version is. It is
+  passed with `--resource-dir`; `package.ps1` leaves out `--win-dir-chooser`, so
+  jpackage's `JpUI` is empty and WixUIExtension is not linked - every dialog,
+  including the error, cancel and files-in-use ones Windows Installer needs, is
+  in `main.wxs`. Keep the rest of the file in step if the JDK's template
   changes; jpackage says `Using custom package resource [Main WiX project file]`
   when it picks it up. WiX 3 is needed to build an installer locally.
+- Wizard text over the backdrop is transparent: never put text that changes
+  while a page is up there (it smears), and test any new text colour - Windows
+  Installer drew `236,232,247` as near black, while white and `169,162,200` work.
 
 ## Installer branding (done)
 
@@ -172,22 +178,23 @@ verified against a locally built installer:
   gradient-mesh icon (checked by extracting it from a built
   `AntennaPod-Desktop-Setup-*.exe`). `main.wxs` `JpIcon` covers the ARP icon.
   No extra resource is needed for the setup exe.
-- Wizard bitmaps: `packaging/windows/banner.bmp` (493x58) and `dialog.bmp`
-  (493x312), drawn in the project theme by
-  `packaging/windows/generate-installer-bitmaps.ps1` (same gradient mesh as
-  `icons/generate-icons.ps1`). `main.wxs` wires them as
-  `WixUIBannerBmp`/`WixUIDialogBmp`.
-- The bitmap paths use `$(env.APOD_BITMAP_DIR)`, which `package.ps1` sets to
+- Wizard backdrop: `packaging/windows/setup-backdrop.bmp` (493x360, the
+  370x270-unit pages at 100% scaling), drawn by
+  `packaging/windows/generate-installer-bitmaps.ps1` from the icon's gradient
+  mesh with `icons/app.ico` top left. `main.wxs` embeds it as the
+  `ApodBackdrop` binary, and `icons/app.ico` as `ApodIcon` for the error dialog.
+- The binary paths use `$(env.APOD_BITMAP_DIR)`, which `package.ps1` sets to
   the absolute resource dir. WiX expands `$(env.VAR)` at candle time to an
   absolute path; a plain relative name cannot work because jpackage copies only
   `main.wxs`, `overrides.wxi`, the `.wxl` files and the post-image script into
   its per-build config dir - extra resource-dir files are not staged there (and
   a `-post-image.wsf` runs before the config dir exists/next to `JpAppImageDir`,
-  not in it). Verified by decompiling a built MSI: its `WixUI_Bmp_Banner` /
-  `WixUI_Bmp_Dialog` binaries are byte-identical to the two BMPs.
+  not in it).
 - Regenerating: run
   `powershell -ExecutionPolicy Bypass -File packaging/windows/generate-installer-bitmaps.ps1`
-  after changing colours; the BMPs are checked in.
+  after changing colours or the icon; the BMP is checked in.
+- `--win-menu-group 'AntennaPod'` names the Start menu folder; without it
+  jpackage files the shortcut under "Unknown".
 - App icon designs live in `icons/icon-designs.ps1` (the shipped `gradient-mesh` plus
   ten candidates). `icons/generate-icons.ps1 -Design <key>` exports one to `app.ico`
   and the runtime PNGs; `icons/generate-candidates.ps1` renders them all to
@@ -203,5 +210,7 @@ verified against a locally built installer:
   then `pwsh packaging/windows/package.ps1`, then inspect
   `AntennaPod-Desktop-Setup-<version>.exe` (icon, wizard pages, exit page with
   the "Start AntennaPod Desktop" checkbox). The wizard can be exercised without
-  installing by opening the setup exe and cancelling at the end; per-user
-  install, so no admin rights are needed.
+  installing by opening the setup exe and cancelling; per-user install, so no
+  admin rights are needed. On a machine that already has the same version
+  installed, opening it does not reach the welcome page: build a preview with
+  another `JpProductCode` (candle `-d`) to see it, and never press Install there.

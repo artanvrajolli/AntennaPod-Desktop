@@ -58,20 +58,22 @@ Get-Item AntennaPod-Desktop-Windows.zip | Select-Object Name, Length
 
 if ($SkipInstaller) { return }
 
-# --win-dir-chooser brings in the wizard whose exit page carries the "start the
-# app" checkbox from packaging/windows/main.wxs; without it jpackage builds a
-# progress-only installer that closes itself.
-# The wizard bitmaps (WixUIBannerBmp/WixUIDialogBmp in main.wxs) resolve via
-# the APOD_BITMAP_DIR env var, pointed here at the resource dir: WiX expands
+# The setup wizard is our own, all of it in packaging/windows/main.wxs. That is
+# why there is no --win-dir-chooser here: it would bring in jpackage's WixUI
+# wizard alongside ours (the install folder is under Options... on our welcome
+# page instead).
+# The wizard's backdrop (setup-backdrop.bmp, ApodBackdrop in main.wxs) resolves
+# via the APOD_BITMAP_DIR env var, pointed here at the resource dir: WiX expands
 # $(env.VAR) at candle time to an absolute path, which survives jpackage's
 # per-build temp dirs (resource-dir extras are NOT copied to its config dir,
 # so a relative bitmap path cannot work). Absolute, so CI and local agree.
+# --win-menu-group names the Start menu folder, which is "Unknown" without it.
 $env:APOD_BITMAP_DIR = (Resolve-Path (Join-Path $PSScriptRoot '.')).Path
 $setup = "AntennaPod-Desktop-Setup-$Version.exe"
 Remove-Item -Recurse -Force installer -ErrorAction SilentlyContinue
 Remove-Item -Force $setup -ErrorAction SilentlyContinue
 & $jpackage --type exe --dest installer @common `
-    --win-per-user-install --win-menu --win-shortcut --win-dir-chooser `
+    --win-per-user-install --win-menu --win-menu-group 'AntennaPod' --win-shortcut `
     --resource-dir packaging/windows `
     --win-upgrade-uuid 6f2f2b7c-6a3e-4f4a-9f4a-6b7c2f2b7c11
 if ($LASTEXITCODE -ne 0) { throw "jpackage installer failed with exit code $LASTEXITCODE" }

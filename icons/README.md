@@ -62,5 +62,6 @@ powershell -ExecutionPolicy Bypass -File icons/generate-icons.ps1 -Design wavefo
 ```
 
 Then update the description at the top of this file. The installer's wizard
-bitmaps (`packaging/windows/generate-installer-bitmaps.ps1`) are drawn in the
-gradient-mesh colours; restyle them too if the new icon uses a different palette.
+backdrop (`packaging/windows/generate-installer-bitmaps.ps1`) draws `app.ico`
+over the gradient-mesh colours; rerun it after a new icon, and restyle its
+glows if the new icon uses a different palette.

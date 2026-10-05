@@ -100,35 +100,299 @@
     <Icon Id="JpARPPRODUCTICON" SourceFile="$(var.JpIcon)"/>
     <?endif?>
 
-    <UIRef Id="JpUI"/>
-
     <!--
-      Themed wizard bitmaps (packaging/windows/banner.bmp + dialog.bmp, built by
-      generate-installer-bitmaps.ps1). The paths come from the APOD_BITMAP_DIR
-      environment variable, which package.ps1 points at this directory: WiX
-      resolves $(env.VAR) at candle time to an absolute path, and light.exe
-      embeds the files (resource-dir extras are NOT copied to the per-build
-      config dir, so a relative path cannot work). Sizes are WiX-mandated:
-      banner 493x58, dialog 493x312, 24-bit BMP.
+      The setup wizard, our own rather than jpackage's. package.ps1 leaves out
+      win-dir-chooser, so jpackage's JpUI is empty and WixUIExtension is not linked:
+      every page is defined here, on one dark backdrop in the app icon's colours
+      (setup-backdrop.bmp, built by generate-installer-bitmaps.ps1).
+
+        not installed     Welcome (Install | Options...) -> Progress -> Finished
+        older installed   the same pages, worded as an update (JP_UPGRADABLE_FOUND)
+        this version      Maintenance (Repair | Remove) -> Progress -> Finished
+
+      The backdrop path comes from the APOD_BITMAP_DIR environment variable, which
+      package.ps1 points at this directory: WiX resolves $(env.VAR) at candle time
+      to an absolute path, and light.exe embeds the file (resource-dir extras are
+      NOT copied to the per-build config dir, so a relative path cannot work).
+
+      Pages are 370x270 installer units, 493x360 px at 100% scaling. Text on the
+      backdrop is transparent and white; text that changes while a page is up
+      (the installer's action text) would smear on a transparent control, so the
+      progress page only shows text that is fixed when it opens.
     -->
-    <WixVariable Id="WixUIBannerBmp" Value="$(env.APOD_BITMAP_DIR)/banner.bmp"/>
-    <WixVariable Id="WixUIDialogBmp" Value="$(env.APOD_BITMAP_DIR)/dialog.bmp"/>
+    <Binary Id="ApodBackdrop" SourceFile="$(env.APOD_BITMAP_DIR)/setup-backdrop.bmp"/>
+    <Binary Id="ApodIcon" SourceFile="$(env.APOD_BITMAP_DIR)/../../icons/app.ico"/>
+
+    <!-- the wording follows what this run does: install, update, repair or remove -->
+    <Property Id="ApodVerb" Value="Install"/>
+    <Property Id="ApodVerbIng" Value="Installing"/>
+    <Property Id="ApodDone" Value="AntennaPod Desktop is ready"/>
+    <SetProperty Id="ApodVerb" Value="Update" After="JpFindRelatedProducts" Sequence="ui">JP_UPGRADABLE_FOUND AND NOT Installed</SetProperty>
+    <SetProperty Id="ApodVerbIng" Value="Updating" After="JpFindRelatedProducts" Sequence="ui">JP_UPGRADABLE_FOUND AND NOT Installed</SetProperty>
+    <SetProperty Id="ApodDone" Value="AntennaPod Desktop is updated" After="JpFindRelatedProducts" Sequence="ui">JP_UPGRADABLE_FOUND AND NOT Installed</SetProperty>
 
     <!--
-      The installer ended on its progress bar: it closed itself the moment it was done, with
-      nothing said and nothing to click. The wizard's own exit dialog, which the dir chooser
-      option brings in, ends it properly, and this puts the one thing missing from that page on
-      it: a ticked box that starts the app when the wizard is closed.
+      The finished page's ticked box starts the app when the wizard is closed.
       WixShellExec comes from WixUtilExtension, which jpackage already links.
     -->
     <Property Id="WixShellExecTarget" Value="[INSTALLDIR]$(var.JpAppName).exe" />
     <CustomAction Id="JpLaunchApp" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" />
-    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Start AntennaPod Desktop" />
-    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
-    <UI>
-      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction"
-               Value="JpLaunchApp">WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed</Publish>
+    <Property Id="ApodLaunch" Value="1" />
+    <Property Id="ApodRMOption" Value="UseRM" />
+
+    <Property Id="DefaultUIFont" Value="ApodUI" />
+    <Property Id="ErrorDialog" Value="ApodErrorDlg" />
+
+    <UI Id="ApodUI">
+      <TextStyle Id="ApodUI" FaceName="Segoe UI" Size="9" />
+      <TextStyle Id="ApodTitle" FaceName="Segoe UI Semibold" Size="18" Red="255" Green="255" Blue="255" />
+      <!-- plain white: Windows Installer drew an off-white (236,232,247) as near black -->
+      <TextStyle Id="ApodLead" FaceName="Segoe UI" Size="10" Red="255" Green="255" Blue="255" />
+      <TextStyle Id="ApodMuted" FaceName="Segoe UI" Size="9" Red="169" Green="162" Blue="200" />
+      <TextStyle Id="ApodLabel" FaceName="Segoe UI Semibold" Size="9" Red="255" Green="255" Blue="255" />
+      <TextStyle Id="ApodHeading" FaceName="Segoe UI Semibold" Size="12" />
+
+      <Dialog Id="ApodWelcomeDlg" Width="370" Height="270" Title="AntennaPod Desktop Setup">
+        <Control Id="Backdrop" Type="Bitmap" X="0" Y="0" Width="370" Height="270" TabSkip="no" Text="ApodBackdrop" />
+        <Control Id="Title" Type="Text" X="24" Y="64" Width="300" Height="26" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodTitle}[ApodVerb] AntennaPod Desktop" />
+        <Control Id="LeadInstall" Type="Text" X="24" Y="96" Width="220" Height="42" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodLead}Subscribe to podcasts, download episodes and listen on your PC, built on the same engine as AntennaPod for Android.">
+          <Condition Action="hide">JP_UPGRADABLE_FOUND</Condition>
+        </Control>
+        <Control Id="LeadUpdate" Type="Text" X="24" Y="96" Width="220" Height="42" Transparent="yes" NoPrefix="yes" Hidden="yes"
+                 Text="{\ApodLead}Version [ProductVersion] replaces the copy on this PC. Your subscriptions, downloads and playback positions stay as they are.">
+          <Condition Action="show">JP_UPGRADABLE_FOUND</Condition>
+        </Control>
+        <Control Id="Fact1" Type="Text" X="24" Y="152" Width="240" Height="12" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodMuted}•  Version [ProductVersion]" />
+        <Control Id="Fact2" Type="Text" X="24" Y="166" Width="240" Height="12" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodMuted}•  For your Windows account only, no admin rights needed" />
+        <Control Id="Fact3" Type="Text" X="24" Y="180" Width="240" Height="12" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodMuted}•  Your library stays in %APPDATA%\AntennaPod" />
+        <!-- Install comes first in the tab order, so it has the focus as well as Enter -->
+        <Control Id="Install" Type="PushButton" X="236" Y="244" Width="60" Height="17" Default="yes" Text="&amp;[ApodVerb]">
+          <Publish Event="EndDialog" Value="Return">1</Publish>
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="302" Y="244" Width="56" Height="17" Cancel="yes" Text="Cancel">
+          <Publish Event="SpawnDialog" Value="ApodCancelDlg">1</Publish>
+        </Control>
+        <Control Id="Options" Type="PushButton" X="16" Y="244" Width="64" Height="17" Text="&amp;Options…">
+          <Publish Event="NewDialog" Value="ApodOptionsDlg">1</Publish>
+        </Control>
+      </Dialog>
+
+      <Dialog Id="ApodOptionsDlg" Width="370" Height="270" Title="AntennaPod Desktop Setup">
+        <Control Id="Backdrop" Type="Bitmap" X="0" Y="0" Width="370" Height="270" TabSkip="no" Text="ApodBackdrop" />
+        <Control Id="Title" Type="Text" X="24" Y="64" Width="300" Height="26" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodTitle}Options" />
+        <Control Id="FolderLabel" Type="Text" X="24" Y="100" Width="240" Height="12" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodLabel}Install folder" />
+        <Control Id="Folder" Type="PathEdit" X="24" Y="114" Width="240" Height="17" Property="INSTALLDIR" />
+        <Control Id="FolderNote" Type="Text" X="24" Y="136" Width="240" Height="24" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodMuted}Only your Windows account uses this copy. Your library stays in %APPDATA%\AntennaPod wherever the app goes." />
+        <Control Id="Desktop" Type="CheckBox" X="24" Y="174" Width="10" Height="10" Property="JP_INSTALL_DESKTOP_SHORTCUT" CheckBoxValue="1" />
+        <Control Id="DesktopLabel" Type="Text" X="40" Y="173" Width="220" Height="12" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodLead}Put a shortcut on the desktop" />
+        <Control Id="Back" Type="PushButton" X="172" Y="244" Width="58" Height="17" Text="&amp;Back">
+          <Publish Event="NewDialog" Value="ApodWelcomeDlg">1</Publish>
+        </Control>
+        <Control Id="Install" Type="PushButton" X="236" Y="244" Width="60" Height="17" Default="yes" Text="&amp;[ApodVerb]">
+          <Publish Event="SetTargetPath" Value="INSTALLDIR" Order="1">1</Publish>
+          <Publish Event="EndDialog" Value="Return" Order="2">1</Publish>
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="302" Y="244" Width="56" Height="17" Cancel="yes" Text="Cancel">
+          <Publish Event="SpawnDialog" Value="ApodCancelDlg">1</Publish>
+        </Control>
+      </Dialog>
+
+      <Dialog Id="ApodMaintenanceDlg" Width="370" Height="270" Title="AntennaPod Desktop Setup">
+        <Control Id="Backdrop" Type="Bitmap" X="0" Y="0" Width="370" Height="270" TabSkip="no" Text="ApodBackdrop" />
+        <Control Id="Title" Type="Text" X="24" Y="64" Width="300" Height="26" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodTitle}AntennaPod Desktop is installed" />
+        <Control Id="Lead" Type="Text" X="24" Y="96" Width="220" Height="56" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodLead}Version [ProductVersion] is already on this PC. Repair puts back missing or damaged program files. Remove takes the app off this PC." />
+        <Control Id="Kept" Type="Text" X="24" Y="166" Width="230" Height="24" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodMuted}Your subscriptions, downloads and playback positions in %APPDATA%\AntennaPod are kept either way." />
+        <Control Id="Repair" Type="PushButton" X="172" Y="244" Width="58" Height="17" Default="yes" Text="&amp;Repair">
+          <Publish Property="ApodVerbIng" Value="Repairing" Order="1">1</Publish>
+          <Publish Property="ApodDone" Value="AntennaPod Desktop is repaired" Order="2">1</Publish>
+          <Publish Event="ReinstallMode" Value="ecmus" Order="3">1</Publish>
+          <Publish Event="Reinstall" Value="All" Order="4">1</Publish>
+          <Publish Event="EndDialog" Value="Return" Order="5">1</Publish>
+        </Control>
+        <Control Id="Remove" Type="PushButton" X="236" Y="244" Width="60" Height="17" Text="Re&amp;move">
+          <Publish Property="ApodVerbIng" Value="Removing" Order="1">1</Publish>
+          <Publish Property="ApodDone" Value="AntennaPod Desktop is removed" Order="2">1</Publish>
+          <Publish Event="Remove" Value="All" Order="3">1</Publish>
+          <Publish Event="EndDialog" Value="Return" Order="4">1</Publish>
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="302" Y="244" Width="56" Height="17" Cancel="yes" Text="Cancel">
+          <Publish Event="SpawnDialog" Value="ApodCancelDlg">1</Publish>
+        </Control>
+      </Dialog>
+
+      <Dialog Id="ApodProgressDlg" Width="370" Height="270" Title="AntennaPod Desktop Setup" Modeless="yes">
+        <Control Id="Backdrop" Type="Bitmap" X="0" Y="0" Width="370" Height="270" TabSkip="no" Text="ApodBackdrop" />
+        <Control Id="Title" Type="Text" X="24" Y="64" Width="300" Height="26" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodTitle}[ApodVerbIng] AntennaPod Desktop" />
+        <Control Id="Where" Type="Text" X="24" Y="96" Width="240" Height="24" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodMuted}[INSTALLDIR]" />
+        <Control Id="Bar" Type="ProgressBar" X="24" Y="126" Width="240" Height="8" ProgressBlocks="no" Text="Progress">
+          <Subscribe Event="SetProgress" Attribute="Progress" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="302" Y="244" Width="56" Height="17" Default="yes" Cancel="yes" Text="Cancel">
+          <Publish Event="SpawnDialog" Value="ApodCancelDlg">1</Publish>
+        </Control>
+      </Dialog>
+
+      <Dialog Id="ApodExitDlg" Width="370" Height="270" Title="AntennaPod Desktop Setup">
+        <Control Id="Backdrop" Type="Bitmap" X="0" Y="0" Width="370" Height="270" TabSkip="no" Text="ApodBackdrop" />
+        <Control Id="Title" Type="Text" X="24" Y="64" Width="300" Height="26" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodTitle}[ApodDone]" />
+        <Control Id="LeadReady" Type="Text" X="24" Y="96" Width="220" Height="42" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodLead}Find it in the Start menu as AntennaPod-Desktop. New versions are offered inside the app.">
+          <Condition Action="hide">REMOVE~="ALL"</Condition>
+        </Control>
+        <Control Id="LeadRemoved" Type="Text" X="24" Y="96" Width="220" Height="56" Transparent="yes" NoPrefix="yes" Hidden="yes"
+                 Text="{\ApodLead}Your subscriptions, downloads and playback positions are still in %APPDATA%\AntennaPod, so installing again picks up where you left off.">
+          <Condition Action="show">REMOVE~="ALL"</Condition>
+        </Control>
+        <Control Id="Launch" Type="CheckBox" X="24" Y="152" Width="10" Height="10" Property="ApodLaunch" CheckBoxValue="1">
+          <Condition Action="hide">Installed</Condition>
+        </Control>
+        <Control Id="LaunchLabel" Type="Text" X="40" Y="151" Width="220" Height="12" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodLead}Start AntennaPod Desktop now">
+          <Condition Action="hide">Installed</Condition>
+        </Control>
+        <Control Id="Finish" Type="PushButton" X="302" Y="244" Width="56" Height="17" Default="yes" Cancel="yes" Text="&amp;Finish">
+          <Publish Event="DoAction" Value="JpLaunchApp" Order="1">ApodLaunch = 1 AND NOT Installed</Publish>
+          <Publish Event="EndDialog" Value="Return" Order="2">1</Publish>
+        </Control>
+      </Dialog>
+
+      <Dialog Id="ApodUserExitDlg" Width="370" Height="270" Title="AntennaPod Desktop Setup">
+        <Control Id="Backdrop" Type="Bitmap" X="0" Y="0" Width="370" Height="270" TabSkip="no" Text="ApodBackdrop" />
+        <Control Id="Title" Type="Text" X="24" Y="64" Width="300" Height="26" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodTitle}Setup was cancelled" />
+        <Control Id="Lead" Type="Text" X="24" Y="96" Width="220" Height="42" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodLead}Nothing on this PC was changed. Run the installer again whenever you like." />
+        <Control Id="Finish" Type="PushButton" X="302" Y="244" Width="56" Height="17" Default="yes" Cancel="yes" Text="&amp;Finish">
+          <Publish Event="EndDialog" Value="Exit">1</Publish>
+        </Control>
+      </Dialog>
+
+      <Dialog Id="ApodFatalErrorDlg" Width="370" Height="270" Title="AntennaPod Desktop Setup">
+        <Control Id="Backdrop" Type="Bitmap" X="0" Y="0" Width="370" Height="270" TabSkip="no" Text="ApodBackdrop" />
+        <Control Id="Title" Type="Text" X="24" Y="64" Width="300" Height="26" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodTitle}Setup could not finish" />
+        <Control Id="Lead" Type="Text" X="24" Y="96" Width="220" Height="56" Transparent="yes" NoPrefix="yes"
+                 Text="{\ApodLead}Windows Installer hit an error and undid what it had changed. Run the installer again, or download a fresh copy from the releases page." />
+        <Control Id="Finish" Type="PushButton" X="302" Y="244" Width="56" Height="17" Default="yes" Cancel="yes" Text="&amp;Finish">
+          <Publish Event="EndDialog" Value="Exit">1</Publish>
+        </Control>
+      </Dialog>
+
+      <Dialog Id="ApodCancelDlg" Width="260" Height="85" Title="AntennaPod Desktop Setup" NoMinimize="yes">
+        <Control Id="Text" Type="Text" X="20" Y="16" Width="220" Height="30" NoPrefix="yes"
+                 Text="Stop setup? Nothing on this PC will be changed." />
+        <!-- Continue first, so it has the focus as well as Enter -->
+        <Control Id="Continue" Type="PushButton" X="192" Y="57" Width="58" Height="17" Default="yes" Cancel="yes" Text="&amp;Continue">
+          <Publish Event="EndDialog" Value="Return">1</Publish>
+        </Control>
+        <Control Id="Stop" Type="PushButton" X="128" Y="57" Width="58" Height="17" Text="&amp;Stop">
+          <Publish Event="EndDialog" Value="Exit">1</Publish>
+        </Control>
+      </Dialog>
+
+      <!-- Windows Installer's own messages; it shows the buttons each one needs and lays them out -->
+      <Dialog Id="ApodErrorDlg" Width="270" Height="105" Title="AntennaPod Desktop Setup" ErrorDialog="yes">
+        <Control Id="ErrorIcon" Type="Icon" X="15" Y="15" Width="24" Height="24" FixedSize="yes" IconSize="32" Text="ApodIcon" />
+        <Control Id="ErrorText" Type="Text" X="48" Y="15" Width="205" Height="60" TabSkip="no" NoPrefix="yes" Text="Information text" />
+        <Control Id="A" Type="PushButton" X="100" Y="80" Width="56" Height="17" TabSkip="yes" Text="Abort">
+          <Publish Event="EndDialog" Value="ErrorAbort">1</Publish>
+        </Control>
+        <Control Id="C" Type="PushButton" X="100" Y="80" Width="56" Height="17" TabSkip="yes" Text="Cancel">
+          <Publish Event="EndDialog" Value="ErrorCancel">1</Publish>
+        </Control>
+        <Control Id="I" Type="PushButton" X="100" Y="80" Width="56" Height="17" TabSkip="yes" Text="Ignore">
+          <Publish Event="EndDialog" Value="ErrorIgnore">1</Publish>
+        </Control>
+        <Control Id="N" Type="PushButton" X="100" Y="80" Width="56" Height="17" TabSkip="yes" Text="No">
+          <Publish Event="EndDialog" Value="ErrorNo">1</Publish>
+        </Control>
+        <Control Id="O" Type="PushButton" X="100" Y="80" Width="56" Height="17" TabSkip="yes" Text="OK">
+          <Publish Event="EndDialog" Value="ErrorOk">1</Publish>
+        </Control>
+        <Control Id="R" Type="PushButton" X="100" Y="80" Width="56" Height="17" TabSkip="yes" Text="Retry">
+          <Publish Event="EndDialog" Value="ErrorRetry">1</Publish>
+        </Control>
+        <Control Id="Y" Type="PushButton" X="100" Y="80" Width="56" Height="17" TabSkip="yes" Text="Yes">
+          <Publish Event="EndDialog" Value="ErrorYes">1</Publish>
+        </Control>
+      </Dialog>
+
+      <!--
+        Files the update has to replace are still open, typically the app the in-app
+        updater just quit and that has not finished closing. Windows Installer picks
+        these two by name: MsiRMFilesInUse when Restart Manager can close the apps,
+        FilesInUse when it cannot.
+      -->
+      <Dialog Id="MsiRMFilesInUse" Width="370" Height="270" Title="AntennaPod Desktop Setup" KeepModeless="yes">
+        <Control Id="Heading" Type="Text" X="20" Y="16" Width="330" Height="20" NoPrefix="yes"
+                 Text="{\ApodHeading}Some files are still in use" />
+        <Control Id="Text" Type="Text" X="20" Y="40" Width="330" Height="28" NoPrefix="yes"
+                 Text="These apps have files open that setup needs to replace. Setup can close them now and open them again when it is done." />
+        <Control Id="List" Type="ListBox" X="20" Y="72" Width="330" Height="112" Property="FileInUseProcess" Sunken="yes" TabSkip="yes" />
+        <Control Id="ShutdownOption" Type="RadioButtonGroup" X="20" Y="192" Width="330" Height="36" Property="ApodRMOption">
+          <RadioButtonGroup Property="ApodRMOption">
+            <RadioButton Value="UseRM" X="0" Y="0" Width="330" Height="16" Text="&amp;Close them, and open them again afterwards" />
+            <RadioButton Value="DontUseRM" X="0" Y="18" Width="330" Height="16" Text="&amp;Leave them open (Windows may need a restart)" />
+          </RadioButtonGroup>
+        </Control>
+        <Control Id="OK" Type="PushButton" X="236" Y="244" Width="60" Height="17" Default="yes" Text="OK">
+          <Publish Event="RMShutdownAndRestart" Value="0" Order="1">ApodRMOption~="UseRM"</Publish>
+          <Publish Event="EndDialog" Value="Return" Order="2">1</Publish>
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="302" Y="244" Width="56" Height="17" Cancel="yes" Text="Cancel">
+          <Publish Event="EndDialog" Value="Exit">1</Publish>
+        </Control>
+      </Dialog>
+
+      <Dialog Id="FilesInUse" Width="370" Height="270" Title="AntennaPod Desktop Setup" KeepModeless="yes">
+        <Control Id="Heading" Type="Text" X="20" Y="16" Width="330" Height="20" NoPrefix="yes"
+                 Text="{\ApodHeading}Some files are still in use" />
+        <Control Id="Text" Type="Text" X="20" Y="40" Width="330" Height="28" NoPrefix="yes"
+                 Text="Close these apps, then choose Retry. Ignore replaces the files the next time Windows restarts." />
+        <Control Id="List" Type="ListBox" X="20" Y="72" Width="330" Height="150" Property="FileInUseProcess" Sunken="yes" TabSkip="yes" />
+        <Control Id="Exit" Type="PushButton" X="168" Y="244" Width="58" Height="17" Cancel="yes" Text="E&amp;xit">
+          <Publish Event="EndDialog" Value="Exit">1</Publish>
+        </Control>
+        <Control Id="Ignore" Type="PushButton" X="232" Y="244" Width="58" Height="17" Text="&amp;Ignore">
+          <Publish Event="EndDialog" Value="Ignore">1</Publish>
+        </Control>
+        <Control Id="Retry" Type="PushButton" X="296" Y="244" Width="58" Height="17" Default="yes" Text="&amp;Retry">
+          <Publish Event="EndDialog" Value="Retry">1</Publish>
+        </Control>
+      </Dialog>
+
+      <InstallUISequence>
+        <Show Dialog="ApodWelcomeDlg" After="CostFinalize">NOT Installed</Show>
+        <Show Dialog="ApodMaintenanceDlg" After="CostFinalize">Installed AND NOT RESUME AND NOT Preselected</Show>
+        <Show Dialog="ApodProgressDlg" Before="ExecuteAction" />
+        <Show Dialog="ApodExitDlg" OnExit="success" />
+        <Show Dialog="ApodUserExitDlg" OnExit="cancel" />
+        <Show Dialog="ApodFatalErrorDlg" OnExit="error" />
+      </InstallUISequence>
+      <!-- an administrative image (msiexec /a) ends on the same pages; ICE20 wants them here too -->
+      <AdminUISequence>
+        <Show Dialog="ApodProgressDlg" Before="ExecuteAction" />
+        <Show Dialog="ApodExitDlg" OnExit="success" />
+        <Show Dialog="ApodUserExitDlg" OnExit="cancel" />
+        <Show Dialog="ApodFatalErrorDlg" OnExit="error" />
+      </AdminUISequence>
     </UI>
+    <UIRef Id="ApodUI"/>
     <!--
       App identity for the shell: Launcher claims this id on the process
       (AppIdentity.APP_ID, "AntennaPod.AntennaPodDesktop") so taskbar grouping,
