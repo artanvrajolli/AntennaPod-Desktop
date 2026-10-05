@@ -3067,8 +3067,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     syncedPositions.clear();
                     syncedPositions.putAll(synced);
                     episodes.setAll(items);
-                    // a big feed opens at the top; bring the playing episode into view instead
-                    scrollToCurrentEpisode();
+                    // a big feed opens at the top; bring back where you left off instead
+                    scrollToLeftOff();
                 });
             } catch (Exception e) {
                 setStatus(Messages.format("status.episodes.load_failed", e.getMessage()));
@@ -6358,6 +6358,52 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         episodeList.scrollTo(centeredScrollTarget(index, estimateVisibleRows()));
         lastScrolledMediaId = current.getId();
+    }
+
+    /**
+     * Opening a subscription brings back where you left off in it, every time it is opened: the
+     * playing episode when it is in this feed, otherwise the one played most recently. A feed
+     * never played from stays at the top.
+     */
+    private void scrollToLeftOff() {
+        if (episodeList == null) {
+            return;
+        }
+        FeedMedia current = playback != null ? playback.getCurrentMedia() : null;
+        int index = current != null ? indexOfMedia(visibleEpisodes, current.getId()) : -1;
+        if (index >= 0) {
+            // counts as this episode's one scroll, so a pause or resume right after leaves it be
+            lastScrolledMediaId = current.getId();
+        } else {
+            index = indexOfLastPlayed(visibleEpisodes);
+        }
+        if (index >= 0) {
+            episodeList.scrollTo(centeredScrollTarget(index, estimateVisibleRows()));
+        }
+    }
+
+    /** Row of the episode played most recently, or -1 when none of them has been played. */
+    static int indexOfLastPlayed(List<FeedItem> items) {
+        if (items == null) {
+            return -1;
+        }
+        int found = -1;
+        long latest = 0;
+        for (int i = 0; i < items.size(); i++) {
+            FeedItem item = items.get(i);
+            if (item == null || item.getMedia() == null) {
+                continue;
+            }
+            FeedMedia media = item.getMedia();
+            Date history = media.getLastPlayedTimeHistory();
+            long playedAt = Math.max(media.getLastPlayedTimeStatistics(),
+                    history != null ? history.getTime() : 0);
+            if (playedAt > latest) {
+                latest = playedAt;
+                found = i;
+            }
+        }
+        return found;
     }
 
     /**

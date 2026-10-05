@@ -37,6 +37,39 @@ public class EpisodeScrollTest {
         assertEquals(-1, DesktopApp.indexOfMedia(new ArrayList<>(), 11));
     }
 
+    @Test
+    public void testLeftOffIsTheMostRecentlyPlayedEpisode() {
+        List<FeedItem> items = new ArrayList<>();
+        for (int i = 0; i < 300; i++) {
+            items.add(itemWithMedia(i, 1000 + i));
+        }
+        items.get(10).getMedia().setLastPlayedTimeStatistics(5_000L);
+        items.get(240).getMedia().setLastPlayedTimeStatistics(9_000L);
+        items.get(120).getMedia().setLastPlayedTimeStatistics(7_000L);
+        assertEquals(240, DesktopApp.indexOfLastPlayed(items));
+    }
+
+    @Test
+    public void testLeftOffAlsoReadsThePlaybackHistory() {
+        // episodes played before the statistics stamp existed only carry the history date
+        List<FeedItem> items = new ArrayList<>();
+        items.add(itemWithMedia(1, 11));
+        items.add(itemWithMedia(2, 12));
+        items.get(0).getMedia().setLastPlayedTimeStatistics(5_000L);
+        items.get(1).getMedia().setLastPlayedTimeHistory(new java.util.Date(8_000L));
+        assertEquals(1, DesktopApp.indexOfLastPlayed(items));
+    }
+
+    @Test
+    public void testNothingPlayedLeavesTheListAtTheTop() {
+        List<FeedItem> items = new ArrayList<>();
+        items.add(itemWithMedia(1, 11));
+        items.add(new FeedItem());
+        assertEquals(-1, DesktopApp.indexOfLastPlayed(items));
+        assertEquals(-1, DesktopApp.indexOfLastPlayed(null));
+        assertEquals(-1, DesktopApp.indexOfLastPlayed(new ArrayList<>()));
+    }
+
     private static FeedItem itemWithMedia(long itemId, long mediaId) {
         FeedItem item = new FeedItem();
         item.setId(itemId);
