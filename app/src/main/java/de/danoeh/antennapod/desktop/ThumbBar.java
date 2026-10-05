@@ -471,7 +471,7 @@ final class ThumbBar {
      * Turns the drawn image into an HICON: a 32-bit colour bitmap with the pixels written straight
      * into it, plus the all-zero mask that means "take the alpha from the colour bitmap".
      */
-    private static HICON toIcon(BufferedImage image) {
+    static HICON toIcon(BufferedImage image) {
         int width = image.getWidth();
         int height = image.getHeight();
         WinGDI.BITMAPINFO info = new WinGDI.BITMAPINFO();

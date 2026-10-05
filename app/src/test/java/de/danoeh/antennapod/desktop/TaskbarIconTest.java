@@ -84,6 +84,39 @@ public class TaskbarIconTest {
     }
 
     @Test
+    public void testBadgeIsTheRequestedSquare() {
+        BufferedImage badge = TaskbarIcon.badge(filled(256, 256, Color.RED), 32);
+        assertEquals(32, badge.getWidth());
+        assertEquals(32, badge.getHeight());
+        Color centre = new Color(badge.getRGB(16, 16), true);
+        assertEquals(255, centre.getRed());
+        assertEquals(255, centre.getAlpha());
+    }
+
+    @Test
+    public void testBadgeCropsWideArtworkToFillTheCorner() {
+        // at badge size letterboxing would waste most of it, so the artwork covers the square
+        BufferedImage badge = TaskbarIcon.badge(filled(256, 64, Color.RED), 32);
+        Color nearTop = new Color(badge.getRGB(16, 3), true);
+        assertEquals(255, nearTop.getAlpha());
+        assertEquals(255, nearTop.getRed());
+    }
+
+    @Test
+    public void testBadgeHasADarkRimAndRoundedCorners() {
+        BufferedImage badge = TaskbarIcon.badge(filled(256, 256, Color.WHITE), 32);
+        Color edge = new Color(badge.getRGB(16, 1), true);
+        assertTrue("white artwork still needs an edge against the app icon", edge.getRed() < 128);
+        assertTrue("the corner is rounded off", new Color(badge.getRGB(0, 0), true).getAlpha() < 64);
+    }
+
+    @Test
+    public void testNoBadgeWithoutArtwork() {
+        assertNull(TaskbarIcon.badge(null, 32));
+        assertNull(TaskbarIcon.badge(filled(32, 32, Color.RED), 0));
+    }
+
+    @Test
     public void testNoImageToConvert() {
         assertNull(TaskbarIcon.toAwt(null));
         assertNull(TaskbarIcon.toFx(null));

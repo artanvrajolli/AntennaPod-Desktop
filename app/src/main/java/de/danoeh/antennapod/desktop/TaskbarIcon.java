@@ -14,9 +14,10 @@ import javafx.scene.image.PixelWriter;
 import javafx.scene.image.WritableImage;
 
 /**
- * The window icon Windows draws on the taskbar button. While something is playing, the app icon
- * keeps the frame and the artwork of the episode is drawn into the middle of it, so the window is
- * still recognisable as AntennaPod at a glance.
+ * The playing episode's artwork on the app's icons. The tray icon keeps the app icon as a frame
+ * with the artwork drawn into the middle of it, so it is still recognisable as AntennaPod at a
+ * glance. The taskbar button gets the artwork as a badge over its corner instead, see
+ * {@link #badge}.
  */
 final class TaskbarIcon {
     /** How much of the icon's edge the artwork takes up, leaving the app icon as a frame. */
@@ -27,6 +28,10 @@ final class TaskbarIcon {
     private static final Color BACKING = new Color(0x20, 0x20, 0x20, 0xFF);
     /** Separates the artwork from whatever the app icon puts behind it. */
     private static final Color OUTLINE = new Color(0xFF, 0xFF, 0xFF, 0x66);
+    /** Rims the taskbar badge so light artwork does not melt into the app icon below it. */
+    private static final Color BADGE_OUTLINE = new Color(0x10, 0x10, 0x10, 0xCC);
+    /** The badge size handed to the shell, which scales it to its own small-icon size. */
+    static final int BADGE_SIZE = 32;
 
     private TaskbarIcon() {
     }
@@ -80,6 +85,41 @@ final class TaskbarIcon {
         g.draw(box);
         g.dispose();
         return composed;
+    }
+
+    /**
+     * The artwork as the badge Windows draws over the corner of the taskbar button. A button
+     * whose app id belongs to a pinned or Start menu shortcut always shows the shortcut's icon,
+     * whatever the window icon says, so the badge is the one place the artwork reliably shows
+     * there. It is small, so the artwork fills it edge to edge, cropped rather than letterboxed,
+     * with a dark outline to keep it apart from the app icon underneath.
+     */
+    static BufferedImage badge(BufferedImage artwork, int size) {
+        if (artwork == null || artwork.getWidth() <= 0 || artwork.getHeight() <= 0 || size <= 0) {
+            return null;
+        }
+        BufferedImage badge = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = badge.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        float radius = Math.max(1f, size / 4f);
+        RoundRectangle2D box = new RoundRectangle2D.Float(0, 0, size, size, radius, radius);
+        g.setClip(box);
+        double scale = Math.max((double) size / artwork.getWidth(),
+                (double) size / artwork.getHeight());
+        int drawWidth = Math.max(1, (int) Math.round(artwork.getWidth() * scale));
+        int drawHeight = Math.max(1, (int) Math.round(artwork.getHeight() * scale));
+        g.drawImage(artwork, (size - drawWidth) / 2, (size - drawHeight) / 2,
+                drawWidth, drawHeight, null);
+        g.setClip(null);
+        float stroke = Math.max(1f, size / 16f);
+        g.setColor(BADGE_OUTLINE);
+        g.setStroke(new BasicStroke(stroke));
+        g.draw(new RoundRectangle2D.Float(stroke / 2, stroke / 2, size - stroke, size - stroke,
+                radius, radius));
+        g.dispose();
+        return badge;
     }
 
     /** The app icon at whatever size the window or the tray asks for. */

@@ -76,8 +76,9 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   the system title bar, `-Dantennapod.desktop.taskbar=false` drops the taskbar
   progress, `-Dantennapod.desktop.thumbbar=false` leaves the window procedure
   unsubclassed, `-Dantennapod.desktop.tray=false` disables the tray,
-  `-Dantennapod.desktop.icon=false` keeps the plain app icon on the taskbar
-  instead of drawing the playing episode's artwork into it,
+  `-Dantennapod.desktop.icon=false` leaves the playing episode's artwork off
+  the taskbar button's corner badge (the button itself always shows the
+  shortcut's icon for our AppUserModelID, so the badge is the only place it can go),
   `-Dantennapod.desktop.mediakeys=false` ignores the keyboard's media keys (they
   otherwise follow the active player through the media card; with the card off
   they fall back to claimed hotkeys),

@@ -2,9 +2,11 @@ package de.danoeh.antennapod.desktop;
 
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
+import com.sun.jna.WString;
 import com.sun.jna.platform.win32.Guid;
 import com.sun.jna.platform.win32.Ole32;
 import com.sun.jna.platform.win32.User32;
+import com.sun.jna.platform.win32.WinDef.HICON;
 import com.sun.jna.platform.win32.WinDef.HWND;
 import com.sun.jna.platform.win32.WinNT.HRESULT;
 import com.sun.jna.platform.win32.COM.Unknown;
@@ -67,6 +69,9 @@ public final class WindowsTaskbar {
     private volatile int wantedPercent = -1;
     private volatile boolean wantedPlaying;
     private volatile boolean wantedSilence;
+    /** The artwork badge for the button's corner, or null for none. */
+    private volatile java.awt.image.BufferedImage wantedOverlay;
+    private volatile String wantedOverlayText;
 
     public static boolean isEnabled() {
         return System.getProperty("os.name", "").toLowerCase(java.util.Locale.US).contains("win")
@@ -169,7 +174,40 @@ public final class WindowsTaskbar {
                 list.setProgressValue(hwnd, percent, 100);
             }
             list.setProgressState(hwnd, state);
+            pushOverlay(list);
         });
+    }
+
+    /**
+     * Puts the artwork badge over the corner of the taskbar button, or takes it off for null.
+     * The installed app's button always shows its shortcut's icon, so this badge is how the
+     * playing episode's artwork gets onto the taskbar at all.
+     */
+    public void setOverlay(java.awt.image.BufferedImage badge, String description) {
+        if (!isEnabled()) {
+            return;
+        }
+        wantedOverlay = badge;
+        wantedOverlayText = description;
+        run(this::pushOverlay);
+    }
+
+    /** COM thread only. The shell keeps its own copy of the icon, so ours goes straight away. */
+    private void pushOverlay(TaskbarList3 list) {
+        java.awt.image.BufferedImage badge = wantedOverlay;
+        HICON icon = badge != null ? ThumbBar.toIcon(badge) : null;
+        try {
+            String text = wantedOverlayText;
+            HRESULT result = list.setOverlayIcon(hwnd, icon,
+                    icon != null && text != null ? new WString(text) : null);
+            if (result.intValue() < 0) {
+                System.err.printf("Taskbar: overlay refused, 0x%08X%n", result.intValue());
+            }
+        } finally {
+            if (icon != null) {
+                ThumbBar.Win32.INSTANCE.DestroyIcon(icon);
+            }
+        }
     }
 
     /** Draws how far through the episode we are. A zero or unknown duration clears the fill. */
@@ -244,6 +282,7 @@ public final class WindowsTaskbar {
             if (list != null) {
                 try {
                     list.setProgressState(hwnd, TBPF_NOPROGRESS);
+                    list.setOverlayIcon(hwnd, null, null);
                     list.Release();
                 } catch (Throwable t) {
                     // shutting down anyway
@@ -341,6 +380,7 @@ public final class WindowsTaskbar {
         private static final int VTBL_SET_PROGRESS_STATE = 10;
         private static final int VTBL_THUMB_BAR_ADD_BUTTONS = 15;
         private static final int VTBL_THUMB_BAR_UPDATE_BUTTONS = 16;
+        private static final int VTBL_SET_OVERLAY_ICON = 18;
 
         TaskbarList3(Pointer instance) {
             super(instance);
@@ -370,6 +410,12 @@ public final class WindowsTaskbar {
         HRESULT thumbBarUpdateButtons(HWND window, int count, Pointer buttons) {
             return (HRESULT) _invokeNativeObject(VTBL_THUMB_BAR_UPDATE_BUTTONS,
                     new Object[]{getPointer(), window, count, buttons}, HRESULT.class);
+        }
+
+        /** A null icon takes the overlay off; the description is what screen readers announce. */
+        HRESULT setOverlayIcon(HWND window, HICON icon, WString description) {
+            return (HRESULT) _invokeNativeObject(VTBL_SET_OVERLAY_ICON,
+                    new Object[]{getPointer(), window, icon, description}, HRESULT.class);
         }
     }
 }

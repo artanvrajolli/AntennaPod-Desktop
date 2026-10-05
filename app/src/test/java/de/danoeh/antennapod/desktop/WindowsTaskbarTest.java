@@ -27,6 +27,9 @@ public class WindowsTaskbarTest {
             taskbar.setPlaybackState(true, true);
             taskbar.setPlaybackState(true, false);
             taskbar.setPlaybackState(false, false);
+            taskbar.setOverlay(new java.awt.image.BufferedImage(32, 32,
+                    java.awt.image.BufferedImage.TYPE_INT_ARGB), "Playing: test");
+            taskbar.setOverlay(null, null);
         } finally {
             taskbar.shutdown();
         }

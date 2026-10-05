@@ -274,11 +274,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private boolean cellPlaying;
     private final TrayManager trayManager = new TrayManager();
     private boolean trayActive;
-    /** The app's own icon, in every size, kept so the window icon can go back to it. */
+    /** The app's own icon, in every size. */
     private final List<Image> baseIcons = new ArrayList<>();
-    /** The same icons as AWT images, converted once, ready to be drawn on. */
-    private final List<java.awt.image.BufferedImage> baseIconImages = new ArrayList<>();
-    /** The artwork currently drawn into the window icon; "" while it is the plain app icon. */
+    /** The artwork currently on the taskbar badge; "" while there is none. */
     private String taskbarIconArtUrl = "";
     private boolean shuttingDown;
     private Stage mainStage;
@@ -6174,9 +6172,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     /**
-     * Draws the artwork of whatever is playing into the middle of the window icon, which is the
-     * icon Windows shows on the taskbar button. Goes back to the plain app icon when there is no
-     * artwork to draw, or nothing is playing.
+     * Puts the artwork of whatever is playing on the taskbar button as a badge over its corner,
+     * and takes it off when there is no artwork or nothing is playing. The window icon stays the
+     * app icon: the installed app's button shows its shortcut's icon whatever the window says.
      */
     private void updateTaskbarIcon(String artUrl) {
         if (mainStage == null || !TaskbarIcon.isEnabled()) {
@@ -6188,16 +6186,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         taskbarIconArtUrl = wanted;
         if (wanted.isEmpty()) {
-            mainStage.getIcons().setAll(baseIcons);
+            clearTaskbarBadge();
             return;
         }
         Image artwork = ImageCache.get(wanted, TaskbarIcon.ARTWORK_SIZE, TaskbarIcon.ARTWORK_SIZE);
         if (artwork == null || artwork.isError()) {
-            mainStage.getIcons().setAll(baseIcons);
+            clearTaskbarBadge();
             return;
         }
         if (artwork.getProgress() < 1) {
-            // still loading: keep the icon that is up and draw this one once the image is there
+            // still loading: keep the badge that is up and draw this one once the image is there
             artwork.progressProperty().addListener((obs, oldProgress, progress) -> {
                 if (progress.doubleValue() < 1 || !wanted.equals(taskbarIconArtUrl)) {
                     return;
@@ -6205,40 +6203,31 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 if (artwork.isError()) {
                     // a failed load also ends at 1: drop the previous episode's artwork, which
                     // was left up while this one loaded
-                    mainStage.getIcons().setAll(baseIcons);
+                    clearTaskbarBadge();
                 } else {
-                    applyTaskbarIcon(artwork);
+                    showTaskbarBadge(artwork);
                 }
             });
             return;
         }
-        applyTaskbarIcon(artwork);
+        showTaskbarBadge(artwork);
     }
 
-    private void applyTaskbarIcon(Image artwork) {
+    private void showTaskbarBadge(Image artwork) {
         java.awt.image.BufferedImage source = TaskbarIcon.toAwt(artwork);
         if (source == null) {
-            mainStage.getIcons().setAll(baseIcons);
+            clearTaskbarBadge();
             return;
         }
-        if (baseIconImages.isEmpty()) {
-            for (Image icon : baseIcons) {
-                java.awt.image.BufferedImage converted = TaskbarIcon.toAwt(icon);
-                if (converted != null) {
-                    baseIconImages.add(converted);
-                }
-            }
-        }
-        List<Image> icons = new ArrayList<>();
-        for (java.awt.image.BufferedImage base : baseIconImages) {
-            Image composed = TaskbarIcon.toFx(TaskbarIcon.compose(base, source));
-            if (composed != null) {
-                icons.add(composed);
-            }
-        }
-        if (!icons.isEmpty()) {
-            mainStage.getIcons().setAll(icons);
-        }
+        FeedMedia current = playback != null ? playback.getCurrentMedia() : null;
+        String title = current != null && current.getItem() != null
+                ? current.getItem().getTitle() : null;
+        windowsTaskbar.setOverlay(TaskbarIcon.badge(source, TaskbarIcon.BADGE_SIZE),
+                title != null ? Messages.format("taskbar.overlay", title) : null);
+    }
+
+    private void clearTaskbarBadge() {
+        windowsTaskbar.setOverlay(null, null);
     }
 
     private void setArtColumnWidth(double width) {
