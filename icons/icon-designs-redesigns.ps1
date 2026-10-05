@@ -381,13 +381,41 @@ $IconDesigns['mesh-antenna'] = @{
     }
 }
 
+# the colour $t of the way from $from to $to (0..1)
+function MixColor([string]$from, [string]$to, [double]$t) {
+    $a = Color $from
+    $b = Color $to
+    return [System.Drawing.Color]::FromArgb(
+        [int]($a.R + ($b.R - $a.R) * $t), [int]($a.G + ($b.G - $a.G) * $t), [int]($a.B + ($b.B - $a.B) * $t))
+}
+
 $IconDesigns['mesh-wave'] = @{
-    Title = 'Mesh + waveform'; Set = 'redesigns'
+    Title = 'Mesh + waveform (current)'; Set = 'redesigns'
     Draw  = {
         param($g)
         MeshTile $g
         $g.FillEllipse((Solid '#F7F7FA'), 126, 126, 260, 260)
-        Bars $g (Solid '#1B1230') 256 256 @(60, 120, 168, 120, 60) 26 16
+        # each bar takes the mesh corners it sits between: orange to pink along the
+        # top, blue to violet along the bottom, so the badge echoes the tile around it.
+        # Every bar spans its own gradient, through magenta, so the short ones get the
+        # full colours too instead of the grey a straight orange-to-blue mix goes through.
+        $heights = @(60, 120, 168, 120, 60)
+        $width = 26; $gap = 16
+        $left = 256 - (($heights.Count * $width + ($heights.Count - 1) * $gap) / 2)
+        $span = $heights.Count * $width + ($heights.Count - 1) * $gap - $width
+        for ($i = 0; $i -lt $heights.Count; $i++) {
+            $x = $left + $i * ($width + $gap)
+            $t = ($x - $left) / $span
+            $h = $heights[$i]
+            $top = 256 - $h / 2
+            $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+                (Pt 0 ($top - 1)), (Pt 0 ($top + $h + 1)), (Color '#000000'), (Color '#000000'))
+            $blend = New-Object System.Drawing.Drawing2D.ColorBlend(3)
+            $blend.Colors = @((MixColor '#FF7A29' '#FF2E97' $t), (Color '#C93CC0'), (MixColor '#4CC2F1' '#7B4BE8' $t))
+            $blend.Positions = @([single]0, [single]0.5, [single]1)
+            $brush.InterpolationColors = $blend
+            $g.FillPath($brush, (RoundedPath $x $top $width $h ($width / 2)))
+        }
     }
 }
 

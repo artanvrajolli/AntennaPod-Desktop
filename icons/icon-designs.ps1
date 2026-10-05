@@ -110,12 +110,15 @@ function Save-Icon([scriptblock]$draw, [int]$size, [string]$path) {
     $bmp.Dispose()
 }
 
-# Design catalogue, in presentation order. 'gradient-mesh' is the shipped icon;
-# the rest are candidates. Keys are what generate-icons.ps1 -Design takes.
+# Design catalogue, in presentation order; keys are what generate-icons.ps1
+# -Design takes. $ShippedDesign is the app icon: generate-icons.ps1 exports it by
+# default and the contact sheets show it as 00. It is 'mesh-wave', from the
+# redesign round; 'gradient-mesh' below is the icon it replaced.
+$ShippedDesign = 'mesh-wave'
 $IconDesigns = [ordered]@{}
 
 $IconDesigns['gradient-mesh'] = @{
-    Title = 'Gradient mesh (current)'
+    Title = 'Gradient mesh (previous)'
     Draw  = {
         param($g)
         MeshTile $g

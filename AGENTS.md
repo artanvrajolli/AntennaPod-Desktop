@@ -175,13 +175,14 @@ verified against a locally built installer:
 - `--icon icons/app.ico` already brands more than the app exe: jpackage's
   `ExecutableRebrander.rebrandInstaller` swaps the icon of the setup
   bootstrapper it emits from `msiwrapper.exe` too, so the setup exe carries the
-  gradient-mesh icon (checked by extracting it from a built
+  app icon (checked by extracting it from a built
   `AntennaPod-Desktop-Setup-*.exe`). `main.wxs` `JpIcon` covers the ARP icon.
   No extra resource is needed for the setup exe.
 - Wizard backdrop: `packaging/windows/setup-backdrop.bmp` (493x360, the
   370x270-unit pages at 100% scaling), drawn by
   `packaging/windows/generate-installer-bitmaps.ps1` from the icon's gradient
-  mesh with `icons/app.ico` top left. `main.wxs` embeds it as the
+  mesh with `icons/app.ico` top left and the icon's waveform badge at the centre
+  of its broadcast rings. `main.wxs` embeds it as the
   `ApodBackdrop` binary, and `icons/app.ico` as `ApodIcon` for the error dialog.
 - The binary paths use `$(env.APOD_BITMAP_DIR)`, which `package.ps1` sets to
   the absolute resource dir. WiX expands `$(env.VAR)` at candle time to an
@@ -195,10 +196,14 @@ verified against a locally built installer:
   after changing colours or the icon; the BMP is checked in.
 - `--win-menu-group 'AntennaPod'` names the Start menu folder; without it
   jpackage files the shortcut under "Unknown".
-- App icon designs live in `icons/icon-designs.ps1` (the shipped `gradient-mesh` plus
-  ten candidates). `icons/generate-icons.ps1 -Design <key>` exports one to `app.ico`
-  and the runtime PNGs; `icons/generate-candidates.ps1` renders them all to
-  `icons/candidates/` with a contact sheet. See `icons/README.md`.
+- App icon designs live in `icons/icon-designs.ps1` and, for the redesign round,
+  `icons/icon-designs-redesigns.ps1`. The shipped one is `$ShippedDesign` there
+  (`mesh-wave`: the gradient mesh behind a waveform badge in the mesh colours;
+  it replaced `gradient-mesh`). `icons/generate-icons.ps1` exports it, or any
+  `-Design <key>`, to `app.ico` and the runtime PNGs;
+  `icons/generate-candidates.ps1 [-Set redesigns]` renders a round to
+  `icons/candidates/` or `icons/redesigns/` with a contact sheet. After a new
+  icon, rerun `generate-installer-bitmaps.ps1` too. See `icons/README.md`.
 - WiX 3.14.1 is installed on this machine via winget
   (`WiXToolset.WiXToolset`) with
   `C:\Program Files (x86)\WiX Toolset v3.14\bin` appended to the machine PATH.

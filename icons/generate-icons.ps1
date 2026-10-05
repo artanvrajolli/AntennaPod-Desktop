@@ -6,18 +6,21 @@
 #   app/src/main/resources/icons/app-icon*.png   runtime window + tray icons
 #
 # The designs live in icon-designs.ps1; -Design picks one by key (default: the
-# shipped "gradient-mesh"). Each is drawn on a 512x512 virtual canvas and scaled
-# down, so editing a design there updates every export.
+# shipped one, $ShippedDesign there). Each is drawn on a 512x512 virtual canvas
+# and scaled down, so editing a design there updates every export.
 #
 #   powershell -ExecutionPolicy Bypass -File icons/generate-icons.ps1
 #   powershell -ExecutionPolicy Bypass -File icons/generate-icons.ps1 -Design waveform
 param(
-    [string]$Design = 'gradient-mesh'
+    [string]$Design
 )
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $root 'icon-designs.ps1')
+if (-not $Design) {
+    $Design = $ShippedDesign
+}
 
 if (-not $IconDesigns.Contains($Design)) {
     throw "Unknown design '$Design'. Available: $($IconDesigns.Keys -join ', ')"

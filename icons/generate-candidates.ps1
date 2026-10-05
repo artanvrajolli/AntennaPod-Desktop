@@ -26,8 +26,8 @@ $outDir = Join-Path $root $Set
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 Get-ChildItem $outDir -Filter '*.png' | Remove-Item
 
-$keys = @('gradient-mesh') + @($IconDesigns.Keys | Where-Object {
-    $_ -ne 'gradient-mesh' -and $(if ($Set -eq 'candidates') { -not $IconDesigns[$_].Set } else { $IconDesigns[$_].Set -eq $Set })
+$keys = @($ShippedDesign) + @($IconDesigns.Keys | Where-Object {
+    $_ -ne $ShippedDesign -and $(if ($Set -eq 'candidates') { -not $IconDesigns[$_].Set } else { $IconDesigns[$_].Set -eq $Set })
 })
 for ($i = 0; $i -lt $keys.Count; $i++) {
     Save-Icon $IconDesigns[$keys[$i]].Draw 512 (Join-Path $outDir ('{0:D2}-{1}.png' -f $i, $keys[$i]))

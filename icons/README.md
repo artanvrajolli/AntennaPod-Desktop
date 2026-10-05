@@ -1,7 +1,12 @@
 # AntennaPod Desktop app icon
 
-The shipped icon is **gradient mesh** — a soft orange/pink/blue/violet mesh behind a
-white play badge, drawn on a rounded tile.
+The shipped icon is **mesh + waveform** (`mesh-wave`) — the soft orange/pink/blue/violet
+mesh behind a white badge holding a waveform. Each bar takes the mesh colours it sits
+between: orange to pink along the tops, blue to violet along the bottoms, through
+magenta. It replaced **gradient mesh** (the same mesh with a play badge).
+
+Which design ships is `$ShippedDesign` in `icon-designs.ps1`: `generate-icons.ps1`
+exports it by default and both contact sheets show it as 00.
 
 ![the icon](app-icon-preview.png)
 
@@ -13,8 +18,9 @@ white play badge, drawn on a rounded tile.
 | `app-icon-preview.png` | the preview above (a copy of the 256 px frame) |
 | `../app/src/main/resources/icons/app-icon-{16,24,32,48,64,128,256}.png` | window/taskbar icon (JavaFX picks the right size) and the tray icon |
 | `../app/src/main/resources/icons/app-icon.png` | 256 px copy for anything that wants a single file |
-| `icon-designs.ps1` | every design, as drawing code, plus the shared drawing helpers |
-| `candidates/` | renders of every design, for choosing a new icon |
+| `icon-designs.ps1` | the first designs, as drawing code, plus the shared drawing helpers |
+| `icon-designs-redesigns.ps1` | the redesign round, including the shipped `mesh-wave` |
+| `candidates/`, `redesigns/` | renders of each round, for choosing a new icon |
 
 ## Regenerating
 
@@ -28,7 +34,7 @@ design in `icon-designs.ps1` (colours, shape, badge) updates every size and the
 
 ## Candidates
 
-Ten alternatives sit next to the shipped icon in `icon-designs.ps1`. Their renders
+The first round of alternatives is in `icon-designs.ps1`. Their renders
 are in `candidates/`, and `candidates/contact-sheet.png` shows them all side by side,
 large and at the real 48/32/24/16 px sizes on a dark and a light taskbar strip:
 
@@ -36,17 +42,18 @@ large and at the real 48/32/24/16 px sizes on a dark and a light taskbar strip:
 
 | # | Key | Idea |
 |---|-----|------|
-| 00 | `gradient-mesh` | the shipped icon |
-| 01 | `signal-tower` | antenna mast with signal arcs on blue: closest to AntennaPod's own mark |
-| 02 | `broadcast` | the broadcast symbol on a sunset gradient |
-| 03 | `mesh-broadcast` | the shipped mesh and badge, broadcast symbol in place of play |
-| 04 | `headphones` | headphones around a play triangle on teal |
-| 05 | `microphone` | studio microphone on deep violet with a warm glow |
-| 06 | `pea-pod` | a pod whose middle pea is a play button |
-| 07 | `waveform` | rounded audio bars in a cyan-to-violet gradient on dark |
-| 08 | `monogram-a` | an "A" drawn as an antenna, with signal arcs, on amber |
-| 09 | `speech-bubble` | talk bubble holding a waveform |
-| 10 | `progress-ring` | play triangle inside a ¾ progress ring, echoing the seek bar |
+| 00 | `mesh-wave` | the shipped icon |
+| 01 | `gradient-mesh` | the icon it replaced: the mesh with a play badge |
+| 02 | `signal-tower` | antenna mast with signal arcs on blue: closest to AntennaPod's own mark |
+| 03 | `broadcast` | the broadcast symbol on a sunset gradient |
+| 04 | `mesh-broadcast` | the mesh and badge, broadcast symbol in place of play |
+| 05 | `headphones` | headphones around a play triangle on teal |
+| 06 | `microphone` | studio microphone on deep violet with a warm glow |
+| 07 | `pea-pod` | a pod whose middle pea is a play button |
+| 08 | `waveform` | rounded audio bars in a cyan-to-violet gradient on dark |
+| 09 | `monogram-a` | an "A" drawn as an antenna, with signal arcs, on amber |
+| 10 | `speech-bubble` | talk bubble holding a waveform |
+| 11 | `progress-ring` | play triangle inside a ¾ progress ring, echoing the seek bar |
 
 Re-render them after editing a design:
 
@@ -56,7 +63,7 @@ powershell -ExecutionPolicy Bypass -File icons/generate-candidates.ps1
 
 ## Redesigns
 
-A second round of 26 designs lives in `icon-designs-redesigns.ps1` (loaded by
+A second round of 26 designs, the shipped one among them, lives in `icon-designs-redesigns.ps1` (loaded by
 `icon-designs.ps1`, so the keys work everywhere the first ten do). Their renders
 and contact sheet are in `redesigns/`:
 
@@ -86,10 +93,11 @@ and contact sheet are in `redesigns/`:
 | 20 | `seek-capsule` | a seek bar with the play knob, echoing the player |
 | 21 | `hex-badge` | play on a green hexagon |
 | 22 | `orbit` | a planet with a ring, play on the planet |
-| 23 | `mesh-antenna` | the shipped mesh and badge, antenna mast in place of play |
-| 24 | `mesh-wave` | the shipped mesh and badge, a waveform in place of play |
-| 25 | `mono-line` | a line-drawn pod with antenna on off-white, orange play pea |
-| 26 | `bookmark-play` | a bookmark ribbon with play: the saved episode |
+| 23 | `mesh-antenna` | the mesh and badge, antenna mast in place of the waveform |
+| 24 | `mono-line` | a line-drawn pod with antenna on off-white, orange play pea |
+| 25 | `bookmark-play` | a bookmark ribbon with play: the saved episode |
+
+`mesh-wave`, now shipped, is 00 on this sheet too.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File icons/generate-candidates.ps1 -Set redesigns
@@ -104,5 +112,5 @@ powershell -ExecutionPolicy Bypass -File icons/generate-icons.ps1 -Design wavefo
 
 Then update the description at the top of this file. The installer's wizard
 backdrop (`packaging/windows/generate-installer-bitmaps.ps1`) draws `app.ico`
-over the gradient-mesh colours; rerun it after a new icon, and restyle its
-glows if the new icon uses a different palette.
+over the mesh colours, with the waveform badge at the centre of its rings; rerun
+it after a new icon, and restyle its glows and badge if the new icon differs.

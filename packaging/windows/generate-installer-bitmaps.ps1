@@ -80,13 +80,15 @@ foreach ($ring in @(@(34, 70), @(62, 52), @(92, 38), @(124, 26), @(158, 16))) {
     $g.DrawEllipse($pen, ($cx - $r), ($cy - $r), ($r * 2), ($r * 2))
     $pen.Dispose()
 }
-$g.FillEllipse((New-Object System.Drawing.SolidBrush((Argb 235 '#F7F7FA'))), ($cx - 14), ($cy - 14), 28, 28)
-$play = @(
-    [System.Drawing.PointF]::new(($cx - 4), ($cy - 7)),
-    [System.Drawing.PointF]::new(($cx - 4), ($cy + 7)),
-    [System.Drawing.PointF]::new(($cx + 7), $cy)
-)
-$g.FillPolygon((New-Object System.Drawing.SolidBrush((Color '#1B1230'))), $play)
+# at their centre, the app icon's badge: a waveform in the mesh colours
+$g.FillEllipse((New-Object System.Drawing.SolidBrush((Argb 240 '#F7F7FA'))), ($cx - 22), ($cy - 22), 44, 44)
+$barColors = @('#FF7A29', '#FF4A7A', '#E53CB0', '#9C4BE0', '#7B4BE8')
+$barHeights = @(8, 16, 22, 16, 8)
+for ($i = 0; $i -lt 5; $i++) {
+    $x = $cx - 11 + $i * 5 - 1.5
+    $h = $barHeights[$i]
+    $g.FillRectangle((New-Object System.Drawing.SolidBrush((Color $barColors[$i]))), [single]$x, [single]($cy - $h / 2), 3, $h)
+}
 
 # the app icon, top left, where the page titles start below it
 $icon = New-Object System.Drawing.Icon($iconPath, 256, 256)
