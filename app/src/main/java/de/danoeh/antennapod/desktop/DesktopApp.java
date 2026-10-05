@@ -369,10 +369,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             playback.pause();
             setStatus(Messages.get("status.sleep.expired"));
         });
+        // a minutes timer still running comes back; end-of-episode never does
         sleepTimer.restore();
-        if (sleepTimer.getMode() == SleepTimer.Mode.END_OF_EPISODE) {
-            playback.setStopAfterCurrent(true);
-        }
         playback.setStopAfterCurrentHandler(() -> {
             // the end-of-episode timer has done its job; left on, it showed "episode" without
             // stopping the next one and came back at the next launch to stop an episode unasked

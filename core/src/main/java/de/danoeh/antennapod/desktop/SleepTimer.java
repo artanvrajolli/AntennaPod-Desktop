@@ -87,10 +87,15 @@ public final class SleepTimer {
         return Math.max(deadlineMs - System.currentTimeMillis(), 0);
     }
 
+    /**
+     * Brings back a minutes timer that is still running, by its deadline. An end-of-episode
+     * timer is not brought back: it was set for the episode playing then, and restored at launch
+     * it stopped whatever episode finished next, which nobody had asked for.
+     */
     public synchronized void restore() {
         String savedMode = DesktopPreferences.getSleepTimerMode();
         if ("end".equals(savedMode)) {
-            startEndOfEpisode();
+            DesktopPreferences.setSleepTimerMode("off");
         } else if (savedMode.startsWith("minutes")) {
             long savedDeadline = DesktopPreferences.getSleepTimerDeadline();
             long remaining = savedDeadline - System.currentTimeMillis();

@@ -73,6 +73,21 @@ public class DesktopSleepTimerTest {
     }
 
     @Test
+    public void testDoesNotRestoreEndOfEpisode() {
+        // set for an episode in an earlier session, it would stop whatever finishes next, unasked
+        DesktopPreferences.setSleepTimerMode("end");
+        SleepTimer restored = new SleepTimer(() -> {
+        });
+        try {
+            restored.restore();
+            assertEquals(SleepTimer.Mode.OFF, restored.getMode());
+            assertEquals("off", DesktopPreferences.getSleepTimerMode());
+        } finally {
+            restored.shutdown();
+        }
+    }
+
+    @Test
     public void testEndOfEpisodeMode() {
         SleepTimer timer = new SleepTimer(() -> {
         });
