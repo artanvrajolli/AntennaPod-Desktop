@@ -545,11 +545,6 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
 
             @Override
-            public void onPrevious() {
-                playback.playPrevious();
-            }
-
-            @Override
             public void onNext() {
                 playback.playNext();
             }

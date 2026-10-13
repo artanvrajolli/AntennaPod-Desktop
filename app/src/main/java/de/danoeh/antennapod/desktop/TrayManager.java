@@ -41,8 +41,6 @@ public final class TrayManager {
     public interface Callbacks {
         void onPlayPause();
 
-        void onPrevious();
-
         void onNext();
 
         void onSkipBack();
@@ -114,7 +112,7 @@ public final class TrayManager {
                 hideControls();
             }
         });
-        // pinned, the panel is the window's only handle: drag it anywhere on its background
+        // the panel is the window's only handle: drag it anywhere on its background
         double[] grab = new double[2];
         boolean[] moving = {false};
         controlsWindow.getScene().setOnMousePressed(event -> {
@@ -124,7 +122,7 @@ public final class TrayManager {
             grab[1] = controlsWindow.getY() - event.getScreenY();
         });
         controlsWindow.getScene().setOnMouseDragged(event -> {
-            if (pinned && moving[0]) {
+            if (moving[0]) {
                 controlsWindow.setX(event.getScreenX() + grab[0]);
                 controlsWindow.setY(event.getScreenY() + grab[1]);
             }
@@ -194,18 +192,19 @@ public final class TrayManager {
         header.setAlignment(Pos.CENTER_LEFT);
         playPauseButton = control(Icons.accent(Icons.play()), Messages.get("common.play"), callbacks::onPlayPause);
         playPauseButton.setMinSize(44, 36);
-        Button previous = control(Icons.previous(), Messages.get("player.previous"), callbacks::onPrevious);
         Button skipBack = control(Icons.replay10(), Messages.get("tray.skip_back"), callbacks::onSkipBack);
         Button skipForward = control(Icons.forward30(), Messages.get("tray.skip_forward"), callbacks::onSkipForward);
-        Button next = control(Icons.next(), Messages.get("player.next"), callbacks::onNext);
+        // the row is about moving on: a Next button closes it on both sides
+        Button nextLeft = control(Icons.next(), Messages.get("player.next"), callbacks::onNext);
+        Button nextRight = control(Icons.next(), Messages.get("player.next"), callbacks::onNext);
         silenceButton = control(Icons.wave(), Messages.get("player.skip_silence"), () -> {
             boolean enabled = !callbacks.isSilenceSkipping();
             updateSilenceSkipping(enabled);
             callbacks.onSilenceSkipping(enabled);
         });
         updateSilenceSkipping(callbacks.isSilenceSkipping());
-        episodeControls = List.of(previous, skipBack, skipForward, next);
-        transportRow = new HBox(8, previous, skipBack, playPauseButton, skipForward, next, silenceButton);
+        episodeControls = List.of(nextLeft, skipBack, skipForward, nextRight);
+        transportRow = new HBox(8, nextLeft, skipBack, playPauseButton, skipForward, nextRight);
         transportRow.setAlignment(Pos.CENTER);
         setEpisodeControlsDisabled(true);
         positionLabel = new Label("");
@@ -237,7 +236,7 @@ public final class TrayManager {
         pinButton = new Button(Messages.get("tray.keep_open"));
         pinButton.setTooltip(new Tooltip(Messages.get("tray.keep_open.tooltip")));
         pinButton.setOnAction(event -> setPinned(!pinned));
-        HBox actions = new HBox(8, show, pinButton, exit);
+        HBox actions = new HBox(8, silenceButton, show, pinButton, exit);
         actions.setAlignment(Pos.CENTER);
         VBox panel = new VBox(10, header, new Separator(), transportRow, progressRow,
                 new Separator(), actions);
