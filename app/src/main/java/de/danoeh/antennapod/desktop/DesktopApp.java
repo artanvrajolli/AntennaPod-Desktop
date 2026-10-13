@@ -744,7 +744,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             // helpers for running from source: never part of an installed build
             moreMenu.getItems().addAll(new SeparatorMenuItem(),
                     toolbarMenuItem(Messages.get("menu.more.dev_reload"), Icons.refresh(), this::reloadAll),
-                    toolbarMenuItem(Messages.get("menu.more.dev_open_project"), Icons.folder(), this::openProjectDir));
+                    toolbarMenuItem(Messages.get("menu.more.dev_open_project"), Icons.folder(), this::openProjectDir),
+                    toolbarMenuItem(Messages.get("menu.more.dev_open_terminal"), Icons.terminal(), this::openProjectTerminal));
         }
         // inputs stay left, actions sit at the far right
         Region spacer = new Region();
@@ -1518,6 +1519,31 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         } catch (Exception e) {
             setStatus(Messages.format("status.dev.open_folder_failed", e.getMessage()));
         }
+    }
+
+    /** Dev-only: opens a console window already sitting in the project folder. */
+    private void openProjectTerminal() {
+        File dir = projectDir(new File(System.getProperty("user.dir", ".")));
+        if (dir == null) {
+            setStatus(Messages.format("status.dev.not_checkout", System.getProperty("user.dir", ".")));
+            return;
+        }
+        try {
+            projectTerminal(dir).start();
+            setStatus(Messages.format("status.dev.terminal_opened", dir));
+        } catch (Exception e) {
+            setStatus(Messages.format("status.dev.open_terminal_failed", e.getMessage()));
+        }
+    }
+
+    /**
+     * A console window in {@code dir}. The shell goes through {@code start} so the terminal gets
+     * its own window even when the app was launched from one. Kept separate so it can be tested
+     * without opening a console.
+     */
+    static ProcessBuilder projectTerminal(File dir) {
+        return new ProcessBuilder("cmd.exe", "/c", "start", APP_NAME, "cmd.exe", "/k")
+                .directory(dir);
     }
 
     /**

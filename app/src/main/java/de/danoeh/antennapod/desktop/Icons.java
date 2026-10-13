@@ -243,6 +243,14 @@ public final class Icons {
                 40, 92, 40, 64, 104, 64, 120, 92, 216, 92, 216, 200, 40, 200));
     }
 
+    /** A console window: rounded frame with a prompt chevron and the cursor bar. */
+    public static Node terminal() {
+        return icon(frame(36, 64, 184, 128, 22, 22)
+                + capsule(84, 100, 118, 128, 22)
+                + capsule(118, 128, 84, 156, 22)
+                + capsule(140, 156, 180, 156, 22));
+    }
+
     /** Eight-tooth gear: a solid body, radial teeth and a punched centre. */
     public static Node settings() {
         StringBuilder teeth = new StringBuilder();

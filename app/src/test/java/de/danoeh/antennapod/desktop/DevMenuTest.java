@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.List;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -49,5 +50,14 @@ public class DevMenuTest {
     @Test
     public void testProjectDirRejectsOtherFolders() {
         assertNull(DesktopApp.projectDir(new File(tempFolder.getRoot(), "nope")));
+    }
+
+    @Test
+    public void testTerminalIsItsOwnCmdWindowInTheProjectFolder() throws Exception {
+        File dir = tempFolder.getRoot();
+        ProcessBuilder terminal = DesktopApp.projectTerminal(dir);
+        assertEquals(dir.getCanonicalFile(), terminal.directory().getCanonicalFile());
+        assertEquals(List.of("cmd.exe", "/c", "start", "AntennaPod Desktop", "cmd.exe", "/k"),
+                terminal.command());
     }
 }
