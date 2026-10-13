@@ -4575,14 +4575,18 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     /** The Settings logs tab: the status history, newest first, easy to copy out. */
     private Tab buildLogsTab() {
-        List<String> lines = new ArrayList<>();
         java.text.SimpleDateFormat stamp = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-        synchronized (statusLog) {
-            for (StatusEntry entry : statusLog) {
-                lines.add(stamp.format(new Date(entry.timeMs)) + "  " + entry.text);
+        ObservableList<String> items = FXCollections.observableArrayList();
+        Runnable reload = () -> {
+            List<String> lines = new ArrayList<>();
+            synchronized (statusLog) {
+                for (StatusEntry entry : statusLog) {
+                    lines.add(stamp.format(new Date(entry.timeMs)) + "  " + entry.text);
+                }
             }
-        }
-        ObservableList<String> items = FXCollections.observableArrayList(lines);
+            items.setAll(lines);
+        };
+        reload.run();
         ListView<String> list = new ListView<>(items);
         list.setOnMouseClicked(event -> {
             if (event.getClickCount() == 2) {
@@ -4595,12 +4599,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         Label hint = new Label(Messages.get("settings.logs.hint"));
         hint.getStyleClass().add("muted-label");
+        Button refresh = new Button(Messages.get("settings.logs.refresh"));
+        refresh.setOnAction(event -> reload.run());
         Button copyAll = new Button(Messages.get("settings.logs.copy_all"));
         copyAll.setOnAction(event -> {
             copyText(String.join("\n", items));
             setStatus(Messages.format("status.log.copied", items.size()));
         });
-        HBox header = new HBox(8, hint, copyAll);
+        HBox header = new HBox(8, hint, refresh, copyAll);
         header.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(hint, Priority.ALWAYS);
         VBox pane = new VBox(8, header, list);
