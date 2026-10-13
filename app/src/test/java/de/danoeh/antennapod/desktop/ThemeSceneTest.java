@@ -71,13 +71,17 @@ public class ThemeSceneTest {
         org.junit.Assert.assertTrue(panel.getChildren().get(1)
                 instanceof javafx.scene.control.Separator);
         javafx.scene.layout.HBox transport = (javafx.scene.layout.HBox) panel.getChildren().get(2);
-        org.junit.Assert.assertEquals(5, transport.getChildren().size());
-        // nothing loaded yet: play/pause stays usable (it resumes the last episode), the
-        // buttons that act on a loaded episode are disabled
+        org.junit.Assert.assertEquals(6, transport.getChildren().size());
+        // nothing loaded yet: play/pause stays usable (it resumes the last episode) and so
+        // does the skip-silence toggle (a preference), the buttons that act on a loaded
+        // episode are disabled
         assertFalse(transport.isDisable());
         for (int i = 0; i < transport.getChildren().size(); i++) {
-            assertEquals(i != 2, transport.getChildren().get(i).isDisable());
+            assertEquals(i != 2 && i != 5, transport.getChildren().get(i).isDisable());
         }
+        javafx.scene.control.Button silence = (javafx.scene.control.Button) transport.getChildren().get(5);
+        org.junit.Assert.assertEquals("Skip silence: off", silence.getTooltip().getText());
+        assertFalse("the tray has to open showing the state it really is in", silence.getOpacity() == 1.0);
         // update() needs a real tray icon, so enable the rest by hand to fire every button
         for (javafx.scene.Node node : transport.getChildren()) {
             node.setDisable(false);
@@ -101,24 +105,18 @@ public class ThemeSceneTest {
         progressSlider.getOnMouseReleased().handle(null);
         org.junit.Assert.assertTrue(panel.getChildren().get(4)
                 instanceof javafx.scene.control.Separator);
-        javafx.scene.layout.HBox options = (javafx.scene.layout.HBox) panel.getChildren().get(5);
-        javafx.scene.control.Button silence = (javafx.scene.control.Button) options.getChildren().get(0);
-        org.junit.Assert.assertNotNull(silence.getGraphic());
-        org.junit.Assert.assertEquals("Skip silence: off", silence.getTooltip().getText());
-        assertFalse("the tray has to open showing the state it really is in", silence.getOpacity() == 1.0);
-        silence.fire();
         org.junit.Assert.assertEquals("Skip silence: on", silence.getTooltip().getText());
         assertEquals(1.0, silence.getOpacity(), 0.001);
         assertTrue(silenceSkipping[0]);
         // switched in the window instead: the tray toggle has to follow
         manager.updateSilenceSkipping(false);
         org.junit.Assert.assertEquals("Skip silence: off", silence.getTooltip().getText());
-        javafx.scene.layout.HBox footer = (javafx.scene.layout.HBox) panel.getChildren().get(6);
+        javafx.scene.layout.HBox footer = (javafx.scene.layout.HBox) panel.getChildren().get(5);
         for (javafx.scene.Node node : footer.getChildren()) {
             ((javafx.scene.control.Button) node).fire();
         }
         org.junit.Assert.assertEquals(java.util.List.of("previous", "back", "play", "forward", "next",
-                "seek:120000", "silence:true", "show", "exit"), actions);
+                "silence:true", "seek:120000", "show", "exit"), actions);
         manager.remove();
         manager.remove();
     }

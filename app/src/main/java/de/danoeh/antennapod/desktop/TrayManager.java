@@ -67,7 +67,7 @@ public final class TrayManager {
     private Button silenceButton;
     private Button playPauseButton;
     private HBox transportRow;
-    /** The transport buttons that need a loaded episode; play/pause works without one. */
+    /** The transport buttons that need a loaded episode; play/pause and skip silence work without one. */
     private List<Button> episodeControls = List.of();
     private Label nowPlayingLabel;
     private Label feedLabel;
@@ -198,8 +198,14 @@ public final class TrayManager {
         Button skipBack = control(Icons.replay10(), Messages.get("tray.skip_back"), callbacks::onSkipBack);
         Button skipForward = control(Icons.forward30(), Messages.get("tray.skip_forward"), callbacks::onSkipForward);
         Button next = control(Icons.next(), Messages.get("player.next"), callbacks::onNext);
+        silenceButton = control(Icons.wave(), Messages.get("player.skip_silence"), () -> {
+            boolean enabled = !callbacks.isSilenceSkipping();
+            updateSilenceSkipping(enabled);
+            callbacks.onSilenceSkipping(enabled);
+        });
+        updateSilenceSkipping(callbacks.isSilenceSkipping());
         episodeControls = List.of(previous, skipBack, skipForward, next);
-        transportRow = new HBox(8, previous, skipBack, playPauseButton, skipForward, next);
+        transportRow = new HBox(8, previous, skipBack, playPauseButton, skipForward, next, silenceButton);
         transportRow.setAlignment(Pos.CENTER);
         setEpisodeControlsDisabled(true);
         positionLabel = new Label("");
@@ -231,18 +237,10 @@ public final class TrayManager {
         pinButton = new Button(Messages.get("tray.keep_open"));
         pinButton.setTooltip(new Tooltip(Messages.get("tray.keep_open.tooltip")));
         pinButton.setOnAction(event -> setPinned(!pinned));
-        silenceButton = control(Icons.wave(), Messages.get("player.skip_silence"), () -> {
-            boolean enabled = !callbacks.isSilenceSkipping();
-            updateSilenceSkipping(enabled);
-            callbacks.onSilenceSkipping(enabled);
-        });
-        updateSilenceSkipping(callbacks.isSilenceSkipping());
-        HBox options = new HBox(8, silenceButton);
-        options.setAlignment(Pos.CENTER_LEFT);
         HBox actions = new HBox(8, show, pinButton, exit);
         actions.setAlignment(Pos.CENTER);
         VBox panel = new VBox(10, header, new Separator(), transportRow, progressRow,
-                new Separator(), options, actions);
+                new Separator(), actions);
         panel.setPadding(new Insets(14));
         panel.setPrefWidth(300);
         return panel;
