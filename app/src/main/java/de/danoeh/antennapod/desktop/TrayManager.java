@@ -222,20 +222,16 @@ public final class TrayManager {
         HBox progressRow = new HBox(6, positionLabel, progressSlider);
         progressRow.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(progressSlider, Priority.ALWAYS);
-        Button show = new Button(Messages.get("tray.show"));
-        show.setDefaultButton(true);
-        show.setOnAction(event -> {
+        Button show = control(Icons.accent(Icons.window()), Messages.get("tray.show"), () -> {
             hideControls();
             callbacks.onShow();
         });
-        Button exit = new Button(Messages.get("tray.exit"));
-        exit.setOnAction(event -> {
+        Button exit = control(Icons.remove(), Messages.get("tray.exit"), () -> {
             hideControls();
             callbacks.onExit();
         });
-        pinButton = new Button(Messages.get("tray.keep_open"));
-        pinButton.setTooltip(new Tooltip(Messages.get("tray.keep_open.tooltip")));
-        pinButton.setOnAction(event -> setPinned(!pinned));
+        pinButton = control(Icons.pin(), Messages.get("tray.keep_open"), () -> setPinned(!pinned));
+        showPinned(pinned);
         HBox actions = new HBox(8, silenceButton, show, pinButton, exit);
         actions.setAlignment(Pos.CENTER);
         VBox panel = new VBox(10, header, new Separator(), transportRow, progressRow,
@@ -313,9 +309,7 @@ public final class TrayManager {
 
     private void hideControls() {
         pinned = false;
-        if (pinButton != null) {
-            pinButton.setText(Messages.get("tray.keep_open"));
-        }
+        showPinned(false);
         if (controlsWindow != null) {
             controlsWindow.hide();
         }
@@ -340,12 +334,22 @@ public final class TrayManager {
             return;
         }
         pinned = pin;
-        pinButton.setText(pin ? Messages.get("tray.unpin") : Messages.get("tray.keep_open"));
+        showPinned(pin);
         if (pin) {
             DesktopPreferences.setMiniPlayerPosition(controlsWindow.getX(), controlsWindow.getY());
         } else {
             controlsWindow.hide();
         }
+    }
+
+    /** The pin button says what clicking it does next and, unpinned, points at dragging to move. */
+    private void showPinned(boolean pin) {
+        if (pinButton == null) {
+            return;
+        }
+        pinButton.setTooltip(new Tooltip(pin
+                ? Messages.get("tray.unpin") : Messages.get("tray.keep_open.tooltip")));
+        pinButton.setAccessibleText(pin ? Messages.get("tray.unpin") : Messages.get("tray.keep_open"));
     }
 
     /**

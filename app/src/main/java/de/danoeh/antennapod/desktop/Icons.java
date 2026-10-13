@@ -277,6 +277,18 @@ public final class Icons {
                 + rect(196, 96, 24, 64, 12), size);
     }
 
+    /** A window with its caption filled in: bring the main window back. */
+    public static Node window() {
+        return icon(frame(52, 68, 152, 132, 22, 22) + rect(52, 68, 152, 44, 22));
+    }
+
+    /** A pushpin head-on: flat head, wide body, sharp needle - keep the mini player on screen. */
+    public static Node pin() {
+        return icon(capsule(76, 80, 180, 80, 26)
+                + capsule(128, 92, 128, 156, 40)
+                + capsule(128, 156, 128, 208, 16));
+    }
+
     // GitHub mark, drawn on a 16 unit grid (from GitHub's own octicon, MIT licensed)
     private static final String GITHUB =
             "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49"

@@ -106,13 +106,18 @@ public class ThemeSceneTest {
         org.junit.Assert.assertTrue(panel.getChildren().get(4)
                 instanceof javafx.scene.control.Separator);
         javafx.scene.layout.HBox footer = (javafx.scene.layout.HBox) panel.getChildren().get(5);
+        org.junit.Assert.assertEquals(4, footer.getChildren().size());
         // the skip-silence toggle sits with the footer buttons and is a preference, so it
         // stays usable with nothing loaded
         javafx.scene.control.Button silence = (javafx.scene.control.Button) footer.getChildren().get(0);
         org.junit.Assert.assertEquals("Skip silence: off", silence.getTooltip().getText());
         assertFalse("the tray has to open showing the state it really is in", silence.getOpacity() == 1.0);
         for (javafx.scene.Node node : footer.getChildren()) {
-            ((javafx.scene.control.Button) node).fire();
+            javafx.scene.control.Button button = (javafx.scene.control.Button) node;
+            assertTrue(button.getText().isEmpty());
+            org.junit.Assert.assertNotNull(button.getGraphic());
+            org.junit.Assert.assertNotNull(button.getTooltip());
+            button.fire();
         }
         org.junit.Assert.assertEquals("Skip silence: on", silence.getTooltip().getText());
         assertEquals(1.0, silence.getOpacity(), 0.001);
