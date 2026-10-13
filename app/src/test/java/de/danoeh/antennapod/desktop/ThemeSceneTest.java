@@ -102,16 +102,17 @@ public class ThemeSceneTest {
         org.junit.Assert.assertTrue(panel.getChildren().get(4)
                 instanceof javafx.scene.control.Separator);
         javafx.scene.layout.HBox options = (javafx.scene.layout.HBox) panel.getChildren().get(5);
-        javafx.scene.control.CheckBox silence =
-                (javafx.scene.control.CheckBox) options.getChildren().get(0);
-        org.junit.Assert.assertEquals("Skip silence", silence.getText());
-        assertFalse("the tray has to open showing the state it really is in", silence.isSelected());
+        javafx.scene.control.Button silence = (javafx.scene.control.Button) options.getChildren().get(0);
+        org.junit.Assert.assertNotNull(silence.getGraphic());
+        org.junit.Assert.assertEquals("Skip silence: off", silence.getTooltip().getText());
+        assertFalse("the tray has to open showing the state it really is in", silence.getOpacity() == 1.0);
         silence.fire();
-        assertTrue(silence.isSelected());
+        org.junit.Assert.assertEquals("Skip silence: on", silence.getTooltip().getText());
+        assertEquals(1.0, silence.getOpacity(), 0.001);
         assertTrue(silenceSkipping[0]);
         // switched in the window instead: the tray toggle has to follow
         manager.updateSilenceSkipping(false);
-        assertFalse(silence.isSelected());
+        org.junit.Assert.assertEquals("Skip silence: off", silence.getTooltip().getText());
         javafx.scene.layout.HBox footer = (javafx.scene.layout.HBox) panel.getChildren().get(6);
         for (javafx.scene.Node node : footer.getChildren()) {
             ((javafx.scene.control.Button) node).fire();

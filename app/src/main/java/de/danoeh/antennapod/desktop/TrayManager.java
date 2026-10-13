@@ -15,7 +15,6 @@ import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.scene.layout.Priority;
 import javafx.scene.control.Button;
-import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Slider;
@@ -65,7 +64,7 @@ public final class TrayManager {
     private volatile TrayIcon trayIcon;
     private Callbacks callbacks;
     private Stage controlsWindow;
-    private CheckBox silenceToggle;
+    private Button silenceButton;
     private Button playPauseButton;
     private HBox transportRow;
     /** The transport buttons that need a loaded episode; play/pause works without one. */
@@ -232,12 +231,13 @@ public final class TrayManager {
         pinButton = new Button(Messages.get("tray.keep_open"));
         pinButton.setTooltip(new Tooltip(Messages.get("tray.keep_open.tooltip")));
         pinButton.setOnAction(event -> setPinned(!pinned));
-        silenceToggle = new CheckBox(Messages.get("player.skip_silence"));
-        silenceToggle.setSelected(callbacks.isSilenceSkipping());
-        silenceToggle.setTooltip(new Tooltip(Messages.get("tray.skip_silence.tooltip")));
-        silenceToggle.setOnAction(event ->
-                callbacks.onSilenceSkipping(silenceToggle.isSelected()));
-        HBox options = new HBox(8, silenceToggle);
+        silenceButton = control(Icons.wave(), Messages.get("player.skip_silence"), () -> {
+            boolean enabled = !callbacks.isSilenceSkipping();
+            updateSilenceSkipping(enabled);
+            callbacks.onSilenceSkipping(enabled);
+        });
+        updateSilenceSkipping(callbacks.isSilenceSkipping());
+        HBox options = new HBox(8, silenceButton);
         options.setAlignment(Pos.CENTER_LEFT);
         HBox actions = new HBox(8, show, pinButton, exit);
         actions.setAlignment(Pos.CENTER);
@@ -260,11 +260,18 @@ public final class TrayManager {
         return null;
     }
 
-    /** Keeps the tray's own toggle in step when silence skipping is switched elsewhere. */
+    /**
+     * Keeps the tray's own toggle in step when silence skipping is switched elsewhere. The state
+     * shows the way the player bar's button shows it: named on/off and dimmed while off.
+     */
     public void updateSilenceSkipping(boolean enabled) {
-        if (silenceToggle != null) {
-            silenceToggle.setSelected(enabled);
+        if (silenceButton == null) {
+            return;
         }
+        String text = enabled ? Messages.get("player.skip_silence.on") : Messages.get("player.skip_silence.off");
+        silenceButton.setTooltip(new Tooltip(text));
+        silenceButton.setAccessibleText(text);
+        silenceButton.setOpacity(enabled ? 1.0 : 0.55);
     }
 
     void updateProgress(int positionMs, int durationMs) {
@@ -352,8 +359,8 @@ public final class TrayManager {
         if (trayIcon == null || controlsWindow == null) {
             return false;
         }
-        if (silenceToggle != null && callbacks != null) {
-            silenceToggle.setSelected(callbacks.isSilenceSkipping());
+        if (callbacks != null) {
+            updateSilenceSkipping(callbacks.isSilenceSkipping());
         }
         controlsWindow.show();
         controlsWindow.sizeToScene();
@@ -380,9 +387,9 @@ public final class TrayManager {
             hideControls();
             return;
         }
-        if (silenceToggle != null && callbacks != null) {
+        if (callbacks != null) {
             // read it on the way up: it can have been switched in the window since the last look
-            silenceToggle.setSelected(callbacks.isSilenceSkipping());
+            updateSilenceSkipping(callbacks.isSilenceSkipping());
         }
         Point2D pointer = new javafx.scene.robot.Robot().getMousePosition();
         Rectangle2D bounds = Screen.getScreensForRectangle(pointer.getX(), pointer.getY(), 1, 1)
