@@ -17,6 +17,27 @@ import org.junit.Test;
  * wrong picture, it is a native read into the wrong memory.
  */
 public class ThumbBarTest {
+    @Test
+    public void testEpisodeChangesAtEndsAndSeekingHasSeparateActions() {
+        java.util.List<String> actions = new java.util.ArrayList<>();
+        ThumbBar.Callbacks callbacks = new ThumbBar.Callbacks() {
+            public void onPrevious() { actions.add("previous episode"); }
+            public void onPlayPause() { actions.add("play/pause"); }
+            public void onNext() { actions.add("next episode"); }
+            public void onSkipBack() { actions.add("seek back"); }
+            public void onSkipForward() { actions.add("seek forward"); }
+            public boolean isSilenceSkipping() { return false; }
+            public void onSilenceSkipping(boolean enabled) { actions.add("silence " + enabled); }
+        };
+        for (int id : ThumbBar.buttonOrder()) {
+            ThumbBar.actionFor(id, callbacks).run();
+        }
+        assertEquals(java.util.Arrays.asList("previous episode", "seek back", "play/pause",
+                "seek forward", "silence true", "next episode"), actions);
+        assertEquals(null, ThumbBar.actionFor(-1, callbacks));
+        assertTrue("Windows supports at most seven buttons", ThumbBar.buttonOrder().length <= 7);
+    }
+
     private static boolean onWindows() {
         return System.getProperty("os.name", "").toLowerCase(java.util.Locale.US).contains("win");
     }
@@ -55,6 +76,12 @@ public class ThumbBarTest {
         assertNotEquals("previous and next must be mirrored, not identical",
                 signature(previous), signature(next));
         assertNotEquals(signature(play), signature(next));
+        BufferedImage back = ThumbBar.draw(24, Color.WHITE, ThumbBar.Glyph.SKIP_BACK);
+        BufferedImage forward = ThumbBar.draw(24, Color.WHITE, ThumbBar.Glyph.SKIP_FORWARD);
+        assertNotEquals("seeking must look different from changing episodes",
+                signature(previous), signature(back));
+        assertNotEquals(signature(next), signature(forward));
+        assertNotEquals(signature(back), signature(forward));
         assertNotEquals("silence on and off must read differently",
                 signature(silenceOn), signature(silenceOff));
         assertNotEquals("silence must not look like transport",

@@ -99,6 +99,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private final FilteredList<FeedItem> visibleEpisodes = new FilteredList<>(episodes, item -> true);
     private ListView<Feed> feedList;
     private ListView<FeedItem> episodeList;
+    private EpisodeScrollMarker episodeScrollMarker;
     private TextField feedFilterField;
     private TextField episodeFilterField;
     /** The toolbar's search-or-subscribe field. */
@@ -466,6 +467,16 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         stage.show();
         // the taskbar button only exists once the window is showing
         windowsTaskbar.attach(stage, new ThumbBar.Callbacks() {
+            @Override
+            public void onSkipBack() {
+                skipBy(-DesktopPreferences.getSkipBackSec() * 1000);
+            }
+
+            @Override
+            public void onSkipForward() {
+                skipBy(DesktopPreferences.getSkipForwardSec() * 1000);
+            }
+
             @Override
             public void onPrevious() {
                 playback.playPrevious();
@@ -1784,9 +1795,10 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 }
             }
         });
-        VBox pane = new VBox(6, header, episodeList);
+        episodeScrollMarker = new EpisodeScrollMarker(episodeList);
+        VBox pane = new VBox(6, header, episodeScrollMarker);
         pane.setPadding(new Insets(8));
-        VBox.setVgrow(episodeList, Priority.ALWAYS);
+        VBox.setVgrow(episodeScrollMarker, Priority.ALWAYS);
         pane.widthProperty().addListener((obs, oldWidth, width) ->
                 layoutEpisodeHeader(pane, header, controls, width.doubleValue()));
         layoutEpisodeHeader(pane, header, controls, pane.getWidth());
@@ -6324,6 +6336,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         FeedMedia current = playback.getCurrentMedia();
         cellCurrentMediaId = current != null ? current.getId() : -1;
         cellPlaying = playback.isPlaying();
+        if (episodeScrollMarker != null) {
+            episodeScrollMarker.setPlayback(cellCurrentMediaId, cellPlaying);
+        }
         windowsTaskbar.setPlaybackState(current != null, cellPlaying);
         updateSmtcCard(current);
         if (current == null) {

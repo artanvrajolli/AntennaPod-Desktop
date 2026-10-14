@@ -230,6 +230,18 @@
 
 /* ---------------------------------------------------------------- scrollbars */
 
+.episode-scroll-marker {
+    -fx-background-color: #a86b00;
+    -fx-border-color: #eeeeee;
+    -fx-border-width: 1;
+    -fx-background-radius: 2;
+    -fx-border-radius: 2;
+}
+
+.episode-scroll-marker-playing {
+    -fx-background-color: #007ca8;
+}
+
 .auto-scroll-marker {
     -fx-background-color: #ffffff;
     -fx-text-fill: #444444;

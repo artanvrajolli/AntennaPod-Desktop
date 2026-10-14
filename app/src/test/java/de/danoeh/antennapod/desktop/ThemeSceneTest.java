@@ -418,6 +418,7 @@ public class ThemeSceneTest {
                 DesktopPreferences.setThemeMode(ThemeManager.MODE_DARK);
                 ThemeManager.init();
                 stage = new Stage();
+                verifyEpisodeScrollMarker(stage);
                 verifyMiddleClickScroll(stage);
                 ThemeManager.applySavedMode();
                 stage.setScene(new Scene(new StackPane(new Label("theme test")), 80, 60));
@@ -509,5 +510,63 @@ public class ThemeSceneTest {
                 javafx.scene.input.MouseEvent.MOUSE_PRESSED, 80, 80, 200, 200,
                 javafx.scene.input.MouseButton.MIDDLE, 1, false, false, false, false,
                 false, true, false, false, false, true, null));
+    }
+
+    private static void verifyEpisodeScrollMarker(Stage stage) {
+        javafx.scene.control.ListView<de.danoeh.antennapod.model.feed.FeedItem> list =
+                new javafx.scene.control.ListView<>();
+        for (int i = 0; i < 100; i++) {
+            var item = new de.danoeh.antennapod.model.feed.FeedItem();
+            item.setId(i + 1);
+            item.setTitle("Episode " + i);
+            var media = new de.danoeh.antennapod.model.feed.FeedMedia(i + 1000, item,
+                    3600000, 0, 0, "audio/mpeg", null, "https://example.com/" + i,
+                    0, null, 0, 0);
+            item.setMedia(media);
+            list.getItems().add(item);
+        }
+        list.getItems().get(60).getMedia().setLastPlayedTimeStatistics(9000);
+        EpisodeScrollMarker root = new EpisodeScrollMarker(list);
+        stage.setScene(new Scene(root, 300, 240));
+        stage.show();
+        root.applyCss();
+        root.layout();
+        javafx.scene.layout.Region marker = (javafx.scene.layout.Region)
+                root.lookup(".episode-scroll-marker");
+        assertTrue("last played episode is marked", marker.isVisible());
+        assertTrue("marker leaves the scrollbar draggable", marker.isMouseTransparent());
+        assertTrue(marker.getAccessibleText().contains("Episode 60"));
+        root.setPlayback(1020, true);
+        root.applyCss();
+        root.layout();
+        assertTrue(marker.getStyleClass().contains("episode-scroll-marker-playing"));
+        assertTrue(marker.getAccessibleText().contains("Episode 20"));
+        double position = marker.getLayoutY();
+        list.scrollTo(90);
+        root.layout();
+        assertEquals("bookmark stays fixed while scrolling", position, marker.getLayoutY(), 0.1);
+        root.setPlayback(1020, false);
+        root.layout();
+        assertFalse(marker.getStyleClass().contains("episode-scroll-marker-playing"));
+        assertEquals(position, marker.getLayoutY(), 0.1);
+        root.setPlayback(99999, true);
+        root.layout();
+        assertTrue("another subscription falls back to last played",
+                marker.getAccessibleText().contains("Episode 60"));
+        assertFalse(marker.getStyleClass().contains("episode-scroll-marker-playing"));
+        javafx.collections.FXCollections.reverse(list.getItems());
+        root.layout();
+        assertTrue("sorting repositions the bookmark", marker.getLayoutY() < 120);
+        list.getItems().removeIf(item -> item.getMedia().getId() == 1060);
+        root.layout();
+        assertFalse("no played episode means no marker", marker.isVisible());
+        root.setPlayback(1020, true);
+        root.layout();
+        assertTrue(marker.isVisible());
+        list.getItems().setAll(list.getItems().get(0));
+        root.setPlayback(list.getItems().get(0).getMedia().getId(), true);
+        root.layout();
+        assertFalse("no overflow means no track marker", marker.isVisible());
+        stage.hide();
     }
 }

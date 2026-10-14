@@ -10,6 +10,14 @@ import org.junit.Test;
 
 public class EpisodeScrollTest {
     @Test
+    public void testScrollbarBookmarksRepresentTheCompleteList() {
+        assertEquals(0.005, EpisodeScrollMarker.trackFraction(0, 100), 0.00001);
+        assertEquals(0.505, EpisodeScrollMarker.trackFraction(50, 100), 0.00001);
+        assertEquals(0.995, EpisodeScrollMarker.trackFraction(99, 100), 0.00001);
+        assertEquals(0, EpisodeScrollMarker.trackFraction(-1, 0), 0);
+    }
+
+    @Test
     public void testFindsPlayingEpisodeDeepInABigList() {
         List<FeedItem> items = new ArrayList<>();
         for (int i = 0; i < 1000; i++) {

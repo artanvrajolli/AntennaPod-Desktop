@@ -29,7 +29,7 @@ import java.util.List;
 import javafx.application.Platform;
 
 /**
- * The media buttons under the window's taskbar thumbnail — previous, play/pause, next and skip
+ * The media buttons under the window's taskbar thumbnail — previous, seek, play/pause, next and skip
  * silence — which Windows shows when you hover the taskbar button.
  *
  * <p>This is the part of the taskbar integration that has to sit inside the window's message loop:
@@ -49,6 +49,10 @@ final class ThumbBar {
 
         void onNext();
 
+        void onSkipBack();
+
+        void onSkipForward();
+
         boolean isSilenceSkipping();
 
         void onSilenceSkipping(boolean enabled);
@@ -65,12 +69,14 @@ final class ThumbBar {
     /** THUMBBUTTONFLAGS. */
     private static final int THBF_ENABLED = 0x0;
 
-    private static final int ID_PREVIOUS = 101;
-    private static final int ID_PLAY_PAUSE = 102;
-    private static final int ID_NEXT = 103;
-    private static final int ID_SILENCE = 104;
-    /** Windows allows up to seven thumbnail buttons; previous, play/pause, next, silence. */
-    private static final int BUTTON_COUNT = 4;
+    static final int ID_PREVIOUS = 101;
+    static final int ID_PLAY_PAUSE = 102;
+    static final int ID_NEXT = 103;
+    static final int ID_SILENCE = 104;
+    static final int ID_SKIP_BACK = 105;
+    static final int ID_SKIP_FORWARD = 106;
+    /** Windows allows up to seven thumbnail buttons. Episode changes occupy the two ends. */
+    private static final int BUTTON_COUNT = 6;
 
     private final HWND hwnd;
     private final WindowsTaskbar.TaskbarList3 taskbarList;
@@ -97,6 +103,8 @@ final class ThumbBar {
     private HICON playIcon;
     private HICON pauseIcon;
     private HICON nextIcon;
+    private HICON skipBackIcon;
+    private HICON skipForwardIcon;
     private HICON silenceOnIcon;
     private HICON silenceOffIcon;
     /** Whether the buttons are on the taskbar; written on the COM thread. */
@@ -161,7 +169,7 @@ final class ThumbBar {
                 if (buttons == null) {
                     return; // forgotten along with its window
                 }
-                THUMBBUTTON middle = buttons[1];
+                THUMBBUTTON middle = buttons[2];
                 middle.hIcon = playing ? pauseIcon : playIcon;
                 setTip(middle, playing ? Messages.get("player.pause") : Messages.get("common.play"));
                 middle.write();
@@ -186,7 +194,7 @@ final class ThumbBar {
                 if (buttons == null) {
                     return; // forgotten along with its window
                 }
-                THUMBBUTTON silence = buttons[3];
+                THUMBBUTTON silence = buttons[4];
                 silence.hIcon = enabled ? silenceOnIcon : silenceOffIcon;
                 setTip(silence, silenceTip(enabled));
                 silence.write();
@@ -278,15 +286,9 @@ final class ThumbBar {
     }
 
     private void dispatch(int buttonId) {
-        Runnable action;
-        switch (buttonId) {
-            case ID_PREVIOUS: action = callbacks::onPrevious; break;
-            case ID_PLAY_PAUSE: action = callbacks::onPlayPause; break;
-            case ID_NEXT: action = callbacks::onNext; break;
-            case ID_SILENCE:
-                action = () -> callbacks.onSilenceSkipping(!callbacks.isSilenceSkipping());
-                break;
-            default: return;
+        Runnable action = actionFor(buttonId, callbacks);
+        if (action == null) {
+            return;
         }
         // hand back to the application thread rather than acting inside the message loop
         Platform.runLater(() -> {
@@ -296,6 +298,19 @@ final class ThumbBar {
                 t.printStackTrace();
             }
         });
+    }
+
+    static Runnable actionFor(int buttonId, Callbacks callbacks) {
+        switch (buttonId) {
+            case ID_PREVIOUS: return callbacks::onPrevious;
+            case ID_PLAY_PAUSE: return callbacks::onPlayPause;
+            case ID_NEXT: return callbacks::onNext;
+            case ID_SKIP_BACK: return callbacks::onSkipBack;
+            case ID_SKIP_FORWARD: return callbacks::onSkipForward;
+            case ID_SILENCE:
+                return () -> callbacks.onSilenceSkipping(!callbacks.isSilenceSkipping());
+            default: return null;
+        }
     }
 
     private static int lowWord(int value) {
@@ -311,12 +326,20 @@ final class ThumbBar {
     private void buildButtons() {
         buttons = (THUMBBUTTON[]) new THUMBBUTTON().toArray(BUTTON_COUNT);
         showingSilenceOn = callbacks != null && callbacks.isSilenceSkipping();
-        fill(buttons[0], ID_PREVIOUS, previousIcon, Messages.get("taskbar.previous"));
-        fill(buttons[1], ID_PLAY_PAUSE, playIcon, Messages.get("common.play"));
-        fill(buttons[2], ID_NEXT, nextIcon, Messages.get("taskbar.next"));
-        fill(buttons[3], ID_SILENCE,
-                showingSilenceOn ? silenceOnIcon : silenceOffIcon,
-                silenceTip(showingSilenceOn));
+        int[] ids = buttonOrder();
+        HICON[] icons = {previousIcon, skipBackIcon, playIcon, skipForwardIcon,
+                showingSilenceOn ? silenceOnIcon : silenceOffIcon, nextIcon};
+        String[] tips = {Messages.get("taskbar.previous"), Messages.get("tray.skip_back"),
+                Messages.get("common.play"), Messages.get("tray.skip_forward"),
+                silenceTip(showingSilenceOn), Messages.get("taskbar.next")};
+        for (int i = 0; i < BUTTON_COUNT; i++) {
+            fill(buttons[i], ids[i], icons[i], tips[i]);
+        }
+    }
+
+    static int[] buttonOrder() {
+        return new int[] {ID_PREVIOUS, ID_SKIP_BACK, ID_PLAY_PAUSE, ID_SKIP_FORWARD,
+                ID_SILENCE, ID_NEXT};
     }
 
     private void fill(THUMBBUTTON button, int id, HICON icon, String tip) {
@@ -362,13 +385,15 @@ final class ThumbBar {
         playIcon = toIcon(draw(size, ink, Glyph.PLAY));
         pauseIcon = toIcon(draw(size, ink, Glyph.PAUSE));
         nextIcon = toIcon(draw(size, ink, Glyph.NEXT));
+        skipBackIcon = toIcon(draw(size, ink, Glyph.SKIP_BACK));
+        skipForwardIcon = toIcon(draw(size, ink, Glyph.SKIP_FORWARD));
         silenceOnIcon = toIcon(draw(size, ink, Glyph.SILENCE_ON));
         silenceOffIcon = toIcon(draw(size, ink, Glyph.SILENCE_OFF));
     }
 
     private void destroyIcons() {
         for (HICON icon : new HICON[]{previousIcon, playIcon, pauseIcon, nextIcon,
-                silenceOnIcon, silenceOffIcon}) {
+                skipBackIcon, skipForwardIcon, silenceOnIcon, silenceOffIcon}) {
             if (icon != null) {
                 try {
                     Win32.INSTANCE.DestroyIcon(icon);
@@ -378,10 +403,11 @@ final class ThumbBar {
             }
         }
         previousIcon = playIcon = pauseIcon = nextIcon = null;
+        skipBackIcon = skipForwardIcon = null;
         silenceOnIcon = silenceOffIcon = null;
     }
 
-    enum Glyph { PREVIOUS, PLAY, PAUSE, NEXT, SILENCE_ON, SILENCE_OFF }
+    enum Glyph { PREVIOUS, PLAY, PAUSE, NEXT, SKIP_BACK, SKIP_FORWARD, SILENCE_ON, SILENCE_OFF }
 
     /** The same shapes as the in-app transport controls, drawn at icon size. */
     static BufferedImage draw(int size, Color ink, Glyph glyph) {
@@ -421,6 +447,18 @@ final class ThumbBar {
                         BasicStroke.JOIN_MITER));
                 g.draw(new java.awt.geom.Line2D.Double(right, top, right, bottom));
                 g.fill(triangle(left, top, left, bottom, right - barWidth, size / 2.0));
+                break;
+            }
+            case SKIP_BACK: {
+                double middle = size / 2.0;
+                g.fill(triangle(middle, top, middle, bottom, left, middle));
+                g.fill(triangle(right, top, right, bottom, middle, middle));
+                break;
+            }
+            case SKIP_FORWARD: {
+                double middle = size / 2.0;
+                g.fill(triangle(left, top, left, bottom, middle, middle));
+                g.fill(triangle(middle, top, middle, bottom, right, middle));
                 break;
             }
             case SILENCE_ON:
