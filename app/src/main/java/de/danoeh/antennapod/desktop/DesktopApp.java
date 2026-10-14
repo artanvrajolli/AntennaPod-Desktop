@@ -808,6 +808,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             applyFeedFilter();
         });
         feedList = new ListView<>(visibleFeeds);
+        MiddleClickScroll.install(feedList);
         feedList.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
         feedList.setPrefWidth(280);
         feedList.setCellFactory(list -> new FeedCell());
@@ -1770,6 +1771,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         refreshButton.setMinWidth(Region.USE_PREF_SIZE);
         feedTitleLabel.setMinWidth(60);
         episodeList = new ListView<>(visibleEpisodes);
+        MiddleClickScroll.install(episodeList);
         episodeList.setPlaceholder(new Label(Messages.get("episodes.empty")));
         episodeList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         episodeList.setCellFactory(list -> new EpisodeCell());

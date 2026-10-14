@@ -418,6 +418,8 @@ public class ThemeSceneTest {
                 DesktopPreferences.setThemeMode(ThemeManager.MODE_DARK);
                 ThemeManager.init();
                 stage = new Stage();
+                verifyMiddleClickScroll(stage);
+                ThemeManager.applySavedMode();
                 stage.setScene(new Scene(new StackPane(new Label("theme test")), 80, 60));
                 stage.show();
                 assertTrue(stage.getScene().getStylesheets()
@@ -445,5 +447,67 @@ public class ThemeSceneTest {
         if (System.getProperty("os.name", "").toLowerCase(java.util.Locale.US).contains("win")) {
             verifySmtcCard();
         }
+    }
+
+    private static void verifyMiddleClickScroll(Stage stage) {
+        javafx.scene.control.ListView<String> list = new javafx.scene.control.ListView<>();
+        for (int i = 0; i < 100; i++) {
+            list.getItems().add("Episode " + i);
+        }
+        MiddleClickScroll.install(list);
+        list.getSelectionModel().select(3);
+        StackPane root = new StackPane(list);
+        Scene scene = new Scene(root, 300, 240);
+        stage.setScene(scene);
+        stage.show();
+        for (String mode : new String[] {ThemeManager.MODE_DARK, ThemeManager.MODE_LIGHT}) {
+            ThemeManager.previewMode(mode);
+            root.applyCss();
+            root.layout();
+            javafx.scene.control.ScrollBar bar = (javafx.scene.control.ScrollBar)
+                    list.lookupAll(".scroll-bar").stream()
+                            .filter(node -> node instanceof javafx.scene.control.ScrollBar scroll
+                                    && scroll.getOrientation() == javafx.geometry.Orientation.VERTICAL)
+                            .findFirst().orElseThrow();
+            assertTrue("overflowing list must have a visible scroll thumb", bar.isVisible());
+            assertTrue("scrollbar must be wide enough to grab", bar.getWidth() >= 16);
+            javafx.scene.layout.Region thumb = (javafx.scene.layout.Region) bar.lookup(".thumb");
+            String expected = mode.equals(ThemeManager.MODE_DARK) ? "#909090" : "#777777";
+            assertEquals(javafx.scene.paint.Color.web(expected),
+                    thumb.getBackground().getFills().get(0).getFill());
+            fireMiddlePress(list);
+            assertEquals(javafx.scene.Cursor.V_RESIZE, scene.getCursor());
+            assertEquals("middle click must preserve selection", 3,
+                    list.getSelectionModel().getSelectedIndex());
+            javafx.event.Event.fireEvent(list, new javafx.scene.input.KeyEvent(
+                    javafx.scene.input.KeyEvent.KEY_PRESSED, "", "",
+                    javafx.scene.input.KeyCode.ESCAPE, false, false, false, false));
+            assertEquals(null, scene.getCursor());
+            fireMiddlePress(list);
+            fireMiddlePress(list);
+            assertEquals("second middle click stops scrolling", null, scene.getCursor());
+            fireMiddlePress(list);
+            list.getItems().clear();
+            stage.setScene(null);
+            assertEquals("detaching list cleans up scrolling", null, scene.getCursor());
+            stage.setScene(scene);
+            for (int i = 0; i < 100; i++) {
+                list.getItems().add("Episode " + i);
+            }
+            list.getSelectionModel().select(3);
+        }
+        list.getItems().clear();
+        root.applyCss();
+        root.layout();
+        fireMiddlePress(list);
+        assertEquals("a list without overflow must not start scrolling", null, scene.getCursor());
+        stage.hide();
+    }
+
+    private static void fireMiddlePress(javafx.scene.control.ListView<?> list) {
+        javafx.event.Event.fireEvent(list, new javafx.scene.input.MouseEvent(
+                javafx.scene.input.MouseEvent.MOUSE_PRESSED, 80, 80, 200, 200,
+                javafx.scene.input.MouseButton.MIDDLE, 1, false, false, false, false,
+                false, true, false, false, false, true, null));
     }
 }
