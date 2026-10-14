@@ -33,6 +33,11 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.named('test') {
     useJUnit()
+    // The UI text the tests assert is the English bundle. Pin the test JVM's locale so the
+    // result does not depend on the language of the machine running the build (CI runs en-US);
+    // the app itself still follows the system language at runtime.
+    systemProperty 'user.language', 'en'
+    systemProperty 'user.country', 'US'
 }
 
 tasks.named('jar') {
