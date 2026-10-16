@@ -287,6 +287,15 @@ public final class DesktopPreferences {
         PREFS.put("themeMode", mode);
     }
 
+    /** The UI language as a language tag (see {@link Messages#LANGUAGES}), or "" to follow the system. */
+    public static String getLanguage() {
+        return PREFS.get("language", "");
+    }
+
+    public static void setLanguage(String tag) {
+        PREFS.put("language", tag == null ? "" : tag);
+    }
+
     public static String getSleepTimerMode() {
         return PREFS.get("sleepTimerMode", "off");
     }

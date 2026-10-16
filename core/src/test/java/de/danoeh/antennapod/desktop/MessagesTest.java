@@ -2,6 +2,8 @@ package de.danoeh.antennapod.desktop;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
@@ -14,6 +16,7 @@ import java.nio.file.Path;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
@@ -67,6 +70,33 @@ public class MessagesTest {
     }
 
     @Test
+    public void savedLanguageMapsToItsLocaleOrToTheSystem() {
+        assertEquals(Locale.forLanguageTag("sq"), Messages.localeFor("sq"));
+        assertEquals(Locale.SIMPLIFIED_CHINESE, Messages.localeFor("zh-CN"));
+        assertNull(Messages.localeFor(""));
+        assertNull(Messages.localeFor(null));
+        assertNull(Messages.localeFor("xx"));
+    }
+
+    @Test
+    public void everyListedLanguageHasABundleWithTheEnglishKeys() throws IOException {
+        Set<String> english = loadBundle("/i18n/messages.properties").stringPropertyNames();
+        for (String tag : Messages.LANGUAGES.keySet()) {
+            if ("en".equals(tag)) {
+                continue;
+            }
+            String path = "/i18n/messages_" + Locale.forLanguageTag(tag).toString() + ".properties";
+            Properties bundle = loadBundle(path);
+            Set<String> missing = new TreeSet<>(english);
+            missing.removeAll(bundle.stringPropertyNames());
+            assertTrue(path + " lacks " + missing, missing.isEmpty());
+            Set<String> extra = new TreeSet<>(bundle.stringPropertyNames());
+            extra.removeAll(english);
+            assertTrue(path + " has keys English does not: " + extra, extra.isEmpty());
+        }
+    }
+
+    @Test
     public void everyKeyUsedInCodeIsInTheBundleAndEveryBundleKeyIsUsed() throws IOException {
         Properties bundle = loadBundle();
         Set<String> used = new TreeSet<>();
@@ -106,8 +136,13 @@ public class MessagesTest {
     }
 
     private static Properties loadBundle() throws IOException {
+        return loadBundle("/i18n/messages.properties");
+    }
+
+    private static Properties loadBundle(String path) throws IOException {
         Properties properties = new Properties();
-        try (InputStream in = MessagesTest.class.getResourceAsStream("/i18n/messages.properties")) {
+        try (InputStream in = MessagesTest.class.getResourceAsStream(path)) {
+            assertNotNull("missing bundle " + path, in);
             properties.load(new InputStreamReader(in, StandardCharsets.UTF_8));
         }
         return properties;

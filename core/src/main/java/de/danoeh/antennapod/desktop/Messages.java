@@ -1,7 +1,10 @@
 package de.danoeh.antennapod.desktop;
 
 import java.text.MessageFormat;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.MissingResourceException;
 import java.util.ResourceBundle;
 
@@ -29,7 +32,40 @@ import java.util.ResourceBundle;
 public final class Messages {
     static final String BUNDLE = "i18n.messages";
 
+    /**
+     * The languages the app ships a bundle for, by language tag, each named in its own language
+     * so it can be found whatever the current one is. Add a row with each new bundle.
+     */
+    public static final Map<String, String> LANGUAGES = languages();
+
+    private static Map<String, String> languages() {
+        Map<String, String> languages = new LinkedHashMap<>();
+        languages.put("en", "English");
+        languages.put("sq", "Shqip");
+        languages.put("zh-CN", "简体中文");
+        return Collections.unmodifiableMap(languages);
+    }
+
     private Messages() {
+    }
+
+    /**
+     * The locale to show the UI in for a saved language tag, or null to follow the system: for an
+     * empty tag and for one the app has no bundle for.
+     */
+    public static Locale localeFor(String tag) {
+        return tag != null && LANGUAGES.containsKey(tag) ? Locale.forLanguageTag(tag) : null;
+    }
+
+    /**
+     * Switches the UI to the language saved as {@code tag} by making it the default locale. Call
+     * it before the first lookup: the text is loaded once, so a change shows after a restart.
+     */
+    public static void applyLanguage(String tag) {
+        Locale locale = localeFor(tag);
+        if (locale != null) {
+            Locale.setDefault(locale);
+        }
     }
 
     /** Loaded once, on first use. */

@@ -4156,6 +4156,24 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         return ThemeManager.MODE_AUTO;
     }
 
+    private static final String LANGUAGE_LABEL_SYSTEM = Messages.get("settings.language.system");
+    /** The language the text was loaded in; a different choice shows after a restart. */
+    private static final String LAUNCH_LANGUAGE = DesktopPreferences.getLanguage();
+
+    private static String languageLabel(String tag) {
+        String name = Messages.LANGUAGES.get(tag);
+        return name != null ? name : LANGUAGE_LABEL_SYSTEM;
+    }
+
+    private static String languageTag(String label) {
+        for (Map.Entry<String, String> language : Messages.LANGUAGES.entrySet()) {
+            if (language.getValue().equals(label)) {
+                return language.getKey();
+            }
+        }
+        return "";
+    }
+
     private static ComboBox<String> triStateBox(int value) {
         ComboBox<String> box = new ComboBox<>();
         box.getItems().addAll(Messages.get("feed_settings.tristate.global"),
@@ -4328,6 +4346,19 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         themeBox.getItems().addAll(THEME_OPTIONS);
         themeBox.setValue(themeModeLabel(DesktopPreferences.getThemeMode()));
         grid.add(themeBox, 1, row++);
+        grid.add(new Label(Messages.get("settings.language")), 0, row);
+        ComboBox<String> languageBox = new ComboBox<>();
+        languageBox.getItems().add(LANGUAGE_LABEL_SYSTEM);
+        languageBox.getItems().addAll(Messages.LANGUAGES.values());
+        languageBox.setValue(languageLabel(DesktopPreferences.getLanguage()));
+        grid.add(languageBox, 1, row++);
+        Label languageNote = new Label(Messages.get("settings.language.restart_note"));
+        languageNote.setWrapText(true);
+        languageNote.managedProperty().bind(languageNote.visibleProperty());
+        languageNote.visibleProperty().bind(javafx.beans.binding.Bindings.createBooleanBinding(
+                () -> !LAUNCH_LANGUAGE.equals(languageTag(languageBox.getValue())),
+                languageBox.valueProperty()));
+        grid.add(languageNote, 1, row++);
         grid.add(sectionLabel(Messages.get("settings.section.window")), 0, row++, 2, 1);
         javafx.scene.control.CheckBox closeToTrayBox = new javafx.scene.control.CheckBox(
                 Messages.get("settings.close_to_tray"));
@@ -4550,6 +4581,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 DesktopPreferences.setProxyUser(proxyUser.getText().trim());
                 DesktopPreferences.setProxyPassword(proxyPass.getText());
                 DesktopPreferences.setThemeMode(themeModeValue(themeBox.getValue()));
+                DesktopPreferences.setLanguage(languageTag(languageBox.getValue()));
                 DesktopPreferences.setCloseToTray(closeToTrayBox.isSelected());
                 setMediaKeysEnabled(mediaKeysBox.isSelected());
                 applyProxy();
@@ -4564,6 +4596,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         };
         autoSave(themeBox.valueProperty(), save);
+        autoSave(languageBox.valueProperty(), save);
         autoSave(settingsSpeedBox.valueProperty(), save);
         autoSave(introField, save);
         autoSave(endingField, save);
