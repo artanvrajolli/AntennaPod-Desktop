@@ -24,6 +24,7 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 public class PodcastIndexPodcastSearcher implements PodcastSearcher {
     private static final String SEARCH_API_URL = "https://api.podcastindex.org/api/1.0/search/byterm?q=%s";
@@ -43,31 +44,35 @@ public class PodcastIndexPodcastSearcher implements PodcastSearcher {
             }
             String formattedUrl = String.format(SEARCH_API_URL, encodedQuery);
             List<PodcastSearchResult> podcasts = new ArrayList<>();
-            try {
-                OkHttpClient client = AntennapodHttpClient.getHttpClient();
-                Response response = client.newCall(buildAuthenticatedRequest(formattedUrl)).execute();
-
-                if (response.isSuccessful()) {
-                    String resultString = response.body().string();
-                    JSONObject result = new JSONObject(resultString);
-                    JSONArray j = result.getJSONArray("feeds");
-
-                    for (int i = 0; i < j.length(); i++) {
-                        JSONObject podcastJson = j.getJSONObject(i);
-                        if (!podcastJson.has("url")) {
-                            continue;
-                        }
-                        String title = podcastJson.optString("title", "Unknown");
-                        String imageUrl = podcastJson.optString("image", "");
-                        String feedUrl = podcastJson.optString("url", "");
-                        String author = podcastJson.optString("author", "Unknown");
-                        podcasts.add(new PodcastSearchResult(title, imageUrl, feedUrl, author));
-                    }
-                } else {
+            try (Response response = AntennapodHttpClient.getHttpClient()
+                    .newCall(buildAuthenticatedRequest(formattedUrl)).execute()) {
+                if (!response.isSuccessful()) {
                     subscriber.onError(new IOException(response.toString()));
+                    return;
+                }
+                ResponseBody body = response.body();
+                if (body == null) {
+                    subscriber.onError(new IOException("Null response"));
+                    return;
+                }
+                String resultString = body.string();
+                JSONObject result = new JSONObject(resultString);
+                JSONArray j = result.getJSONArray("feeds");
+
+                for (int i = 0; i < j.length(); i++) {
+                    JSONObject podcastJson = j.getJSONObject(i);
+                    if (!podcastJson.has("url")) {
+                        continue;
+                    }
+                    String title = podcastJson.optString("title", "Unknown");
+                    String imageUrl = podcastJson.optString("image", "");
+                    String feedUrl = podcastJson.optString("url", "");
+                    String author = podcastJson.optString("author", "Unknown");
+                    podcasts.add(new PodcastSearchResult(title, imageUrl, feedUrl, author));
                 }
             } catch (IOException | JSONException e) {
                 subscriber.onError(e);
+                return;
             }
             subscriber.onSuccess(podcasts);
         })
@@ -123,7 +128,7 @@ public class PodcastIndexPodcastSearcher implements PodcastSearcher {
     private static String toHex(byte[] bytes) {
         StringBuilder buffer = new StringBuilder();
         for (byte b : bytes) {
-            buffer.append(String.format(Locale.getDefault(), "%02x", b));
+            buffer.append(String.format(Locale.ROOT, "%02x", b));
         }
         return buffer.toString();
     }

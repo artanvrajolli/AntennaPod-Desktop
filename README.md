@@ -133,7 +133,7 @@ winget-pkgs with a pull request or `wingetcreate submit`.
 - `app/` — JavaFX user interface, playback manager, and the Windows shell
   integration (tray, taskbar, media keys, app-drawn title bar).
 
-Both modules have JUnit tests (35+ test classes); `gradlew :core:test :app:test`
+Both modules have JUnit tests (60+ test classes); `gradlew :core:test :app:test`
 runs them all.
 
 ## Credits and license

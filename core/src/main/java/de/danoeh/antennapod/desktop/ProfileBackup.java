@@ -177,7 +177,9 @@ public final class ProfileBackup {
         File dbFile = new File(dataDir, DB_ENTRY);
         File replaced = new File(dataDir, REPLACED_DB);
         if (dbFile.exists()) {
-            Files.move(dbFile.toPath(), replaced.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            // Copy, do not move: the live database stays usable until the staged one atomically
+            // replaces it. Moving it first left no database at all if the restore died here.
+            Files.copy(dbFile.toPath(), replaced.toPath(), StandardCopyOption.REPLACE_EXISTING);
         }
         // a journal left by the old database would be rolled into the restored one
         for (String suffix : DB_SIDE_FILES) {
@@ -187,7 +189,8 @@ public final class ProfileBackup {
                         StandardCopyOption.REPLACE_EXISTING);
             }
         }
-        Files.move(staged.toPath(), dbFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        Files.move(staged.toPath(), dbFile.toPath(),
+                StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         File settings = new File(dataDir, STAGED_SETTINGS);
         if (settings.isFile()) {
             Properties values = new Properties();

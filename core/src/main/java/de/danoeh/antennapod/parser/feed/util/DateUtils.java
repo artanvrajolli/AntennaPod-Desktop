@@ -102,10 +102,28 @@ public abstract class DateUtils {
                 "EEE d MMM yyyy HH:mm:ss 'GMT'Z (z)"
         };
 
+        Date result = parseWithPatterns(date, patterns);
+        if (result != null) {
+            return result;
+        }
+
+        // if date string starts with a weekday, try parsing date string without it. Only once:
+        // recursing on every "word, " let a crafted pubDate blow the stack.
+        if (date.matches("^\\w+, .*$")) {
+            result = parseWithPatterns(date.substring(date.indexOf(',') + 1), patterns);
+            if (result != null) {
+                return result;
+            }
+        }
+
+        System.out.println("Could not parse date string \"" + input + "\" [" + date + "]");
+        return null;
+    }
+
+    private static Date parseWithPatterns(String date, String[] patterns) {
         SimpleDateFormat parser = new SimpleDateFormat("", Locale.US);
         parser.setLenient(false);
         parser.setTimeZone(TIME_ZONE_GMT);
-
         ParsePosition pos = new ParsePosition(0);
         for (String pattern : patterns) {
             parser.applyPattern(pattern);
@@ -119,13 +137,6 @@ public abstract class DateUtils {
                 // Ignore
             }
         }
-
-        // if date string starts with a weekday, try parsing date string without it
-        if (date.matches("^\\w+, .*$")) {
-            return parse(date.substring(date.indexOf(',') + 1));
-        }
-
-        System.out.println("Could not parse date string \"" + input + "\" [" + date + "]");
         return null;
     }
 

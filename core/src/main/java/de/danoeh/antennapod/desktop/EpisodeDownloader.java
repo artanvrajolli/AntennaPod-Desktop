@@ -88,7 +88,8 @@ public final class EpisodeDownloader {
                     media.getSize());
             listener.onFinished(media.getId(), target);
         } catch (Exception e) {
-            target.delete();
+            // The .part file is removed inside fetchToFile; the final target may be a complete
+            // download from an earlier attempt and must survive a failed re-download.
             listener.onError(media.getId(), e);
         } finally {
             // only this run's own entry: a cancelled run can still be winding down after the
@@ -147,8 +148,10 @@ public final class EpisodeDownloader {
             if (total > 0) {
                 media.setSize(total);
             }
-            Files.deleteIfExists(target.toPath());
-            Files.move(part.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE);
+            // Replace the target in one step: deleting it first left no file at all when the
+            // move then failed, and a failed re-download must not destroy the previous copy.
+            Files.move(part.toPath(), target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } catch (java.io.InterruptedIOException e) {
             part.delete();
             // cancel() interrupts the thread, and Okio usually notices first, inside read(); a

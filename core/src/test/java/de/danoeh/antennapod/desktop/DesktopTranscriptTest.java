@@ -116,6 +116,33 @@ public class DesktopTranscriptTest {
     }
 
     @Test
+    public void testJsonSegmentWithEmptyBodyDoesNotCrash() {
+        String json = "{\"segments\":["
+                + "{\"startTime\":0,\"endTime\":60,\"body\":\"A long segment\"},"
+                + "{\"startTime\":60,\"endTime\":61,\"body\":\"\"}]}";
+        Transcript transcript = TranscriptParser.parse(json, "application/json");
+        assertNotNull(transcript);
+        assertTrue(transcript.getSegmentCount() >= 1);
+    }
+
+    @Test
+    public void testSrtEndingOnATimecodeDoesNotCrash() {
+        String srt = "1\n00:00:00,000 --> 00:00:06,000\nHello there\n\n"
+                + "2\n00:00:06,000 --> 00:00:10,000";
+        Transcript transcript = TranscriptParser.parse(srt, "application/srt");
+        assertNotNull(transcript);
+        assertTrue(transcript.getSegmentCount() >= 1);
+    }
+
+    @Test
+    public void testSrtSpeakerLineKeepsTextAfterColons() {
+        String srt = "1\n00:00:00,000 --> 00:00:06,000\nJohn: it's 10:30 now\n";
+        Transcript transcript = TranscriptParser.parse(srt, "application/srt");
+        assertNotNull(transcript);
+        assertTrue(transcript.getSegmentAt(0).getWords().contains("10:30"));
+    }
+
+    @Test
     public void testMovedTranscriptIsFetchedAgain() throws Exception {
         FeedItem item = new FeedItem();
         item.setId(4242);

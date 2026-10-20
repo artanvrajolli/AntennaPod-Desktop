@@ -17,7 +17,9 @@ public final class DesktopHttp {
         }
         cacheDir.mkdirs();
         AntennapodHttpClient.setCacheDirectory(cacheDir);
-        UserAgentInterceptor.USER_AGENT = "AntennaPod-Desktop/0.1.0";
+        String version = System.getProperty("antennapod.desktop.version");
+        UserAgentInterceptor.USER_AGENT = "AntennaPod-Desktop/"
+                + (version != null && !version.isEmpty() ? version : "dev");
         AntennapodHttpClient.reinit();
         initializedCacheDir = cacheDir;
     }

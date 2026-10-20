@@ -4,7 +4,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import java.util.prefs.Preferences;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -140,8 +139,8 @@ public class DesktopSettingsTest {
 
     @Test
     public void testEpisodeCacheValuesAreClamped() {
-        Preferences.userNodeForPackage(DesktopPreferences.class).remove("episodeCacheLimitMb");
-        Preferences.userNodeForPackage(DesktopPreferences.class).remove("episodeCachePrefetchCount");
+        DesktopPreferences.node().remove("episodeCacheLimitMb");
+        DesktopPreferences.node().remove("episodeCachePrefetchCount");
         assertEquals(2048, DesktopPreferences.getEpisodeCacheLimitMb());
         assertEquals(2, DesktopPreferences.getEpisodeCachePrefetchCount());
         assertTrue(DesktopPreferences.getEpisodeCacheEnabled());
@@ -158,7 +157,7 @@ public class DesktopSettingsTest {
 
     @Test
     public void testThemeModeDefaultsToDarkAndRoundTrips() {
-        Preferences.userNodeForPackage(DesktopPreferences.class).remove("themeMode");
+        DesktopPreferences.node().remove("themeMode");
         assertEquals("dark", DesktopPreferences.getThemeMode());
         DesktopPreferences.setThemeMode("auto");
         assertEquals("auto", DesktopPreferences.getThemeMode());
@@ -174,7 +173,7 @@ public class DesktopSettingsTest {
         assertEquals(0.05, DesktopPreferences.getFeedSplitPosition(), 0.001);
         DesktopPreferences.setFeedSplitPosition(99);
         assertEquals(0.8, DesktopPreferences.getFeedSplitPosition(), 0.001);
-        Preferences.userNodeForPackage(DesktopPreferences.class).remove("feedSplitPosition");
+        DesktopPreferences.node().remove("feedSplitPosition");
         assertEquals(0.25, DesktopPreferences.getFeedSplitPosition(), 0.001);
     }
 

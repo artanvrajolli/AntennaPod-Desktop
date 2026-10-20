@@ -279,7 +279,6 @@ public class SyncManager {
             List<Long> syncedItemIds) throws Exception {
         long lastSync = Long.parseLong(database.getSyncState(STATE_ACTION_TIMESTAMP, "0"));
         EpisodeActionChanges changes = service.getEpisodeActionChanges(lastSync);
-        database.setSyncState(STATE_ACTION_TIMESTAMP, String.valueOf(changes.getTimestamp()));
         // An episode can finish on this device while the upload above is in flight. That finish
         // is queued after the snapshot this sync uploaded, so without re-reading it an older
         // remote position would overwrite the just-finished state. The local finish wins; the
@@ -310,6 +309,9 @@ public class SyncManager {
                 e.printStackTrace();
             }
         }
+        // Only now that every change has been applied: a crash or a closed database before this
+        // point must leave the timestamp where it was, or those actions are never fetched again.
+        database.setSyncState(STATE_ACTION_TIMESTAMP, String.valueOf(changes.getTimestamp()));
         return applied;
     }
 

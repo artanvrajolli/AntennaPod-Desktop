@@ -25,6 +25,11 @@ public final class DesktopDatabase implements AutoCloseable {
         databaseFile.getParentFile().mkdirs();
         connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile.getAbsolutePath());
         connection.setAutoCommit(true);
+        try (Statement stmt = connection.createStatement()) {
+            // SQLite defaults this off, which makes every ON DELETE CASCADE in the schema inert.
+            // Turn it on so a delete path that forgets a child table cannot leave orphan rows.
+            stmt.execute("PRAGMA foreign_keys = ON");
+        }
         createTables();
     }
 

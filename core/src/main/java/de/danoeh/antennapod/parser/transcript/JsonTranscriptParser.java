@@ -74,10 +74,9 @@ public class JsonTranscriptParser {
                 if (duration >= TranscriptParser.MIN_SPAN) {
                     // Look ahead and make sure the next segment does not start with an alphanumeric character
                     if ((i + 1) < objSegments.length()) {
-                        String nextSegmentFirstChar = objSegments.getJSONObject(i + 1)
-                                .optString("body")
-                                .substring(0, 1);
-                        if (!StringUtils.isAlphanumeric(nextSegmentFirstChar)
+                        String nextBody = objSegments.getJSONObject(i + 1).optString("body");
+                        if (!nextBody.isEmpty()
+                                && !StringUtils.isAlphanumeric(nextBody.substring(0, 1))
                                 && (duration < TranscriptParser.MAX_SPAN)) {
                             continue;
                         }

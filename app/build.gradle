@@ -3,7 +3,7 @@ plugins {
     id 'org.openjfx.javafxplugin' version '0.1.0'
 }
 
-version = '0.4.3'
+version = '0.4.4'
 
 java {
     toolchain {
@@ -38,6 +38,12 @@ tasks.named('test') {
     // the app itself still follows the system language at runtime.
     systemProperty 'user.language', 'en'
     systemProperty 'user.country', 'US'
+    // Same as core: never touch the real settings store from a test JVM.
+    def testProfile = layout.buildDirectory.dir('test-profile')
+    systemProperty 'antennapod.desktop.portable', testProfile.get().asFile.absolutePath
+    doFirst {
+        project.delete(testProfile.get().asFile)
+    }
 }
 
 tasks.named('jar') {
@@ -48,6 +54,7 @@ tasks.named('jar') {
 
 tasks.named('run') {
     jvmArgs = ['--enable-native-access=javafx.media']
+    systemProperty 'antennapod.desktop.version', project.version
     // gradlew :app:run -Pportable=<folder> runs on a separate profile (portable mode): library,
     // downloads and settings in that folder, leaving %APPDATA% and the registry alone
     if (project.hasProperty('portable')) {

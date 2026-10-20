@@ -1,6 +1,6 @@
 # AGENTS.md — AntennaPod Desktop
 
-Guidance for coding agents working in this repository. Current version: **0.4.3**.
+Guidance for coding agents working in this repository. Current version: **0.4.4**.
 
 ## What this is
 
@@ -21,8 +21,8 @@ inside `core`.
     `storage/` (SQLite-backed desktop storage, import/export OPML, preferences)
   - `android/` + `androidx/` — hand-written compatibility shims the ported
     engine depends on (Log, XML, media, collections). Keep them minimal.
-  - 32 test classes (JUnit 4) in `core/src/test`.
-- `app/` — JavaFX UI (19 classes under
+  - 37 test classes (JUnit 4) in `core/src/test`.
+- `app/` — JavaFX UI (21 classes under
   `app/src/main/java/de/danoeh/antennapod/desktop`): `DesktopApp` (scenes),
   `PlaybackManager` (JavaFX media playback), `TrayManager` (system tray),
   `WindowChrome` (the app-drawn title bar; the stage is undecorated),
@@ -34,8 +34,9 @@ inside `core`.
   window icon), `ThemeManager`/`SystemTheme`, `ImageCache`, `Icons`, `Launcher`
   (entry point / main class), `AppIdentity` (the process AppUserModelID),
   `SeekAccent` (artwork colour for the seek bar), `FeedInput` (search-or-subscribe
-  field), `StartupRegistration` (start with Windows).
-  23 test classes in `app/src/test`.
+  field), `StartupRegistration` (start with Windows), `EpisodeScrollMarker` (keeps
+  the playing episode in view), `MiddleClickScroll` (middle-click panning).
+  24 test classes in `app/src/test`.
 
 ## Build, test, run
 

@@ -197,7 +197,9 @@ public final class EpisodeCache {
         }
         cancel(media.getId());
         File file = new File(path);
-        if (file.exists() && !file.delete()) {
+        // A restored or hand-edited database can point cache_file_url anywhere. Clear the
+        // reference, but never delete a file that is not inside the app's own folders.
+        if (LocalFolderFeeds.isAppOwned(path) && file.exists() && !file.delete()) {
             // the player still holds the file: retry later instead of leaving it in the cache
             pendingEvictions.add(media.getId());
             scheduleRetry();

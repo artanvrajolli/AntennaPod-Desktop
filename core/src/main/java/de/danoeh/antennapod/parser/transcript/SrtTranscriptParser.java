@@ -62,18 +62,18 @@ public class SrtTranscriptParser {
                     spanStartTimecode = startTimecode;
                 }
                 duration += endTimecode - startTimecode;
-                do {
+                while (iter.hasNext()) {
                     line = iter.next();
                     if (StringUtil.isBlank(line)) {
                         break;
                     }
                     body.append(line.strip());
                     body.append(" ");
-                } while (iter.hasNext());
+                }
             }
 
             if (body.indexOf(": ") != -1) {
-                String[] parts = body.toString().trim().split(":");
+                String[] parts = body.toString().trim().split(":", 2);
                 if (parts.length < 2) {
                     continue;
                 }

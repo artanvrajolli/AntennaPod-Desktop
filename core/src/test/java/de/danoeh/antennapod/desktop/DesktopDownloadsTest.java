@@ -66,6 +66,12 @@ public class DesktopDownloadsTest {
         assertTrue(database.getDownloadedItems().isEmpty());
     }
 
+    @Test(expected = java.sql.SQLException.class)
+    public void testMediaCannotReferenceAMissingItem() throws Exception {
+        database.insertMedia(999_999L,
+                new FeedMedia(null, "http://example.com/orphan.mp3", 1, "audio/mpeg"));
+    }
+
     @Test
     public void testItemOfMediaCarriesItsMedia() throws Exception {
         FeedItem item = database.getItemOfMedia(secondMediaId);

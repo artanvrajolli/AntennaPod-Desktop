@@ -2,6 +2,7 @@ package de.danoeh.antennapod.desktop;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -558,6 +559,21 @@ public class DesktopSyncTest {
                 EpisodeActionFilter.getRemoteActionsOverridingLocalActions(
                         java.util.Collections.singletonList(remote), queued);
         assertTrue(overriding.isEmpty());
+    }
+
+    @Test
+    public void testEpisodeActionEqualsComparesTheAction() {
+        Date timestamp = new Date(1700000000000L);
+        EpisodeAction play = new EpisodeAction.Builder(
+                "podcast", "episode", EpisodeAction.Action.PLAY).timestamp(timestamp).build();
+        EpisodeAction download = new EpisodeAction.Builder(
+                "podcast", "episode", EpisodeAction.Action.DOWNLOAD).timestamp(timestamp).build();
+        EpisodeAction samePlay = new EpisodeAction.Builder(
+                "podcast", "episode", EpisodeAction.Action.PLAY).timestamp(timestamp).build();
+
+        assertNotEquals(play, download);
+        assertEquals(play, samePlay);
+        assertEquals(play.hashCode(), samePlay.hashCode());
     }
 
     @Test

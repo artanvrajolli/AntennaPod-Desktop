@@ -8,6 +8,7 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -44,30 +45,34 @@ public class ItunesPodcastSearcher implements PodcastSearcher {
             Request.Builder httpReq = new Request.Builder()
                     .url(formattedUrl);
             List<PodcastSearchResult> podcasts = new ArrayList<>();
-            try {
-                Response response = client.newCall(httpReq.build()).execute();
-
-                if (response.isSuccessful()) {
-                    String resultString = response.body().string();
-                    JSONObject result = new JSONObject(resultString);
-                    JSONArray j = result.getJSONArray("results");
-
-                    for (int i = 0; i < j.length(); i++) {
-                        JSONObject podcastJson = j.getJSONObject(i);
-                        if (!podcastJson.has("feedUrl")) {
-                            continue;
-                        }
-                        String title = podcastJson.optString("collectionName", "Unknown");
-                        String imageUrl = podcastJson.optString("artworkUrl100", "");
-                        String feedUrl = podcastJson.optString("feedUrl", "");
-                        String author = podcastJson.optString("artistName", "Unknown");
-                        podcasts.add(new PodcastSearchResult(title, imageUrl, feedUrl, author));
-                    }
-                } else {
+            try (Response response = client.newCall(httpReq.build()).execute()) {
+                if (!response.isSuccessful()) {
                     subscriber.onError(new IOException(response.toString()));
+                    return;
+                }
+                ResponseBody body = response.body();
+                if (body == null) {
+                    subscriber.onError(new IOException("Null response"));
+                    return;
+                }
+                String resultString = body.string();
+                JSONObject result = new JSONObject(resultString);
+                JSONArray j = result.getJSONArray("results");
+
+                for (int i = 0; i < j.length(); i++) {
+                    JSONObject podcastJson = j.getJSONObject(i);
+                    if (!podcastJson.has("feedUrl")) {
+                        continue;
+                    }
+                    String title = podcastJson.optString("collectionName", "Unknown");
+                    String imageUrl = podcastJson.optString("artworkUrl100", "");
+                    String feedUrl = podcastJson.optString("feedUrl", "");
+                    String author = podcastJson.optString("artistName", "Unknown");
+                    podcasts.add(new PodcastSearchResult(title, imageUrl, feedUrl, author));
                 }
             } catch (IOException | JSONException e) {
                 subscriber.onError(e);
+                return;
             }
             subscriber.onSuccess(podcasts);
         })
@@ -83,24 +88,28 @@ public class ItunesPodcastSearcher implements PodcastSearcher {
         return Single.create(emitter -> {
             OkHttpClient client = AntennapodHttpClient.getHttpClient();
             Request.Builder httpReq = new Request.Builder().url(lookupUrl);
-            try {
-                Response response = client.newCall(httpReq.build()).execute();
-                if (response.isSuccessful()) {
-                    String resultString = response.body().string();
-                    JSONObject result = new JSONObject(resultString);
-                    JSONObject results = result.getJSONArray("results").getJSONObject(0);
-                    String feedUrlName = "feedUrl";
-                    if (!results.has(feedUrlName)) {
-                        String artistName = results.getString("artistName");
-                        String trackName = results.getString("trackName");
-                        emitter.onError(new FeedUrlNotFoundException(artistName, trackName));
-                        return;
-                    }
-                    String feedUrl = results.getString(feedUrlName);
-                    emitter.onSuccess(feedUrl);
-                } else {
+            try (Response response = client.newCall(httpReq.build()).execute()) {
+                if (!response.isSuccessful()) {
                     emitter.onError(new IOException(response.toString()));
+                    return;
                 }
+                ResponseBody body = response.body();
+                if (body == null) {
+                    emitter.onError(new IOException("Null response"));
+                    return;
+                }
+                String resultString = body.string();
+                JSONObject result = new JSONObject(resultString);
+                JSONObject results = result.getJSONArray("results").getJSONObject(0);
+                String feedUrlName = "feedUrl";
+                if (!results.has(feedUrlName)) {
+                    String artistName = results.getString("artistName");
+                    String trackName = results.getString("trackName");
+                    emitter.onError(new FeedUrlNotFoundException(artistName, trackName));
+                    return;
+                }
+                String feedUrl = results.getString(feedUrlName);
+                emitter.onSuccess(feedUrl);
             } catch (IOException | JSONException e) {
                 emitter.onError(e);
             }

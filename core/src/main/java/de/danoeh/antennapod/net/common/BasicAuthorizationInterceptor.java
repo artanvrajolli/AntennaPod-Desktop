@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.util.List;
 
+import okhttp3.HttpUrl;
 import okhttp3.Interceptor;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -40,14 +41,22 @@ public class BasicAuthorizationInterceptor implements Interceptor {
         }
 
         Request.Builder newRequest = request.newBuilder();
-        if (!TextUtils.equals(response.request().url().toString(), request.url().toString())) {
+        HttpUrl originalUrl = request.url();
+        HttpUrl redirectedUrl = response.request().url();
+        if (!TextUtils.equals(redirectedUrl.toString(), originalUrl.toString())) {
             // Redirect detected. OkHTTP does not re-add the headers on redirect, so calling the new location directly.
-            newRequest.url(response.request().url());
+            newRequest.url(redirectedUrl);
 
+            boolean sameOrigin = redirectedUrl.host().equalsIgnoreCase(originalUrl.host())
+                    && redirectedUrl.port() == originalUrl.port()
+                    && redirectedUrl.scheme().equalsIgnoreCase(originalUrl.scheme());
             List<String> authorizationHeaders = request.headers().values(HEADER_AUTHORIZATION);
-            if (!authorizationHeaders.isEmpty() && !TextUtils.isEmpty(authorizationHeaders.get(0))) {
-                // Call already had authorization headers. Try again with the same credentials.
+            if (sameOrigin && !authorizationHeaders.isEmpty()
+                    && !TextUtils.isEmpty(authorizationHeaders.get(0))) {
+                // Same host, port and scheme: retry with the credentials already supplied.
+                // Never replay them to another origin, which is what OkHttp strips them for.
                 newRequest.header(HEADER_AUTHORIZATION, authorizationHeaders.get(0));
+                response.close();
                 return chain.proceed(newRequest.build());
             }
         }

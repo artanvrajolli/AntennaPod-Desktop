@@ -191,6 +191,7 @@ public final class FeedUpdater {
      * drop only the database rows and leave the files on disk with nothing pointing at them.
      */
     public void unsubscribe(long feedId) throws Exception {
+        List<String> appOwnedFiles = new ArrayList<>();
         for (FeedItem item : database.getItemsOfFeed(feedId)) {
             FeedMedia media = item.getMedia();
             if (media == null) {
@@ -198,16 +199,21 @@ public final class FeedUpdater {
             }
             // only what the app downloaded or cached itself: a local folder's files are the user's
             if (LocalFolderFeeds.isAppOwned(media.getLocalFileUrl())) {
-                new File(media.getLocalFileUrl()).delete();
+                appOwnedFiles.add(media.getLocalFileUrl());
             }
             if (LocalFolderFeeds.isAppOwned(media.getCacheFileUrl())) {
-                new File(media.getCacheFileUrl()).delete();
+                appOwnedFiles.add(media.getCacheFileUrl());
             }
         }
+        // Database first: if this fails the files are still referenced and must stay. Deleting
+        // them first left the rows claiming downloads whose bytes were already gone.
         database.inTransaction(() -> {
             database.deleteFeed(feedId);
             return null;
         });
+        for (String path : appOwnedFiles) {
+            new File(path).delete();
+        }
         // the per-feed folders are empty now unless something else lives there
         new File(DesktopPreferences.getMediaDir(), String.valueOf(feedId)).delete();
         new File(DesktopPreferences.getEpisodeCacheDir(), String.valueOf(feedId)).delete();

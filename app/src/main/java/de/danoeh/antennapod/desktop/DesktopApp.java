@@ -1293,6 +1293,18 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         view.getEngine().loadContent(page);
     }
 
+    /** Opens a web link in the browser. Feed metadata is untrusted, so other schemes are ignored. */
+    private void openExternal(String url) {
+        if (url == null) {
+            return;
+        }
+        String trimmed = url.trim();
+        String lower = trimmed.toLowerCase(java.util.Locale.ROOT);
+        if (lower.startsWith("http://") || lower.startsWith("https://")) {
+            getHostServices().showDocument(trimmed);
+        }
+    }
+
     private void showUpdateModal(UpdateChecker.Release release, String current) {
         Label heading = new Label(Messages.format("update.heading", release.version));
         heading.setStyle("-fx-font-size: 15px; -fx-font-weight: bold;");
@@ -1330,7 +1342,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         });
         install.setOnAction(event -> {
             if (!release.hasInstaller()) {
-                getHostServices().showDocument(release.pageUrl);
+                openExternal(release.pageUrl);
                 closeTopModal();
                 return;
             }
@@ -1400,7 +1412,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         Button page = new Button(Messages.get("update.open_release_page"));
         page.setUserData("openReleasePage");
         page.setOnAction(open -> {
-            getHostServices().showDocument(release.pageUrl);
+            openExternal(release.pageUrl);
             closeTopModal();
         });
         buttons.getChildren().add(1, page);
@@ -1986,6 +1998,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void updateSleepButton() {
+        if (sleepButton == null) {
+            return;
+        }
         SleepTimer.Mode mode = sleepTimer.getMode();
         if (mode == SleepTimer.Mode.AFTER_MINUTES) {
             sleepButton.setText(formatDuration(sleepTimer.getRemainingMs()));
@@ -2948,6 +2963,9 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             }
         }
         Platform.runLater(() -> {
+            if (statusLabel == null) {
+                return;
+            }
             statusLabel.setText(message);
             String tip = message + "\n\n" + Messages.get("status.click_to_copy");
             if (statusLabel.getTooltip() == null) {
@@ -4513,7 +4531,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             setStatus(Messages.format("status.cache.cleared", removed == 1
                     ? Messages.get("count.episode.one") : Messages.format("count.episode.other", removed)));
             refreshCacheUsage.run();
-            Platform.runLater(episodeList::refresh);
+            Platform.runLater(() -> episodeList.refresh());
         }));
         grid.add(clearCacheButton, 0, row++, 2, 1);
         Button openCacheButton = new Button(Messages.get("settings.cache.open_folder"));
@@ -4841,7 +4859,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         showHtml(webView, Shownotes.toPage(item.getTitle(), item.getDescription(), ThemeManager.isDark()));
         Button websiteButton = new Button(Messages.get("episode.website"));
         websiteButton.setDisable(item.getLink() == null || item.getLink().isEmpty());
-        websiteButton.setOnAction(event -> getHostServices().showDocument(item.getLink()));
+        websiteButton.setOnAction(event -> openExternal(item.getLink()));
         Button transcriptButton = new Button(Messages.get("episode.transcript"));
         transcriptButton.setDisable(item.getTranscriptUrl() == null || item.getTranscriptUrl().isEmpty());
         transcriptButton.setOnAction(event -> showTranscript(item));
@@ -4872,7 +4890,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                         ? funding.content.trim() : Messages.get("episode.support");
                 Button support = new Button(label, Icons.favorite());
                 support.setTooltip(new Tooltip(funding.url));
-                support.setOnAction(event -> getHostServices().showDocument(funding.url));
+                support.setOnAction(event -> openExternal(funding.url));
                 buttons.getChildren().add(support);
             }
         }
@@ -4954,7 +4972,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 if (person.href != null) {
                     javafx.scene.control.Hyperlink link = new javafx.scene.control.Hyperlink(person.name);
                     link.setPadding(Insets.EMPTY);
-                    link.setOnAction(event -> getHostServices().showDocument(person.href));
+                    link.setOnAction(event -> openExternal(person.href));
                     row.getChildren().add(link);
                 } else {
                     row.getChildren().add(new Label(person.name));
@@ -5513,7 +5531,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     showHtml(description, Shownotes.toPage(null, html, ThemeManager.isDark()));
                     String link = feed.getLink();
                     websiteButton.setDisable(link == null || link.isEmpty());
-                    websiteButton.setOnAction(event -> getHostServices().showDocument(link));
+                    websiteButton.setOnAction(event -> openExternal(link));
                     // the feed may redirect, so re-check against the address actually fetched
                     markSubscribed(subscribeButton, feed.getDownloadUrl());
                 });
@@ -6006,7 +6024,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                     media.setLocalFileUrl(null);
                     database.clearMediaDownload(media.getId());
                     setStatus(Messages.format("status.auto_delete.done", media.getHumanReadableIdentifier()));
-                    Platform.runLater(episodeList::refresh);
+                    Platform.runLater(() -> episodeList.refresh());
                 }
             } catch (Exception e) {
                 setStatus(Messages.format("status.auto_delete.failed", e.getMessage()));
@@ -6039,7 +6057,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         background.submit(() -> {
             // the cache retries on its own while the player still holds the file
             if (episodeCache.evict(media)) {
-                Platform.runLater(episodeList::refresh);
+                Platform.runLater(() -> episodeList.refresh());
             }
         });
     }
@@ -6073,7 +6091,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         @Override
         public void onFinished(long mediaId, File file) {
             setStatus(Messages.format("status.autodownload.done", item.getTitle()));
-            Platform.runLater(episodeList::refresh);
+            Platform.runLater(() -> episodeList.refresh());
         }
 
         @Override
@@ -6091,7 +6109,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 || (percent < 0 ? previous >= 0 : previous < 0 || percent - previous >= 5);
         if (changed) {
             downloadProgress.put(mediaId, percent);
-            Platform.runLater(episodeList::refresh);
+            Platform.runLater(() -> episodeList.refresh());
         }
     }
 
@@ -6114,7 +6132,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         setStatus(EpisodeDownloader.isCancellation(e)
                 ? Messages.get("status.download.cancelled")
                 : Messages.format("status.download.failed", e.getMessage()));
-        Platform.runLater(episodeList::refresh);
+        Platform.runLater(() -> episodeList.refresh());
     }
 
     private void updateNowPlayingArt(FeedMedia current) {

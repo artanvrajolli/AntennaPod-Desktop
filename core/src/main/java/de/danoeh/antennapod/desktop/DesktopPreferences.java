@@ -470,4 +470,9 @@ public final class DesktopPreferences {
     public static void setEpisodeFilter(EpisodeFilter filter) {
         PREFS.put("episodeFilter", filter.name());
     }
+
+    /** The store these settings live in; package-private so tests can clear a key. */
+    static Preferences node() {
+        return PREFS;
+    }
 }
