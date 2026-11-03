@@ -60,9 +60,17 @@ public class ThemeSceneTest {
                 actions.add("silence:" + enabled);
             }
         });
-        // header (artwork + titles), transport, progress — each behind a separator
+        // header (artwork + titles + corner buttons), transport, progress — each behind a separator
         javafx.scene.layout.HBox header = (javafx.scene.layout.HBox) panel.getChildren().get(0);
-        org.junit.Assert.assertEquals(2, header.getChildren().size());
+        org.junit.Assert.assertEquals(3, header.getChildren().size());
+        // pin and close in the corner; close only puts the controls away, it never quits
+        javafx.scene.layout.HBox corner = (javafx.scene.layout.HBox) header.getChildren().get(2);
+        org.junit.Assert.assertEquals(2, corner.getChildren().size());
+        javafx.scene.control.Button pin = (javafx.scene.control.Button) corner.getChildren().get(0);
+        javafx.scene.control.Button close = (javafx.scene.control.Button) corner.getChildren().get(1);
+        org.junit.Assert.assertEquals("Keep open", pin.getAccessibleText());
+        org.junit.Assert.assertEquals("Close", close.getTooltip().getText());
+        close.fire();
         javafx.scene.layout.VBox titles =
                 (javafx.scene.layout.VBox) header.getChildren().get(1);
         org.junit.Assert.assertEquals("Nothing playing",
@@ -70,7 +78,8 @@ public class ThemeSceneTest {
         org.junit.Assert.assertTrue(panel.getChildren().get(1)
                 instanceof javafx.scene.control.Separator);
         javafx.scene.layout.HBox transport = (javafx.scene.layout.HBox) panel.getChildren().get(2);
-        org.junit.Assert.assertEquals(5, transport.getChildren().size());
+        // five transport buttons, then the skip-silence toggle
+        org.junit.Assert.assertEquals(6, transport.getChildren().size());
         // a Next button closes the row on both sides
         org.junit.Assert.assertEquals("Next episode",
                 ((javafx.scene.control.Button) transport.getChildren().get(0)).getTooltip().getText());
@@ -79,9 +88,13 @@ public class ThemeSceneTest {
         // nothing loaded yet: play/pause stays usable (it resumes the last episode), the
         // buttons that act on a loaded episode are disabled
         assertFalse(transport.isDisable());
+        // skip silence is a preference, so it stays usable with nothing loaded too
         for (int i = 0; i < transport.getChildren().size(); i++) {
-            assertEquals(i != 2, transport.getChildren().get(i).isDisable());
+            assertEquals(i != 2 && i != 5, transport.getChildren().get(i).isDisable());
         }
+        javafx.scene.control.Button silence = (javafx.scene.control.Button) transport.getChildren().get(5);
+        org.junit.Assert.assertEquals("Skip silence: off", silence.getTooltip().getText());
+        assertFalse("the tray has to open showing the state it really is in", silence.getOpacity() == 1.0);
         // update() needs a real tray icon, so enable the rest by hand to fire every button
         for (javafx.scene.Node node : transport.getChildren()) {
             node.setDisable(false);
@@ -105,20 +118,12 @@ public class ThemeSceneTest {
         progressSlider.getOnMouseReleased().handle(null);
         org.junit.Assert.assertTrue(panel.getChildren().get(4)
                 instanceof javafx.scene.control.Separator);
-        javafx.scene.layout.HBox footer = (javafx.scene.layout.HBox) panel.getChildren().get(5);
-        org.junit.Assert.assertEquals(4, footer.getChildren().size());
-        // the skip-silence toggle sits with the footer buttons and is a preference, so it
-        // stays usable with nothing loaded
-        javafx.scene.control.Button silence = (javafx.scene.control.Button) footer.getChildren().get(0);
-        org.junit.Assert.assertEquals("Skip silence: off", silence.getTooltip().getText());
-        assertFalse("the tray has to open showing the state it really is in", silence.getOpacity() == 1.0);
-        for (javafx.scene.Node node : footer.getChildren()) {
-            javafx.scene.control.Button button = (javafx.scene.control.Button) node;
-            assertTrue(button.getText().isEmpty());
-            org.junit.Assert.assertNotNull(button.getGraphic());
-            org.junit.Assert.assertNotNull(button.getTooltip());
-            button.fire();
-        }
+        // the footer is one labelled, full-width way back to the app; Exit is on the tray
+        // icon's right-click menu, where Windows users look for it
+        javafx.scene.control.Button show = (javafx.scene.control.Button) panel.getChildren().get(5);
+        org.junit.Assert.assertEquals("Show AntennaPod", show.getText());
+        assertTrue(show.isDefaultButton());
+        show.fire();
         org.junit.Assert.assertEquals("Skip silence: on", silence.getTooltip().getText());
         assertEquals(1.0, silence.getOpacity(), 0.001);
         assertTrue(silenceSkipping[0]);
@@ -126,7 +131,7 @@ public class ThemeSceneTest {
         manager.updateSilenceSkipping(false);
         org.junit.Assert.assertEquals("Skip silence: off", silence.getTooltip().getText());
         org.junit.Assert.assertEquals(java.util.List.of("next", "back", "play", "forward", "next",
-                "seek:120000", "silence:true", "show", "exit"), actions);
+                "silence:true", "seek:120000", "show"), actions);
         manager.remove();
         manager.remove();
     }

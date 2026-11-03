@@ -47,7 +47,8 @@ can go on a USB stick. Developers can do the same for a source run with
   one-click **skip silence** toggle in the player bar, favorites, chapters,
   transcripts (SRT/VTT/JSON), shownotes
 - Playback history, listening statistics, system-tray integration with
-  compact icon playback controls (right-click the tray icon)
+  compact playback controls (click the tray icon; right-click it to open
+  the app or exit)
 - Progress bars show a ghost marker at the last position saved to your sync
   provider, and playback duration fixes keep gPodder.net episode actions clean
 - Search/filter your subscriptions and episodes — by text and by state

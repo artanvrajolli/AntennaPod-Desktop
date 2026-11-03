@@ -104,6 +104,8 @@ public final class TrayManager {
         controlsWindow.focusedProperty().addListener((obs, previous, focused) -> {
             // a pinned mini player stays up while the user works elsewhere
             if (!focused && !pinned) {
+                // remembered so the tray click that took the focus does not open it again
+                autoHiddenAt = System.currentTimeMillis();
                 controlsWindow.hide();
             }
         });
@@ -133,14 +135,18 @@ public final class TrayManager {
             }
         });
         trayIcon = new TrayIcon(defaultIcon, "AntennaPod Desktop");
+        // The Windows convention for notification-area icons: a click opens the icon's flyout
+        // (here the playback controls), a right-click the standard shortcut menu, which is where
+        // Exit lives, and a double-click the app itself.
         trayIcon.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseReleased(MouseEvent event) {
-                if (event.getButton() == MouseEvent.BUTTON3) {
+                if (event.getButton() == MouseEvent.BUTTON1 && event.getClickCount() == 1) {
                     Platform.runLater(TrayManager.this::showControls);
                 }
             }
         });
+        trayIcon.setPopupMenu(buildShortcutMenu(callbacks));
         trayIcon.setImageAutoSize(true);
         trayIcon.addActionListener(fx(callbacks::onShow));
         try {
@@ -178,17 +184,24 @@ public final class TrayManager {
         artworkView.setSmooth(true);
         nowPlayingLabel = new Label(Messages.get("player.nothing_playing"));
         nowPlayingLabel.setWrapText(true);
-        nowPlayingLabel.setMaxWidth(212);
+        nowPlayingLabel.setMaxWidth(TITLE_WIDTH);
         nowPlayingLabel.setStyle("-fx-font-weight: bold;");
         feedLabel = new Label("");
-        feedLabel.setMaxWidth(212);
+        feedLabel.setMaxWidth(TITLE_WIDTH);
         feedLabel.getStyleClass().add("muted-label");
         feedLabel.setVisible(false);
         feedLabel.setManaged(false);
         VBox titles = new VBox(2, nowPlayingLabel, feedLabel);
         titles.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(titles, Priority.ALWAYS);
-        HBox header = new HBox(10, artworkView, titles);
+        // pin and close sit in the corner, as on any small window: close only puts the
+        // controls away (the app keeps playing); quitting is on the tray icon's shortcut menu
+        pinButton = corner(Icons.pin(), Messages.get("tray.keep_open"), () -> setPinned(!pinned));
+        showPinned(pinned);
+        Button close = corner(Icons.windowClose(), Messages.get("common.close"), this::hideControls);
+        HBox corner = new HBox(2, pinButton, close);
+        corner.setAlignment(Pos.TOP_RIGHT);
+        HBox header = new HBox(10, artworkView, titles, corner);
         header.setAlignment(Pos.CENTER_LEFT);
         playPauseButton = control(Icons.accent(Icons.play()), Messages.get("common.play"), callbacks::onPlayPause);
         playPauseButton.setMinSize(44, 36);
@@ -204,7 +217,8 @@ public final class TrayManager {
         });
         updateSilenceSkipping(callbacks.isSilenceSkipping());
         episodeControls = List.of(nextLeft, skipBack, skipForward, nextRight);
-        transportRow = new HBox(8, nextLeft, skipBack, playPauseButton, skipForward, nextRight);
+        transportRow = new HBox(8, nextLeft, skipBack, playPauseButton, skipForward, nextRight,
+                silenceButton);
         transportRow.setAlignment(Pos.CENTER);
         setEpisodeControlsDisabled(true);
         positionLabel = new Label("");
@@ -222,22 +236,18 @@ public final class TrayManager {
         HBox progressRow = new HBox(6, positionLabel, progressSlider);
         progressRow.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(progressSlider, Priority.ALWAYS);
-        Button show = control(Icons.accent(Icons.window()), Messages.get("tray.show"), () -> {
+        // one plain, labelled way back to the app, full width so it reads as the panel's action
+        Button show = new Button(Messages.get("tray.show"));
+        show.setDefaultButton(true);
+        show.setMaxWidth(Double.MAX_VALUE);
+        show.setOnAction(event -> {
             hideControls();
             callbacks.onShow();
         });
-        Button exit = control(Icons.remove(), Messages.get("tray.exit"), () -> {
-            hideControls();
-            callbacks.onExit();
-        });
-        pinButton = control(Icons.pin(), Messages.get("tray.keep_open"), () -> setPinned(!pinned));
-        showPinned(pinned);
-        HBox actions = new HBox(8, silenceButton, show, pinButton, exit);
-        actions.setAlignment(Pos.CENTER);
         VBox panel = new VBox(10, header, new Separator(), transportRow, progressRow,
-                new Separator(), actions);
+                new Separator(), show);
         panel.setPadding(new Insets(14));
-        panel.setPrefWidth(300);
+        panel.setPrefWidth(PANEL_WIDTH);
         return panel;
     }
 
@@ -307,6 +317,45 @@ public final class TrayManager {
         return button;
     }
 
+    private static final double PANEL_WIDTH = 320;
+    /** What the titles get beside the artwork and the corner buttons. */
+    private static final double TITLE_WIDTH = 176;
+    /** A tray click within this long of the controls closing on lost focus was what closed them. */
+    private static final long REOPEN_GUARD_MS = 400;
+    private volatile long autoHiddenAt;
+
+    /** A small corner button, quieter than the transport controls. */
+    private static Button corner(javafx.scene.Node icon, String label, Runnable action) {
+        Button button = control(icon, label, action);
+        button.setMinSize(28, 26);
+        button.setPrefSize(28, 26);
+        return button;
+    }
+
+    /**
+     * The tray icon's right-click menu. A native shortcut menu, as Windows expects of a
+     * notification-area icon: it is where people look for Exit, and it works even when the
+     * JavaFX controls cannot be shown.
+     */
+    private static java.awt.PopupMenu buildShortcutMenu(Callbacks callbacks) {
+        java.awt.PopupMenu menu = new java.awt.PopupMenu();
+        java.awt.MenuItem show = new java.awt.MenuItem(Messages.get("tray.show"));
+        show.addActionListener(fx(callbacks::onShow));
+        java.awt.MenuItem play = new java.awt.MenuItem(Messages.get("tray.play_pause"));
+        play.addActionListener(fx(callbacks::onPlayPause));
+        java.awt.MenuItem next = new java.awt.MenuItem(Messages.get("player.next"));
+        next.addActionListener(fx(callbacks::onNext));
+        java.awt.MenuItem exit = new java.awt.MenuItem(Messages.get("tray.exit"));
+        exit.addActionListener(fx(callbacks::onExit));
+        menu.add(show);
+        menu.addSeparator();
+        menu.add(play);
+        menu.add(next);
+        menu.addSeparator();
+        menu.add(exit);
+        return menu;
+    }
+
     private void hideControls() {
         pinned = false;
         showPinned(false);
@@ -349,6 +398,9 @@ public final class TrayManager {
         }
         pinButton.setTooltip(new Tooltip(pin
                 ? Messages.get("tray.unpin") : Messages.get("tray.keep_open.tooltip")));
+        // lit while pinned, like any toggle, so the state shows without hovering
+        pinButton.setGraphic(pin ? Icons.accent(Icons.pin()) : Icons.pin());
+        pinButton.setOpacity(pin ? 1.0 : 0.7);
         pinButton.setAccessibleText(pin ? Messages.get("tray.unpin") : Messages.get("tray.keep_open"));
     }
 
@@ -386,6 +438,10 @@ public final class TrayManager {
         }
         if (controlsWindow.isShowing()) {
             hideControls();
+            return;
+        }
+        if (System.currentTimeMillis() - autoHiddenAt < REOPEN_GUARD_MS) {
+            // this click is the one that took the focus away and closed them: it means close
             return;
         }
         if (callbacks != null) {
