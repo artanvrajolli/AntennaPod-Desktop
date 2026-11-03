@@ -57,6 +57,9 @@ public final class PlaybackManager {
     /** Whether reaching the skip-ending window finishes the episode; see {@link #checkSkipEnding}. */
     private boolean skipEndingArmed;
     private boolean suppressNextPlayAction;
+    /** What the last save wrote, so a paused player does not keep rewriting the same position. */
+    private FeedMedia lastPersistedMedia;
+    private int lastPersistedPositionMs = -1;
     private final SilenceSkipper silenceSkipper = new SilenceSkipper();
     /** True while the audio spectrum is being watched for silence worth skipping over. */
     private volatile boolean silenceWatchActive;
@@ -216,6 +219,10 @@ public final class PlaybackManager {
     private void startPlayback(FeedMedia media) {
         saveAndRecordCurrent();
         stopPlayer();
+        if (media != currentMedia) {
+            // after the save above, so a new start of the episode playing now reads where it is
+            refreshFromDatabase(media);
+        }
         int mediaDurationMs = FeedMedia.isValidDuration(media.getDuration()) ? media.getDuration() : 0;
         if (media != currentMedia) {
             resumeAttempts = 0;
@@ -344,6 +351,52 @@ public final class PlaybackManager {
     }
 
     /**
+     * Brings a play request's copy of the episode up to date before playing it.
+     *
+     * <p>Play requests carry the episode as the list showed it, and a list can be minutes or
+     * hours old: the player, a sync, the downloader and the cache all write the database without
+     * touching it. Starting from that copy resumed at a position long since passed (and the
+     * periodic save then wrote it back over the real one), streamed an episode that had been
+     * downloaded meanwhile, and ignored a position synced from another device.
+     */
+    private void refreshFromDatabase(FeedMedia media) {
+        if (database == null || media.getId() <= 0) {
+            return;
+        }
+        try {
+            FeedMedia stored = database.getMedia(media.getId());
+            if (stored == null) {
+                return;
+            }
+            media.setPosition(stored.getPosition());
+            if (FeedMedia.isValidDuration(stored.getDuration())) {
+                media.setDuration(stored.getDuration());
+            }
+            media.setLocalFileUrl(stored.getLocalFileUrl());
+            media.setDownloaded(stored.getDownloadDate() > 0, stored.getDownloadDate());
+            media.setCacheFileUrl(stored.getCacheFileUrl());
+            media.setPlayedDuration(stored.getPlayedDuration());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /** Whether the episode is marked played as the database has it now, not as a list showed it. */
+    private boolean isPlayedNow(FeedItem item) {
+        if (database != null) {
+            try {
+                FeedItem stored = database.getItem(item.getId());
+                if (stored != null) {
+                    return stored.isPlayed();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        return item.isPlayed();
+    }
+
+    /**
      * Asks the cache to fetch this episode, once playback is actually running. Starting it any
      * earlier put a second full-speed download of the very same episode, plus the prefetch of the
      * next ones, against the stream during the window it needs to connect — which is what made
@@ -387,6 +440,7 @@ public final class PlaybackManager {
         // that save has to keep it at the start rather than bring back the position at the end
         lastKnownPositionMs = 0;
         markPlayed(currentMedia);
+        removeFromQueue(currentMedia);
         notifyAutoDelete(currentMedia);
         notifyCacheFinished(currentMedia);
         if (stopAfterCurrent) {
@@ -397,7 +451,19 @@ public final class PlaybackManager {
                 Platform.runLater(handler);
             }
         } else {
-            playNext();
+            advance(false);
+        }
+    }
+
+    /** A finished episode leaves the queue, as in AntennaPod, so Play all never replays it. */
+    private void removeFromQueue(FeedMedia media) {
+        if (database == null || media.getItem() == null) {
+            return;
+        }
+        try {
+            database.removeFromQueue(media.getItem().getId());
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
@@ -726,21 +792,48 @@ public final class PlaybackManager {
         }
     }
 
+    /** Next pressed: the next unplayed episode, or failing that simply the next one. */
     public synchronized void playNext() {
+        advance(true);
+    }
+
+    /**
+     * Moves on to the next episode with audio that has not been played yet. Continuing on its own
+     * after an episode ends used to start whatever came next, so finishing one episode in a list
+     * replayed the already-played one after it from the start and marked it unplayed again.
+     * When everything left is played, an episode ending stops playback; pressing Next still moves
+     * to the next one, since that was asked for.
+     */
+    private void advance(boolean userAsked) {
+        int fallback = -1;
         if (queueIndex >= 0) {
             for (int i = queueIndex + 1; i < queue.size(); i++) {
                 FeedItem next = queue.get(i);
-                if (next.getMedia() != null) {
-                    queueIndex = i;
-                    // a resume position still waiting for the last episode to load is not this one's
-                    pendingSeekMs = -1;
-                    pendingSeekIsRestart = false;
-                    startPlayback(next.getMedia());
+                if (next.getMedia() == null) {
+                    continue;
+                }
+                if (fallback < 0) {
+                    fallback = i;
+                }
+                if (!isPlayedNow(next)) {
+                    startQueueEntry(i);
                     return;
                 }
             }
         }
+        if (userAsked && fallback >= 0) {
+            startQueueEntry(fallback);
+            return;
+        }
         stop();
+    }
+
+    private void startQueueEntry(int index) {
+        queueIndex = index;
+        // a resume position still waiting for the last episode to load is not this one's
+        pendingSeekMs = -1;
+        pendingSeekIsRestart = false;
+        startPlayback(queue.get(index).getMedia());
     }
 
     public synchronized void playPrevious() {
@@ -765,6 +858,33 @@ public final class PlaybackManager {
             return;
         }
         stop();
+    }
+
+    /**
+     * A sync brought in a newer position for the episode that is loaded here but paused (it was
+     * listened to further on another device): move the paused player there, so pressing play
+     * carries on from it instead of going back, and the next pause does not send the old
+     * position back to the other devices. A playing episode is left alone. Returns whether the
+     * player moved.
+     */
+    public synchronized boolean followSyncedPosition(long mediaId, int positionMs) {
+        FeedMedia media = currentMedia;
+        if (media == null || media.getId() != mediaId || positionMs <= 0 || player == null
+                || player.getStatus() == MediaPlayer.Status.PLAYING) {
+            return false;
+        }
+        int known = lastKnownPositionMs > 0 ? lastKnownPositionMs : media.getPosition();
+        if (Math.abs(known - positionMs) < 1000) {
+            return false;
+        }
+        media.setPosition(positionMs);
+        lastKnownPositionMs = positionMs;
+        // already in the database: the sync wrote it there
+        lastPersistedMedia = media;
+        lastPersistedPositionMs = positionMs;
+        seek(positionMs);
+        listener.onPositionChanged(positionMs, getDuration());
+        return true;
     }
 
     public synchronized FeedMedia getCurrentMedia() {
@@ -1190,6 +1310,12 @@ public final class PlaybackManager {
             if (currentMedia != media || player != activePlayer || finishedMedia == media) {
                 return;
             }
+            if (media == lastPersistedMedia && position == lastPersistedPositionMs
+                    && (duration <= 0 || duration == media.getDuration())) {
+                // nothing moved (paused): writing it again would overwrite a position a sync
+                // brought in from another device meanwhile with this one's older one
+                return;
+            }
             media.setPosition(position);
             if (duration > 0) {
                 media.setDuration(duration);
@@ -1200,6 +1326,10 @@ public final class PlaybackManager {
 
     /** Writes the episode's playback state as it stands, without asking the player. */
     private void persistMedia(FeedMedia media) {
+        synchronized (this) {
+            lastPersistedMedia = media;
+            lastPersistedPositionMs = media.getPosition();
+        }
         media.setLastPlayedTimeStatistics(System.currentTimeMillis());
         try {
             database.updatePlaybackState(media);

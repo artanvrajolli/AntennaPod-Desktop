@@ -870,7 +870,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         javafx.scene.control.MenuItem unsubscribe =
                 new javafx.scene.control.MenuItem(Messages.get("feeds.menu.unsubscribe"));
         unsubscribe.setStyle("-fx-text-fill: #d9534f;");
-        unsubscribe.setOnAction(event -> unsubscribe(feed));
+        unsubscribe.setOnAction(event -> confirmUnsubscribe(feed));
         menu.getItems().addAll(refresh, markSeen, settings, tags,
                 new javafx.scene.control.SeparatorMenuItem(), unsubscribe);
         return menu;
@@ -1802,6 +1802,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             if (event.getClickCount() == 2) {
                 FeedItem selected = episodeList.getSelectionModel().getSelectedItem();
                 if (selected != null && selected.getMedia() != null) {
+                    FeedMedia current = playback.getCurrentMedia();
+                    if (current != null && current.getId() == selected.getMedia().getId()) {
+                        // already loaded: carry on rather than reload it, which re-buffered the
+                        // stream and dropped up to five seconds of progress
+                        if (!playback.isPlaying()) {
+                            togglePlayPause();
+                        }
+                        return;
+                    }
                     playback.play(selected, playbackOrder());
                     setStatus(Messages.format("status.playing", selected.getTitle()));
                 }
@@ -3325,7 +3334,46 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
     }
 
+    /**
+     * Unsubscribing deletes the podcast's downloads, positions and history, and a sync passes it
+     * on to the other devices, with no undo: one stray click in the context menu did all that.
+     */
+    private void confirmUnsubscribe(Feed feed) {
+        String title = feed.getTitle() != null ? feed.getTitle() : feed.getDownloadUrl();
+        String body = Messages.format("unsubscribe.confirm.text", title);
+        if (DesktopPreferences.isSyncEnabled()) {
+            body += "\n\n" + Messages.get("unsubscribe.confirm.sync");
+        }
+        Label text = new Label(body);
+        text.setWrapText(true);
+        text.setMaxWidth(420);
+        Button confirm = new Button(Messages.get("feeds.menu.unsubscribe"));
+        Button cancel = new Button(Messages.get("common.cancel"));
+        // Enter and Escape both keep the podcast: only a deliberate click removes it
+        cancel.setDefaultButton(true);
+        cancel.setCancelButton(true);
+        VBox pane = new VBox(12, text);
+        cancel.setOnAction(event -> appShell.getChildren().remove(modalOverlayOf(pane)));
+        confirm.setOnAction(event -> {
+            appShell.getChildren().remove(modalOverlayOf(pane));
+            unsubscribe(feed);
+        });
+        HBox buttons = new HBox(8, cancel, confirm);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+        pane.getChildren().add(buttons);
+        pane.setPadding(new Insets(12));
+        showModal(Messages.get("unsubscribe.confirm.title"), pane);
+    }
+
     private void unsubscribe(Feed feed) {
+        FeedMedia playing = playback.getCurrentMedia();
+        if (playing != null && playing.getItem() != null
+                && playing.getItem().getFeedId() == feed.getId()) {
+            // its file is about to be deleted and its position with it: stop first, or the
+            // player holds the download open (Windows will not delete it) and keeps saving a
+            // position for an episode that no longer exists
+            playback.stop();
+        }
         background.submit(() -> {
             try {
                 feedUpdater.unsubscribe(feed.getId());
@@ -5325,7 +5373,23 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 String summary = result.playedItemIds.isEmpty()
                         ? Messages.get("status.sync.finished")
                         : Messages.format("status.sync.finished_marked", result.playedItemIds.size());
+                FeedMedia loaded = playback.getCurrentMedia();
+                int followTo = -1;
+                if (loaded != null && result.changedItemIds.contains(loaded.getItemId())
+                        && !result.playedItemIds.contains(loaded.getItemId())) {
+                    try {
+                        FeedMedia stored = database.getMedia(loaded.getId());
+                        followTo = stored != null ? stored.getPosition() : -1;
+                    } catch (Exception ignored) {
+                        // the player simply stays where it is
+                    }
+                }
+                long followMedia = loaded != null ? loaded.getId() : -1;
+                int followPosition = followTo;
                 Platform.runLater(() -> {
+                    if (followPosition > 0) {
+                        playback.followSyncedPosition(followMedia, followPosition);
+                    }
                     syncedItemIds.clear();
                     syncedItemIds.addAll(result.syncedItemIds);
                     updateGhostMarker(playback.getPosition(), playback.getDuration());
@@ -6091,7 +6155,15 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         @Override
         public void onFinished(long mediaId, File file) {
             setStatus(Messages.format("status.autodownload.done", item.getTitle()));
-            Platform.runLater(() -> episodeList.refresh());
+            // re-read, not just redraw: the rows hold the episode as it was before the download,
+            // so it kept saying Download, hid from the Downloaded filter and played the stream
+            Platform.runLater(() -> {
+                if (selectedFeed != null && selectedFeed.getId() == item.getFeedId()) {
+                    loadEpisodes(selectedFeed);
+                } else {
+                    episodeList.refresh();
+                }
+            });
         }
 
         @Override
