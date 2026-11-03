@@ -52,6 +52,10 @@ public final class PlaybackManager {
     private Runnable stopAfterCurrentHandler;
     private boolean stopAfterCurrent;
     private int pendingSeekMs = -1;
+    /** Whether {@link #pendingSeekMs} is a restart after a drop-out rather than the listener's. */
+    private boolean pendingSeekIsRestart;
+    /** Whether reaching the skip-ending window finishes the episode; see {@link #checkSkipEnding}. */
+    private boolean skipEndingArmed;
     private boolean suppressNextPlayAction;
     private final SilenceSkipper silenceSkipper = new SilenceSkipper();
     /** True while the audio spectrum is being watched for silence worth skipping over. */
@@ -189,6 +193,7 @@ public final class PlaybackManager {
             return;
         }
         pendingSeekMs = positionMs;
+        pendingSeekIsRestart = false;
         queue = contextQueue != null ? List.copyOf(contextQueue) : List.of(item);
         queueIndex = 0;
         for (int i = 0; i < queue.size(); i++) {
@@ -204,6 +209,7 @@ public final class PlaybackManager {
         queue = List.of();
         queueIndex = -1;
         pendingSeekMs = -1;
+        pendingSeekIsRestart = false;
         startPlayback(media);
     }
 
@@ -224,6 +230,7 @@ public final class PlaybackManager {
         lastKnownPositionMs = 0;
         currentMedia = media;
         finishedMedia = null;
+        skipEndingArmed = false;
         String playableFile = existingLocalCopy(media);
         playingFromFile = playableFile != null;
         String source = playableFile != null
@@ -281,20 +288,28 @@ public final class PlaybackManager {
                 readyMedia.setDuration(duration);
                 saveMedia();
             }
-            if (pendingSeekMs >= 0) {
-                int target = pendingSeekMs;
-                pendingSeekMs = -1;
-                if (duration > 0 && target >= duration - 1000) {
-                    // the player thinks the episode ends before where we wanted to resume. Playing
-                    // on would start it again from the beginning, so accept that it is over.
-                    notifyLoading(false);
-                    completeEpisode();
-                    return;
-                }
-                created.seek(new Duration(Math.max(target, 0)));
-            } else if (startPosition > 0 && startPosition < duration - 5000) {
-                created.seek(new Duration(startPosition));
+            boolean restart = pendingSeekIsRestart;
+            int requested = pendingSeekMs >= 0 ? pendingSeekMs : startPosition;
+            pendingSeekMs = -1;
+            pendingSeekIsRestart = false;
+            int start = startPositionFor(requested, duration, restart);
+            if (start == START_FINISHED) {
+                // a restart after a drop-out that cannot get past where it stopped: the episode
+                // really is shorter than its duration claims, so accept that it is over
+                notifyLoading(false);
+                completeEpisode();
+                return;
             }
+            if (start > 0) {
+                created.seek(new Duration(start));
+            }
+            // skip-ending acts only once playback runs into the outro: an episode started inside
+            // it (a synced position from another device) would otherwise finish on its first tick
+            // and play the next one instead of the one asked for
+            int skipEndingMs = DesktopPreferences.getSkipEndingSec() * 1000;
+            // (a restart after a drop-out had already played its way there, so it stays armed)
+            skipEndingArmed = restart || skipEndingMs <= 0 || duration <= 0
+                    || start < duration - skipEndingMs;
             created.play();
             notifyLoading(false);
             notifyState();
@@ -388,13 +403,53 @@ public final class PlaybackManager {
 
     private synchronized void checkSkipEnding(int positionMs) {
         int skipEndingMs = DesktopPreferences.getSkipEndingSec() * 1000;
-        if (skipEndingMs <= 0 || currentMedia == null || player == null) {
+        if (skipEndingMs <= 0 || currentMedia == null || player == null || !mediaReady) {
             return;
         }
         int duration = getDuration();
-        if (duration > 0 && positionMs >= duration - skipEndingMs) {
+        if (duration <= 0) {
+            return;
+        }
+        if (positionMs < duration - skipEndingMs) {
+            // playing before the outro (or seeked back out of it): reaching it now skips it
+            if (positionMs > 0) {
+                skipEndingArmed = true;
+            }
+            return;
+        }
+        if (skipEndingArmed) {
             finishPlayback();
         }
+    }
+
+    /** {@link #startPositionFor} for a restart that cannot get past where playback stopped. */
+    static final int START_FINISHED = -2;
+    /** A resume point this close to the end the player sees starts the episode over instead. */
+    static final int START_END_MARGIN_MS = 5_000;
+
+    /**
+     * Where a newly loaded player starts, given the position asked for and the duration the player
+     * reports once ready.
+     *
+     * <p>A position at or past the end the player can reach is not proof the episode is over: a
+     * position synced from another device comes from that device's copy, which can be longer
+     * (dynamically inserted ads, a variable-bitrate stream the player under-estimates). Pressing
+     * play on such an episode used to mark it played and start the next one in the list. An
+     * episode the listener started therefore starts from the beginning instead; only an internal
+     * restart after a drop-out, which already played up to that point, finishes the episode.
+     */
+    static int startPositionFor(int requestedMs, int durationMs, boolean restart) {
+        if (requestedMs <= 0) {
+            return 0;
+        }
+        if (durationMs <= 0) {
+            // nothing to check against yet: trust the position
+            return requestedMs;
+        }
+        if (restart) {
+            return requestedMs >= durationMs - 1000 ? START_FINISHED : requestedMs;
+        }
+        return requestedMs < durationMs - START_END_MARGIN_MS ? requestedMs : 0;
     }
 
     private void applyVolumeBoost() {
@@ -634,6 +689,7 @@ public final class PlaybackManager {
             // a player that is still loading ignores seeks, and the ready handler then jumps to
             // the resume point: keep the wanted position for it instead
             pendingSeekMs = Math.max(positionMs, 0);
+            pendingSeekIsRestart = false;
             return;
         }
         if (player != null) {
@@ -678,6 +734,7 @@ public final class PlaybackManager {
                     queueIndex = i;
                     // a resume position still waiting for the last episode to load is not this one's
                     pendingSeekMs = -1;
+                    pendingSeekIsRestart = false;
                     startPlayback(next.getMedia());
                     return;
                 }
@@ -697,6 +754,7 @@ public final class PlaybackManager {
             if (previous.getMedia() != null) {
                 queueIndex = i;
                 pendingSeekMs = -1;
+                pendingSeekIsRestart = false;
                 startPlayback(previous.getMedia());
                 return;
             }
@@ -878,6 +936,8 @@ public final class PlaybackManager {
                 loadRetries++;
                 notifyError(Messages.format("playback.error.slow_start", titleOf(stuck)));
                 pendingSeekMs = Math.max(lastKnownPositionMs, stuck.getPosition());
+                // pendingSeekIsRestart is left as it was: the player never got ready to use it, so
+                // it still says whether this load was the listener's start or a restart
                 suppressNextPlayAction = true;
                 notifyLoading(true);
                 startPlayback(stuck);
@@ -1056,6 +1116,7 @@ public final class PlaybackManager {
         resumeFromPositionMs = positionMs;
         abortedMedia = null;
         pendingSeekMs = positionMs;
+        pendingSeekIsRestart = true;
         // a restart is not the user pausing, so it must not turn into a sync play action
         suppressNextPlayAction = true;
         notifyError(Messages.format("playback.error.resuming", titleOf(media), reason,
