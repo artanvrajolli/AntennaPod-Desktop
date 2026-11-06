@@ -374,3 +374,57 @@
 .button.scroll-more:hover {
     -fx-background-color: #f0f0f0;
 }
+
+/* the floating card a background update reports through (UpdatePill) */
+.update-pill {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 12;
+    -fx-border-color: rgba(0, 0, 0, 0.12);
+    -fx-border-radius: 12;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.22), 22, 0.15, 0, 6);
+}
+
+.update-pill-badge {
+    -fx-background-color: rgba(0, 120, 180, 0.12);
+    -fx-background-radius: 16;
+}
+
+.update-pill-title {
+    -fx-font-weight: bold;
+}
+
+.update-pill-detail {
+    -fx-font-size: 11px;
+}
+
+.update-pill-progress {
+    -fx-pref-height: 6;
+}
+
+.update-pill-progress > .track {
+    -fx-background-color: rgba(0, 0, 0, 0.08);
+    -fx-background-insets: 0;
+    -fx-background-radius: 3;
+}
+
+.update-pill-progress > .bar {
+    -fx-background-color: -fx-accent;
+    -fx-background-insets: 0;
+    -fx-background-radius: 3;
+    -fx-padding: 0.2em;
+}
+
+.update-pill-close {
+    -fx-padding: 3;
+    -fx-background-color: transparent;
+    -fx-background-radius: 6;
+    -fx-border-color: transparent;
+}
+
+.update-pill-close:hover {
+    -fx-background-color: rgba(0, 0, 0, 0.07);
+}
+
+.update-pill-primary {
+    -fx-base: -fx-default-button;
+}

@@ -233,6 +233,20 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             new javafx.beans.property.SimpleDoubleProperty(0);
     private javafx.animation.Timeline loadingPulseTimeline;
     private StackPane appShell;
+    /** The floating card a background update reports through; see {@link #startBackgroundUpdate}. */
+    private UpdatePill updatePill;
+    /** The release being downloaded or waiting to install, or null when no update is under way. */
+    private UpdateChecker.Release pendingUpdate;
+    private java.util.concurrent.Future<?> updateDownload;
+    private java.util.concurrent.atomic.AtomicBoolean updateCancelled;
+    /** The downloaded installer, once the download has finished. */
+    private File readyInstaller;
+    /** Where the installed copy lives, or null when the update has to go through the wizard. */
+    private File updateInstallDir;
+    private javafx.animation.Timeline updateTimer;
+    /** Install the ready update quietly when the app quits, without starting it again. */
+    private boolean installUpdateOnQuit;
+    private boolean updateHelperLaunched;
     private Region seekPulse;
     private boolean showRemainingTime;
     private double lastVolume;
@@ -418,6 +432,14 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         root.setBottom(buildPlayerBar());
 
         appShell = new StackPane(root);
+        updatePill = new UpdatePill();
+        // float above the player bar, wherever its height ends up
+        StackPane.setMargin(updatePill, new Insets(0, 16, 112, 0));
+        if (root.getBottom() instanceof Region playerBarRegion) {
+            playerBarRegion.heightProperty().addListener((obs, oldHeight, height) ->
+                    StackPane.setMargin(updatePill, new Insets(0, 16, height.doubleValue() + 12, 0)));
+        }
+        appShell.getChildren().add(updatePill);
         stage.setTitle(APP_NAME + " " + appVersion());
         stage.setMinWidth(1000);
         stage.setMinHeight(640);
@@ -607,6 +629,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         reloadFeeds(null);
         applyProxy();
+        reportFinishedUpdate();
         if (DesktopPreferences.getUpdateCheckEnabled()) {
             // quietly: nothing is said unless there is something newer to say it about
             background.submit(() -> checkForUpdates(false));
@@ -1306,6 +1329,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     }
 
     private void showUpdateModal(UpdateChecker.Release release, String current) {
+        if (pendingUpdate != null && pendingUpdate.version.equals(release.version)) {
+            // already downloading or waiting to install: the card says where it is
+            updatePill.setVisible(true);
+            return;
+        }
         Label heading = new Label(Messages.format("update.heading", release.version));
         heading.setStyle("-fx-font-size: 15px; -fx-font-weight: bold;");
         Label installed = new Label(Messages.format("update.installed", current));
@@ -1315,12 +1343,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         notes.setPrefHeight(240);
         showHtml(notes, Shownotes.toPage(null, releaseNotesHtml(release.notes), ThemeManager.isDark()));
 
-        Label status = new Label();
-        status.setWrapText(true);
-        ProgressBar progress = new ProgressBar(0);
-        progress.setMaxWidth(Double.MAX_VALUE);
-        progress.setVisible(false);
-        progress.setManaged(false);
+        Label hint = new Label(release.hasInstaller() ? Messages.get("update.background_hint") : "");
+        hint.setWrapText(true);
+        hint.getStyleClass().add("muted-label");
+        hint.setVisible(release.hasInstaller());
+        hint.setManaged(release.hasInstaller());
 
         Button install = new Button(release.hasInstaller() ? Messages.get("update.install")
                 : Messages.get("update.open_release_page"));
@@ -1329,7 +1356,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         Button skip = new Button(Messages.get("update.skip"));
         HBox buttons = new HBox(8, install, later, skip);
 
-        VBox pane = new VBox(12, heading, installed, notes, progress, status, buttons);
+        VBox pane = new VBox(12, heading, installed, notes, hint, buttons);
         pane.setPadding(new Insets(8));
         VBox.setVgrow(notes, Priority.ALWAYS);
         showModal(Messages.get("update.title"), pane);
@@ -1341,81 +1368,269 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             setStatus(Messages.format("status.update.skipped", release.version));
         });
         install.setOnAction(event -> {
+            closeTopModal();
             if (!release.hasInstaller()) {
                 openExternal(release.pageUrl);
-                closeTopModal();
                 return;
             }
-            install.setDisable(true);
-            later.setDisable(true);
-            skip.setDisable(true);
-            progress.setVisible(true);
-            progress.setManaged(true);
-            status.setText(Messages.format("update.downloading", release.installerName));
-            downloadAndInstall(release, progress, status, install, later, skip);
-        });
-    }
-
-    private void downloadAndInstall(UpdateChecker.Release release, ProgressBar progress,
-            Label status, Button install, Button later, Button skip) {
-        background.submit(() -> {
-            try {
-                File installer = UpdateDownloader.download(release, (read, total) -> {
-                    double fraction = total > 0 ? read / (double) total : -1;
-                    Platform.runLater(() -> progress.setProgress(fraction));
-                });
-                Platform.runLater(() -> {
-                    status.setText(Messages.get("update.starting_installer"));
-                    launchInstaller(installer);
-                });
-            } catch (Exception e) {
-                android.util.Log.e("DesktopApp", "Update download failed", e);
-                String friendly = friendlyUpdateError(e);
-                Platform.runLater(() -> {
-                    progress.setVisible(false);
-                    progress.setManaged(false);
-                    status.setText(Messages.format("update.failed", friendly));
-                    install.setDisable(false);
-                    later.setDisable(false);
-                    skip.setDisable(false);
-                    install.setText(Messages.get("update.retry"));
-                    install.setDefaultButton(true);
-                    install.setOnAction(retry -> {
-                        install.setDisable(true);
-                        later.setDisable(true);
-                        skip.setDisable(true);
-                        progress.setVisible(true);
-                        progress.setManaged(true);
-                        progress.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
-                        status.setText(Messages.format("update.downloading", release.installerName));
-                        downloadAndInstall(release, progress, status, install, later, skip);
-                    });
-                    ensureOpenReleasePageButton(release, install);
-                });
-            }
+            startBackgroundUpdate(release);
         });
     }
 
     /**
-     * Adds an "Open release page" button next to Retry after a failed download, so a repeated
-     * failure still leaves a way out. Added once; later failures reuse it.
+     * Downloads the update behind the floating card while the app stays usable. When it is in,
+     * the installed copy installs it quietly and restarts (see {@link #updateReady}); any other
+     * copy (portable zip, moved folder) offers the setup wizard.
      */
-    private void ensureOpenReleasePageButton(UpdateChecker.Release release, Button install) {
-        if (!(install.getParent() instanceof HBox buttons)) {
+    private void startBackgroundUpdate(UpdateChecker.Release release) {
+        stopUpdateTimer();
+        if (updateCancelled != null) {
+            updateCancelled.set(true);
+        }
+        java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        updateCancelled = cancelled;
+        pendingUpdate = release;
+        readyInstaller = null;
+        installUpdateOnQuit = false;
+        updatePill.setOnClose(this::cancelBackgroundUpdate);
+        updatePill.show(Messages.format("update.pill.downloading", release.version),
+                Messages.get("update.pill.connecting"), ProgressBar.INDETERMINATE_PROGRESS, true,
+                List.of());
+        java.util.concurrent.atomic.AtomicInteger shownPermille = new java.util.concurrent.atomic.AtomicInteger(-1);
+        updateDownload = background.submit(() -> {
+            try {
+                File installer = UpdateDownloader.download(release, (read, total) -> {
+                    if (cancelled.get()) {
+                        // unwinds the download, which deletes its partial file on the way out
+                        throw new java.util.concurrent.CancellationException();
+                    }
+                    int permille = total > 0 ? (int) Math.min(1000, read * 1000 / total) : -1;
+                    // a redraw per chunk would flood the FX thread; a tenth of a percent is plenty
+                    if (shownPermille.getAndSet(permille) != permille) {
+                        String detail = updateSizeText(read, total);
+                        Platform.runLater(() -> {
+                            if (!cancelled.get()) {
+                                updatePill.setProgress(permille < 0 ? ProgressBar.INDETERMINATE_PROGRESS
+                                        : permille / 1000.0, detail);
+                            }
+                        });
+                    }
+                });
+                // a registry read, kept off the FX thread
+                File installDir = InstalledCopy.installDir();
+                Platform.runLater(() -> {
+                    if (!cancelled.get()) {
+                        updateReady(release, installer, installDir);
+                    }
+                });
+            } catch (Exception e) {
+                if (cancelled.get()) {
+                    return;
+                }
+                android.util.Log.e("DesktopApp", "Update download failed", e);
+                String friendly = friendlyUpdateError(e);
+                Platform.runLater(() -> {
+                    if (!cancelled.get()) {
+                        updateFailed(release, friendly);
+                    }
+                });
+            }
+        });
+    }
+
+    /** "12.4 MB of 96.0 MB" for the card; just the downloaded part when the size is unknown. */
+    static String updateSizeText(long read, long total) {
+        String done = String.format(Locale.ROOT, "%.1f MB", read / 1_000_000.0);
+        if (total <= 0) {
+            return done;
+        }
+        return Messages.format("update.pill.size", done,
+                String.format(Locale.ROOT, "%.1f MB", total / 1_000_000.0));
+    }
+
+    private void cancelBackgroundUpdate() {
+        boolean wasDownloading = readyInstaller == null && pendingUpdate != null;
+        if (updateCancelled != null) {
+            updateCancelled.set(true);
+        }
+        if (updateDownload != null) {
+            updateDownload.cancel(true);
+            updateDownload = null;
+        }
+        stopUpdateTimer();
+        pendingUpdate = null;
+        readyInstaller = null;
+        installUpdateOnQuit = false;
+        updatePill.hide();
+        if (wasDownloading) {
+            setStatus(Messages.get("status.update.cancelled"));
+        }
+    }
+
+    private void updateFailed(UpdateChecker.Release release, String message) {
+        updateDownload = null;
+        Button retry = new Button(Messages.get("update.retry"));
+        retry.setOnAction(event -> startBackgroundUpdate(release));
+        Button page = new Button(Messages.get("update.pill.release_page"));
+        page.setOnAction(event -> {
+            openExternal(release.pageUrl);
+            cancelBackgroundUpdate();
+        });
+        updatePill.setOnClose(this::cancelBackgroundUpdate);
+        updatePill.show(Messages.get("update.pill.failed"), message, null, true, List.of(page, retry));
+    }
+
+    private void updateReady(UpdateChecker.Release release, File installer, File installDir) {
+        updateDownload = null;
+        readyInstaller = installer;
+        updateInstallDir = installDir;
+        if (installDir == null || StartupRegistration.exePath() == null) {
+            // not the installed copy: the wizard decides where it goes, as it always has
+            Button setup = new Button(Messages.get("update.pill.run_setup"));
+            setup.setOnAction(event -> launchInstaller(installer));
+            updatePill.setOnClose(this::cancelBackgroundUpdate);
+            updatePill.show(Messages.format("update.pill.ready", release.version),
+                    Messages.get("update.pill.wizard"), null, true, List.of(setup));
             return;
         }
-        for (Node child : buttons.getChildren()) {
-            if ("openReleasePage".equals(child.getUserData())) {
+        if (playback.isPlaying()) {
+            waitForPauseThenRestart(release);
+        } else {
+            countDownToRestart(release);
+        }
+    }
+
+    /** Never cuts an episode off: the restart waits until playback is paused or stopped. */
+    private void waitForPauseThenRestart(UpdateChecker.Release release) {
+        stopUpdateTimer();
+        updatePill.setOnClose(() -> deferUpdate(release));
+        updatePill.show(Messages.format("update.pill.ready", release.version),
+                Messages.get("update.pill.waiting_for_pause"), null, true,
+                List.of(restartNowButton()));
+        updateTimer = new javafx.animation.Timeline(new javafx.animation.KeyFrame(Duration.seconds(1), event -> {
+            if (!playback.isPlaying()) {
+                countDownToRestart(release);
+            }
+        }));
+        updateTimer.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        updateTimer.play();
+    }
+
+    static final int UPDATE_RESTART_SECONDS = 10;
+
+    private void countDownToRestart(UpdateChecker.Release release) {
+        stopUpdateTimer();
+        int[] left = {UPDATE_RESTART_SECONDS};
+        Button notNow = new Button(Messages.get("update.pill.not_now"));
+        notNow.setOnAction(event -> deferUpdate(release));
+        updatePill.setOnClose(() -> deferUpdate(release));
+        updatePill.show(Messages.get("update.pill.restarting"),
+                Messages.format("update.pill.countdown", left[0], release.version), 1.0, true,
+                List.of(notNow, restartNowButton()));
+        updateTimer = new javafx.animation.Timeline(new javafx.animation.KeyFrame(Duration.seconds(1), event -> {
+            if (playback.isPlaying()) {
+                // the user started something during the countdown: wait for it instead
+                waitForPauseThenRestart(release);
                 return;
             }
+            left[0]--;
+            if (left[0] <= 0) {
+                stopUpdateTimer();
+                applyUpdate(true);
+                return;
+            }
+            updatePill.setProgress(left[0] / (double) UPDATE_RESTART_SECONDS,
+                    Messages.format("update.pill.countdown", left[0], release.version));
+        }));
+        updateTimer.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        updateTimer.play();
+    }
+
+    /** "Not now": the card stays with a restart button, and quitting installs it anyway. */
+    private void deferUpdate(UpdateChecker.Release release) {
+        stopUpdateTimer();
+        if (installUpdateOnQuit) {
+            // second dismissal: just put the card away, the install on quit still stands
+            updatePill.hide();
+            return;
         }
-        Button page = new Button(Messages.get("update.open_release_page"));
-        page.setUserData("openReleasePage");
-        page.setOnAction(open -> {
-            openExternal(release.pageUrl);
-            closeTopModal();
-        });
-        buttons.getChildren().add(1, page);
+        installUpdateOnQuit = true;
+        updatePill.setOnClose(() -> deferUpdate(release));
+        updatePill.show(Messages.format("update.pill.ready", release.version),
+                Messages.get("update.pill.deferred"), null, true, List.of(restartNowButton()));
+        setStatus(Messages.format("status.update.deferred", release.version));
+    }
+
+    private Button restartNowButton() {
+        Button restart = new Button(Messages.get("update.pill.restart_now"));
+        restart.getStyleClass().add("update-pill-primary");
+        restart.setOnAction(event -> applyUpdate(true));
+        return restart;
+    }
+
+    private void stopUpdateTimer() {
+        if (updateTimer != null) {
+            updateTimer.stop();
+            updateTimer = null;
+        }
+    }
+
+    /**
+     * Hands the downloaded installer to the quiet-install helper and quits; the helper waits
+     * for this process to end, installs into the same folder and, when asked, starts the new
+     * version. If the helper cannot be started the setup wizard is opened instead.
+     */
+    private void applyUpdate(boolean restart) {
+        if (readyInstaller == null || updateInstallDir == null || pendingUpdate == null) {
+            return;
+        }
+        stopUpdateTimer();
+        try {
+            String exe = StartupRegistration.exePath();
+            DesktopPreferences.setInstallingUpdateVersion(pendingUpdate.version);
+            UpdateInstaller.launch(readyInstaller, updateInstallDir,
+                    restart && exe != null ? new File(exe) : null);
+            updateHelperLaunched = true;
+        } catch (Exception e) {
+            android.util.Log.e("DesktopApp", "Quiet update could not start", e);
+            DesktopPreferences.setInstallingUpdateVersion("");
+            launchInstaller(readyInstaller);
+            return;
+        }
+        updatePill.show(Messages.format("update.pill.installing", pendingUpdate.version), null,
+                ProgressBar.INDETERMINATE_PROGRESS, false, List.of());
+        trayManager.remove();
+        trayActive = false;
+        shutdown();
+    }
+
+    /** Quitting with an update put off for later installs it now, without starting it again. */
+    private void installUpdateIfDeferred() {
+        if (!installUpdateOnQuit || updateHelperLaunched || readyInstaller == null
+                || updateInstallDir == null || pendingUpdate == null) {
+            return;
+        }
+        try {
+            DesktopPreferences.setInstallingUpdateVersion(pendingUpdate.version);
+            UpdateInstaller.launch(readyInstaller, updateInstallDir, null);
+            updateHelperLaunched = true;
+        } catch (Exception e) {
+            android.util.Log.e("DesktopApp", "Update on quit could not start", e);
+            DesktopPreferences.setInstallingUpdateVersion("");
+        }
+    }
+
+    /** After a quiet update, the first start says it worked and tidies the downloaded installer. */
+    private void reportFinishedUpdate() {
+        String installing = DesktopPreferences.getInstallingUpdateVersion();
+        if (installing.isEmpty()) {
+            return;
+        }
+        DesktopPreferences.setInstallingUpdateVersion("");
+        if (installing.equals(appVersion())) {
+            setStatus(Messages.format("status.update.installed_now", installing));
+            background.submit(UpdateDownloader::clear);
+        }
     }
 
     /**
@@ -7026,6 +7241,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         }
         shuttingDown = true;
         trayActive = false;
+        installUpdateIfDeferred();
         try {
             if (autoRefreshTask != null) {
                 autoRefreshTask.cancel(false);

@@ -224,6 +224,18 @@ public final class DesktopPreferences {
         PREFS.put("skippedUpdateVersion", version == null ? "" : version);
     }
 
+    /**
+     * The version a quiet update was installing when the app quit for it, so the next start can
+     * say it is done; empty when no update is under way.
+     */
+    public static String getInstallingUpdateVersion() {
+        return PREFS.get("installingUpdateVersion", "");
+    }
+
+    public static void setInstallingUpdateVersion(String version) {
+        PREFS.put("installingUpdateVersion", version == null ? "" : version);
+    }
+
     public static boolean getUpdateCheckEnabled() {
         return PREFS.getBoolean("updateCheckEnabled", true);
     }

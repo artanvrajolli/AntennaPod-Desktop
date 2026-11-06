@@ -15,14 +15,16 @@ inside `core`.
 - `core/` — Java library: ported AntennaPod engine
   (`de.danoeh.antennapod.*` under `core/src/main/java`)
   - `UpdateChecker` / `UpdateDownloader` — finds and fetches a newer release from
-    the project's own GitHub releases; the app then runs the installer and exits
+    the project's own GitHub releases; `UpdateInstaller` writes the hidden
+    PowerShell helper that waits for the app to exit, runs the setup exe with
+    `/qn` into the same folder and starts the app again (see Updates below)
   - `model/` (feed, playback, download), `parser/` (feed, transcript),
     `net/` (discovery: Apple/fyyd/PodcastIndex, sync: gPodder/Nextcloud, ssl),
     `storage/` (SQLite-backed desktop storage, import/export OPML, preferences)
   - `android/` + `androidx/` — hand-written compatibility shims the ported
     engine depends on (Log, XML, media, collections). Keep them minimal.
-  - 37 test classes (JUnit 4) in `core/src/test`.
-- `app/` — JavaFX UI (21 classes under
+  - 38 test classes (JUnit 4) in `core/src/test`.
+- `app/` — JavaFX UI (23 classes under
   `app/src/main/java/de/danoeh/antennapod/desktop`): `DesktopApp` (scenes),
   `PlaybackManager` (JavaFX media playback), `TrayManager` (system tray),
   `WindowChrome` (the app-drawn title bar; the stage is undecorated),
@@ -35,8 +37,10 @@ inside `core`.
   (entry point / main class), `AppIdentity` (the process AppUserModelID),
   `SeekAccent` (artwork colour for the seek bar), `FeedInput` (search-or-subscribe
   field), `StartupRegistration` (start with Windows), `EpisodeScrollMarker` (keeps
-  the playing episode in view), `MiddleClickScroll` (middle-click panning).
-  24 test classes in `app/src/test`.
+  the playing episode in view), `MiddleClickScroll` (middle-click panning),
+  `UpdatePill` (the floating card a background update reports through),
+  `InstalledCopy` (whether this exe is the installed copy, from its Uninstall entry).
+  26 test classes in `app/src/test`.
 
 ## Build, test, run
 
@@ -139,6 +143,29 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   and kept raw - even grey/white/black. Null only when there is no artwork.
   Do not reintroduce vivid-boost or theme-blue fallback logic in `SeekAccent`.
 
+## Updates
+
+- "Update now" closes the dialog and downloads in the background behind
+  `UpdatePill` (bottom-right, above the player bar): progress and size, close
+  cancels. Nothing about the update blocks the window.
+- When the download is in and `InstalledCopy.installDir()` finds this exe's
+  folder in an `AntennaPod-Desktop` Uninstall entry, the update installs
+  quietly: a 10 s countdown (Not now / Restart now), held while an episode is
+  playing - a restart never cuts playback off. `UpdateInstaller.launch` starts
+  the helper and the app quits; the helper runs the setup exe (jpackage's
+  wrapper forwards its arguments to `msiexec /i`) with
+  `/qn /norestart INSTALLDIR="<same folder>"`, logs to `updates\install.log`,
+  and on success starts the exe again. Any other exit code opens the normal
+  wizard, so a failed quiet install is never silent.
+- "Not now" keeps a Restart-now card and installs on quit (no restart).
+  `installingUpdateVersion` in the settings lets the next start report
+  "Updated to ..." and clear the update folder.
+- A portable zip, a moved folder or a run from source is not the installed
+  copy: it gets the setup wizard when the download is in, as before.
+- Windows Installer cannot draw a CheckBox over the wizard backdrop (it paints
+  a light square behind the rounded tick box), so the finished page uses an
+  Open button instead. Keep it that way.
+
 ## Releases / CI
 
 - `.github/workflows/release.yml` — every push to `main` builds + tests and
@@ -215,7 +242,7 @@ verified against a locally built installer:
 - End-to-end check used here: `gradlew :core:test :app:test :app:installDist`
   then `pwsh packaging/windows/package.ps1`, then inspect
   `AntennaPod-Desktop-Setup-<version>.exe` (icon, wizard pages, exit page with
-  the "Start AntennaPod Desktop" checkbox). The wizard can be exercised without
+  the "Open AntennaPod Desktop" button). The wizard can be exercised without
   installing by opening the setup exe and cancelling; per-user install, so no
   admin rights are needed. On a machine that already has the same version
   installed, opening it does not reach the welcome page: build a preview with

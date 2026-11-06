@@ -132,12 +132,11 @@
     <SetProperty Id="ApodDone" Value="AntennaPod Desktop is updated" After="JpFindRelatedProducts" Sequence="ui">JP_UPGRADABLE_FOUND AND NOT Installed</SetProperty>
 
     <!--
-      The finished page's ticked box starts the app when the wizard is closed.
+      The finished page's Open button starts the app as the wizard closes.
       WixShellExec comes from WixUtilExtension, which jpackage already links.
     -->
     <Property Id="WixShellExecTarget" Value="[INSTALLDIR]$(var.JpAppName).exe" />
     <CustomAction Id="JpLaunchApp" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" />
-    <Property Id="ApodLaunch" Value="1" />
     <Property Id="ApodRMOption" Value="UseRM" />
 
     <Property Id="DefaultUIFont" Value="ApodUI" />
@@ -258,16 +257,19 @@
                  Text="{\ApodLead}Your subscriptions, downloads and playback positions are still in %APPDATA%\AntennaPod, so installing again picks up where you left off.">
           <Condition Action="show">REMOVE~="ALL"</Condition>
         </Control>
-        <Control Id="Launch" Type="CheckBox" X="24" Y="152" Width="10" Height="10" Property="ApodLaunch" CheckBoxValue="1">
+        <!--
+          A CheckBox cannot be drawn over the backdrop: Windows Installer paints the control's
+          own light background behind the rounded tick box, which leaves pale corners on the dark
+          page. Opening the app is a button instead, the default one on an install or update.
+        -->
+        <Control Id="Open" Type="PushButton" X="166" Y="244" Width="130" Height="17" Default="yes" Text="&amp;Open AntennaPod Desktop">
           <Condition Action="hide">Installed</Condition>
-        </Control>
-        <Control Id="LaunchLabel" Type="Text" X="40" Y="151" Width="220" Height="12" Transparent="yes" NoPrefix="yes"
-                 Text="{\ApodLead}Start AntennaPod Desktop now">
-          <Condition Action="hide">Installed</Condition>
-        </Control>
-        <Control Id="Finish" Type="PushButton" X="302" Y="244" Width="56" Height="17" Default="yes" Cancel="yes" Text="&amp;Finish">
-          <Publish Event="DoAction" Value="JpLaunchApp" Order="1">ApodLaunch = 1 AND NOT Installed</Publish>
+          <Publish Event="DoAction" Value="JpLaunchApp" Order="1">NOT Installed</Publish>
           <Publish Event="EndDialog" Value="Return" Order="2">1</Publish>
+        </Control>
+        <Control Id="Finish" Type="PushButton" X="302" Y="244" Width="56" Height="17" Cancel="yes" Text="&amp;Close">
+          <Condition Action="default">Installed</Condition>
+          <Publish Event="EndDialog" Value="Return" Order="1">1</Publish>
         </Control>
       </Dialog>
 
