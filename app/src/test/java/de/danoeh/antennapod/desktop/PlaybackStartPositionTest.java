@@ -56,4 +56,19 @@ public class PlaybackStartPositionTest {
         assertEquals(30_000, PlaybackManager.startPositionFor(30_000, 0, false));
         assertEquals(30_000, PlaybackManager.startPositionFor(30_000, 0, true));
     }
+
+    @Test
+    public void testResumeAfterReopeningStartsThreeSecondsEarlier() {
+        assertEquals(20 * 60_000 - 3_000, PlaybackManager.rewoundForResume(20 * 60_000, 0));
+    }
+
+    @Test
+    public void testResumeRewindStopsAtTheStartAndAtTheSkippedIntro() {
+        assertEquals(0, PlaybackManager.rewoundForResume(2_000, 0));
+        assertEquals(0, PlaybackManager.rewoundForResume(0, 0));
+        // skip-intro of 30 s: a position at 31 s goes back to 30 s, not into the intro
+        assertEquals(30_000, PlaybackManager.rewoundForResume(31_000, 30_000));
+        assertEquals(30_000, PlaybackManager.rewoundForResume(30_000, 30_000));
+        assertEquals(40_000, PlaybackManager.rewoundForResume(43_000, 30_000));
+    }
 }

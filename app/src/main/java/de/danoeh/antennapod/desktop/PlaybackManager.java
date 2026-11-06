@@ -51,6 +51,11 @@ public final class PlaybackManager {
     private Runnable resumeLastHandler;
     private Runnable stopAfterCurrentHandler;
     private boolean stopAfterCurrent;
+    /**
+     * Episodes loaded since the app started. The first resume of each picks up a little before
+     * where it was left off (see {@link #RESUME_REWIND_MS}); later ones in the same run do not.
+     */
+    private final java.util.Set<Long> resumedThisRun = new java.util.HashSet<>();
     private int pendingSeekMs = -1;
     /** Whether {@link #pendingSeekMs} is a restart after a drop-out rather than the listener's. */
     private boolean pendingSeekIsRestart;
@@ -297,6 +302,12 @@ public final class PlaybackManager {
             }
             boolean restart = pendingSeekIsRestart;
             int requested = pendingSeekMs >= 0 ? pendingSeekMs : startPosition;
+            if (!restart && resumedThisRun.add(readyMedia.getId())) {
+                // the first time back in an episode since the app opened: start a few seconds
+                // early, so the sentence that was cut off when the app closed is heard again
+                requested = rewoundForResume(requested,
+                        DesktopPreferences.getSkipIntroSec() * 1000);
+            }
             pendingSeekMs = -1;
             pendingSeekIsRestart = false;
             int start = startPositionFor(requested, duration, restart);
@@ -486,6 +497,20 @@ public final class PlaybackManager {
         if (skipEndingArmed) {
             finishPlayback();
         }
+    }
+
+    /** How far before the saved position the first resume after opening the app starts. */
+    static final int RESUME_REWIND_MS = 3_000;
+
+    /**
+     * A saved position moved back by {@link #RESUME_REWIND_MS}, never before the start or into
+     * the intro the skip-intro setting jumps over. Nothing saved (0) stays at the start.
+     */
+    static int rewoundForResume(int requestedMs, int floorMs) {
+        if (requestedMs <= 0 || requestedMs <= floorMs) {
+            return requestedMs;
+        }
+        return Math.max(Math.max(0, floorMs), requestedMs - RESUME_REWIND_MS);
     }
 
     /** {@link #startPositionFor} for a restart that cannot get past where playback stopped. */
