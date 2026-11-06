@@ -111,9 +111,33 @@ public class TaskbarIconTest {
     }
 
     @Test
+    public void testPlayingBadgeShowsThePlayTriangleInTheMiddle() {
+        BufferedImage badge = TaskbarIcon.badge(filled(256, 256, Color.RED), 32, true);
+        Color centre = new Color(badge.getRGB(16, 16), true);
+        assertTrue("the triangle covers the middle", centre.getRed() > 200
+                && centre.getGreen() > 200 && centre.getBlue() > 200);
+        Color nearTop = new Color(badge.getRGB(16, 3), true);
+        assertEquals("the artwork shows around the glyph", 255, nearTop.getRed());
+        assertTrue(nearTop.getGreen() < 32);
+    }
+
+    @Test
+    public void testPausedBadgeShowsTwoBarsAroundADarkGap() {
+        BufferedImage badge = TaskbarIcon.badge(filled(256, 256, Color.RED), 32, false);
+        Color gap = new Color(badge.getRGB(16, 16), true);
+        assertTrue("the gap between the bars is the dark disc",
+                gap.getRed() < 128 && gap.getGreen() < 32);
+        Color leftBar = new Color(badge.getRGB(13, 16), true);
+        Color rightBar = new Color(badge.getRGB(18, 16), true);
+        assertTrue(leftBar.getGreen() > 200 && leftBar.getBlue() > 200);
+        assertTrue(rightBar.getGreen() > 200 && rightBar.getBlue() > 200);
+    }
+
+    @Test
     public void testNoBadgeWithoutArtwork() {
         assertNull(TaskbarIcon.badge(null, 32));
         assertNull(TaskbarIcon.badge(filled(32, 32, Color.RED), 0));
+        assertNull(TaskbarIcon.badge(null, 32, true));
     }
 
     @Test

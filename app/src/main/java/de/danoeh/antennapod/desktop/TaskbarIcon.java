@@ -5,6 +5,9 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.Shape;
+import java.awt.geom.Ellipse2D;
+import java.awt.geom.Path2D;
+import java.awt.geom.Rectangle2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import javafx.scene.image.Image;
@@ -32,6 +35,10 @@ final class TaskbarIcon {
     private static final Color BADGE_OUTLINE = new Color(0x10, 0x10, 0x10, 0xCC);
     /** The badge size handed to the shell, which scales it to its own small-icon size. */
     static final int BADGE_SIZE = 32;
+    /** How much of the badge the disc behind the play/pause glyph takes up. */
+    static final double GLYPH_DISC_FRACTION = 0.62;
+    private static final Color GLYPH_DISC = new Color(0x00, 0x00, 0x00, 0xA6);
+    private static final Color GLYPH = Color.WHITE;
 
     private TaskbarIcon() {
     }
@@ -118,6 +125,44 @@ final class TaskbarIcon {
         g.setStroke(new BasicStroke(stroke));
         g.draw(new RoundRectangle2D.Float(stroke / 2, stroke / 2, size - stroke, size - stroke,
                 radius, radius));
+        g.dispose();
+        return badge;
+    }
+
+    /**
+     * The badge with the playback state in its middle: a play triangle while the episode plays,
+     * pause bars while it is paused, on a dark disc so the glyph reads over any artwork.
+     */
+    static BufferedImage badge(BufferedImage artwork, int size, boolean playing) {
+        BufferedImage badge = badge(artwork, size);
+        if (badge == null) {
+            return null;
+        }
+        Graphics2D g = badge.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+        double centre = size / 2.0;
+        double disc = size * GLYPH_DISC_FRACTION;
+        g.setColor(GLYPH_DISC);
+        g.fill(new Ellipse2D.Double(centre - disc / 2, centre - disc / 2, disc, disc));
+        g.setColor(GLYPH);
+        double glyph = disc * 0.5;
+        if (playing) {
+            // a triangle's visual centre sits left of its box centre, so nudge it right
+            double left = centre - glyph * 0.38;
+            Path2D.Double triangle = new Path2D.Double();
+            triangle.moveTo(left, centre - glyph / 2);
+            triangle.lineTo(left + glyph * 0.9, centre);
+            triangle.lineTo(left, centre + glyph / 2);
+            triangle.closePath();
+            g.fill(triangle);
+        } else {
+            double bar = glyph * 0.32;
+            double gap = glyph * 0.26;
+            double top = centre - glyph / 2;
+            g.fill(new Rectangle2D.Double(centre - gap / 2 - bar, top, bar, glyph));
+            g.fill(new Rectangle2D.Double(centre + gap / 2, top, bar, glyph));
+        }
         g.dispose();
         return badge;
     }

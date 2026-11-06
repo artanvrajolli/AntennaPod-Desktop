@@ -293,6 +293,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private final List<Image> baseIcons = new ArrayList<>();
     /** The artwork currently on the taskbar badge; "" while there is none. */
     private String taskbarIconArtUrl = "";
+    /** Whether the badge up now shows the play glyph (true) or the pause glyph. */
+    private boolean taskbarIconPlaying;
     private boolean shuttingDown;
     private Stage mainStage;
     private java.nio.channels.FileChannel instanceLockChannel;
@@ -6550,18 +6552,20 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
 
     /**
      * Puts the artwork of whatever is playing on the taskbar button as a badge over its corner,
-     * and takes it off when there is no artwork or nothing is playing. The window icon stays the
-     * app icon: the installed app's button shows its shortcut's icon whatever the window says.
+     * with a play or pause glyph in its middle for the playback state, and takes it off when
+     * there is no artwork or nothing is playing. The window icon stays the app icon: the
+     * installed app's button shows its shortcut's icon whatever the window says.
      */
-    private void updateTaskbarIcon(String artUrl) {
+    private void updateTaskbarIcon(String artUrl, boolean playing) {
         if (mainStage == null || !TaskbarIcon.isEnabled()) {
             return;
         }
         String wanted = artUrl != null ? artUrl : "";
-        if (wanted.equals(taskbarIconArtUrl)) {
+        if (wanted.equals(taskbarIconArtUrl) && playing == taskbarIconPlaying) {
             return;
         }
         taskbarIconArtUrl = wanted;
+        taskbarIconPlaying = playing;
         if (wanted.isEmpty()) {
             clearTaskbarBadge();
             return;
@@ -6599,7 +6603,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         FeedMedia current = playback != null ? playback.getCurrentMedia() : null;
         String title = current != null && current.getItem() != null
                 ? current.getItem().getTitle() : null;
-        windowsTaskbar.setOverlay(TaskbarIcon.badge(source, TaskbarIcon.BADGE_SIZE),
+        windowsTaskbar.setOverlay(
+                TaskbarIcon.badge(source, TaskbarIcon.BADGE_SIZE, taskbarIconPlaying),
                 title != null ? Messages.format("taskbar.overlay", title) : null);
     }
 
@@ -6699,7 +6704,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             nowPlayingLabel.setTooltip(null);
         }
         updateNowPlayingArt(current);
-        updateTaskbarIcon(nowPlayingArtUrl(current));
+        updateTaskbarIcon(nowPlayingArtUrl(current), cellPlaying);
         updatePlayPauseButton();
         if (trayActive) {
             trayManager.update(playback.isPlaying(), title, smtcFeedTitle(current),
