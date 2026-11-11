@@ -65,9 +65,16 @@ public final class PlaybackManager {
     /** What the last save wrote, so a paused player does not keep rewriting the same position. */
     private FeedMedia lastPersistedMedia;
     private int lastPersistedPositionMs = -1;
-    private final SilenceSkipper silenceSkipper = new SilenceSkipper();
-    /** True while the audio spectrum is being watched for silence worth skipping over. */
+    /** Where the silence ahead of playback is; drawn by {@link #silenceScout}. */
+    private final SilenceMap silenceMap = new SilenceMap(SILENCE_SPECTRUM_THRESHOLD_DB);
+    private final SilenceScout silenceScout = new SilenceScout(silenceMap, SILENCE_SPECTRUM_THRESHOLD_DB);
+    /** What the playing player itself just heard: its say before a skip is made. */
+    private final SilenceMap.Heard heard = new SilenceMap.Heard();
+    /** True while silence is being skipped for the current player. */
     private volatile boolean silenceWatchActive;
+    /** What the scout scans, looked up at most once a second; see {@link #scoutSource}. */
+    private volatile String scoutSource;
+    private volatile long scoutSourceCheckedAt;
     private final AudioCompressor compressor = new AudioCompressor(SILENCE_SPECTRUM_THRESHOLD_DB);
     private Media currentFxMedia;
     private ScheduledFuture<?> loadWatchTask;
@@ -97,7 +104,7 @@ public final class PlaybackManager {
     /** The episode already marked played and advanced past, so a second end signal cannot do it twice. */
     private FeedMedia finishedMedia;
 
-    /** How often complete silence is checked for and skipped over. */
+    /** How often playback is checked against the silence map. */
     private static final long SILENCE_APPLY_INTERVAL_MS = 100;
     /** How often the audio spectrum is sampled: fast enough to catch speech onsets quickly. */
     private static final double SILENCE_SPECTRUM_INTERVAL_S = 0.05;
@@ -106,8 +113,13 @@ public final class PlaybackManager {
      * value, so it sits well under real speech to leave room for the adaptive threshold.
      */
     private static final int SILENCE_SPECTRUM_THRESHOLD_DB = -70;
-    /** How far one silence skip jumps forward. */
-    private static final int SILENCE_SKIP_STEP_MS = 1000;
+    /**
+     * How far above the map's threshold the playing player's own reading may sit and still count
+     * as the same silence: its audio has been through the equalizer, the scout's has not.
+     */
+    private static final double SILENCE_HEARD_MARGIN_DB = 6.0;
+    /** A stream is only scanned once it has been playing this long; see {@link #scoutSource}. */
+    private static final long SILENCE_STREAM_SCAN_DELAY_MS = 8000;
     /** No skip lands closer than this to the end of the episode. */
     private static final int SILENCE_SKIP_END_MARGIN_MS = 2000;
     /** User volume (0..1). */
@@ -602,7 +614,7 @@ public final class PlaybackManager {
      * reads its own gain back (and takes it out again), while the volume slider reaches neither.
      */
     private void watchSpectrum() {
-        silenceSkipper.reset();
+        heard.reset();
         final boolean skipSilence = DesktopPreferences.getSkipSilence();
         final boolean compress = DesktopPreferences.getAudioCompressor();
         final int boostDb = DesktopPreferences.getVolumeBoostDb();
@@ -626,10 +638,9 @@ public final class PlaybackManager {
                 return;
             }
             long now = System.currentTimeMillis();
-            // the gain this frame went through; the boost is left in, as it always was
-            double compressedDb = bandGainDb[0] - boostDb;
             if (skipSilence) {
-                silenceSkipper.update(magnitudes, now, Math.pow(10.0, compressedDb / 20.0));
+                // without the gain this frame went through, to compare with the scout's reading
+                heard.add(AudioCompressor.levelDb(magnitudes, SILENCE_SPECTRUM_THRESHOLD_DB) - bandGainDb[0], now);
             }
             if (compress) {
                 double wantedDb = bandGainDb(boostDb, compressor.update(magnitudes, bandGainDb[0], now));
@@ -642,56 +653,91 @@ public final class PlaybackManager {
     }
 
     /**
-     * Jumps over complete silence instead of playing through it.
+     * Jumps over silence instead of playing through it - only silence the scout has already
+     * looked at from end to end, and only while this player hears silence too.
      *
-     * <p>Fast-forwarding quiet audio at a boosted rate still played every gap and sounded bad;
-     * seeking over stretches of digital silence skips them entirely. The detector only fires on
-     * true silence (around -57&nbsp;dB average power, far below even quiet speech), so spoken
-     * audio is never jumped over — and the verdict drops the instant sound returns, so a skip
-     * never starts inside speech.
+     * <p>It used to jump a second ahead of whatever had just been quiet for 400 ms, without
+     * knowing what was there: the start of the next sentence, most of the time. Now every jump
+     * comes from the {@link SilenceMap} and lands just before the sound returns; where there is
+     * no map (nothing scanned yet, the scout behind or failed), nothing is skipped.
      */
     private void maybeSkipSilence() {
         MediaPlayer activePlayer;
+        FeedMedia media;
+        boolean ready;
         synchronized (this) {
             activePlayer = silenceWatchActive ? player : null;
+            media = currentMedia;
+            ready = mediaReady;
         }
-        if (activePlayer == null) {
+        if (activePlayer == null || media == null) {
+            silenceScout.stop();
+            return;
+        }
+        if (!ready) {
             return;
         }
         MediaPlayer.Status status;
-        try {
-            status = activePlayer.getStatus();
-        } catch (Exception e) {
-            return;
-        }
-        if (status != MediaPlayer.Status.PLAYING) {
-            // no spectrum frames arrive while not playing; stale timing must not fire later
-            silenceSkipper.reset();
-            return;
-        }
-        if (!silenceSkipper.isCompletelySilent()) {
-            return;
-        }
         int positionMs;
         int durationMs;
         try {
+            status = activePlayer.getStatus();
             positionMs = (int) activePlayer.getCurrentTime().toMillis();
             durationMs = getDuration();
         } catch (Exception e) {
             return;
         }
-        if (durationMs <= 0
-                || positionMs + SILENCE_SKIP_STEP_MS > durationMs - SILENCE_SKIP_END_MARGIN_MS) {
+        // also while paused: the scout gets its head start and then waits by itself
+        silenceScout.follow(scoutSource(media), positionMs, durationMs);
+        if (status != MediaPlayer.Status.PLAYING) {
+            // no spectrum frames arrive while not playing; what was heard before must not count
+            heard.reset();
             return;
         }
-        // a fresh hold is required after every jump, so long silences are walked over step by
-        // step and skipping stops the instant sound returns
-        silenceSkipper.reset();
+        SilenceMap.Skip skip = silenceMap.skipFrom(positionMs);
+        if (skip == null || durationMs <= 0 || skip.targetMs > durationMs - SILENCE_SKIP_END_MARGIN_MS
+                || !heard.quiet(skip.thresholdDb + SILENCE_HEARD_MARGIN_DB, System.currentTimeMillis())) {
+            return;
+        }
+        // fresh frames are needed after the jump before anything else is skipped
+        heard.reset();
         try {
-            activePlayer.seek(new Duration(positionMs + SILENCE_SKIP_STEP_MS));
+            activePlayer.seek(new Duration(skip.targetMs));
         } catch (Exception e) {
             // the player is on its way out; whatever replaces it starts at its own position
         }
+    }
+
+    /**
+     * What the scout scans for this episode: the local copy when there is one - the download, or
+     * the playback cache's copy once it is complete, also while the episode itself is still
+     * streaming. Without one, and with no cache copy on its way, the stream itself, once playback
+     * has settled: a second download of the episode, which must not compete with the first while
+     * it is still connecting. Null while there is nothing to scan yet.
+     */
+    private String scoutSource(FeedMedia media) {
+        long now = System.currentTimeMillis();
+        if (now - scoutSourceCheckedAt < 1000) {
+            return scoutSource;
+        }
+        scoutSourceCheckedAt = now;
+        String source = null;
+        try {
+            String file = existingLocalCopy(media);
+            String stream = media.getStreamUrl();
+            if (file != null) {
+                source = new java.io.File(file).toURI().toString();
+            } else if (stream != null && stream.startsWith("file:")) {
+                source = stream;
+            } else if (stream != null && !DesktopPreferences.getEpisodeCacheEnabled()
+                    && everPlayed && now - loadStartedAt > SILENCE_STREAM_SCAN_DELAY_MS) {
+                source = stream;
+            }
+        } catch (Exception e) {
+            // no scout, no skipping
+        }
+        scoutSource = source;
+        return source;
     }
 
     private void tickSilenceSkip() {
@@ -829,8 +875,8 @@ public final class PlaybackManager {
             return;
         }
         if (player != null) {
-            // a jump lands in unknown audio; stale quiet-since timing must not skip into it
-            silenceSkipper.reset();
+            // what was heard before the jump says nothing about where it lands
+            heard.reset();
             player.seek(new Duration(clampPosition(positionMs)));
         }
     }
@@ -1018,6 +1064,8 @@ public final class PlaybackManager {
             previous = player;
             player = null;
             silenceWatchActive = false;
+            scoutSource = null;
+            scoutSourceCheckedAt = 0;
             currentFxMedia = null;
             mediaReady = false;
             everPlayed = false;
@@ -1025,6 +1073,9 @@ public final class PlaybackManager {
             stoppedSince = 0;
             stallNotified = false;
         }
+        // the map belongs to the episode that was playing; the scout holds its file open
+        silenceScout.stop();
+        silenceMap.clear();
         disposeLater(previous);
     }
 

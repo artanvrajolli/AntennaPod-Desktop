@@ -44,8 +44,9 @@ can go on a USB stick. Developers can do the same for a source run with
   auto-delete after playing
 - Playback queue, per-feed sort orders, ▶ Play-all from oldest to newest
 - Sleep timer, per-feed playback speed, skip intro/ending, volume boost,
-  one-click **skip silence** and **audio compressor** (quiet parts up, loud
-  parts down) toggles in the player bar, favorites, chapters,
+  one-click **skip silence** (jumps over gaps longer than about a second,
+  landing just before the sound returns) and **audio compressor** (quiet parts
+  up, loud parts down) toggles in the player bar, favorites, chapters,
   transcripts (SRT/VTT/JSON), shownotes
 - Playback history, listening statistics, system-tray integration with
   compact playback controls (click the tray icon; right-click it to open

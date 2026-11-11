@@ -24,7 +24,7 @@ inside `core`.
   - `android/` + `androidx/` — hand-written compatibility shims the ported
     engine depends on (Log, XML, media, collections). Keep them minimal.
   - 39 test classes (JUnit 4) in `core/src/test`.
-- `app/` — JavaFX UI (23 classes under
+- `app/` — JavaFX UI (24 classes under
   `app/src/main/java/de/danoeh/antennapod/desktop`): `DesktopApp` (scenes),
   `PlaybackManager` (JavaFX media playback), `TrayManager` (system tray),
   `WindowChrome` (the app-drawn title bar; the stage is undecorated),
@@ -39,6 +39,7 @@ inside `core`.
   field), `StartupRegistration` (start with Windows), `EpisodeScrollMarker` (keeps
   the playing episode in view), `MiddleClickScroll` (middle-click panning),
   `UpdatePill` (the floating card a background update reports through),
+  `SilenceScout` (the muted second player that scans ahead for skip silence),
   `InstalledCopy` (whether this exe is the installed copy, from its Uninstall entry).
   27 test classes in `app/src/test`.
 
@@ -118,7 +119,18 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   spectrum is tapped after the equalizer and before the volume, some 300 ms ahead
   of what is heard. The audio compressor (`AudioCompressor`, the toggle next to
   skip silence) sets its gain on the equalizer bands, on top of the volume boost,
-  and takes that gain back out of what it and `SilenceSkipper` read.
+  and takes that gain back out of what it reads and of what skip silence hears.
+- Skip silence never jumps into audio nobody has looked at. `SilenceScout`, a
+  second player at volume 0 and 8x, runs ahead and draws the `SilenceMap`; a skip
+  goes from inside a mapped silence to just before its end, and only while the
+  playing player hears silence too (`SilenceMap.Heard`). No map, no skip. The
+  scout is never seeked - after a seek an MP3's spectrum frames are stamped with
+  the time played, not the place in the file - so it is replaced by a new one
+  started at the position (`setStartTime`) whenever playback leaves what it has
+  scanned. It reads the local copy (download or finished cache file), or the
+  stream itself only when the playback cache is off. Do not go back to judging
+  silence from what the playing player just heard and jumping a fixed step: that
+  cut the start of the sentence after nearly every pause.
 - Episode state is written through the narrow `DesktopDatabase` writers
   (`updatePlaybackState`, `setMediaDownloaded`, `clearMediaDownload`,
   `setMediaCacheFile`, `updateMediaFromFeed`). The player, downloader, cache

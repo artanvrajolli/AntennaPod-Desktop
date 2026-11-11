@@ -114,7 +114,7 @@ public final class AudioCompressor {
      * Overall level of one spectrum frame, about the RMS level in dBFS: the power of every band
      * that carries a reading, summed. NaN when no band does.
      */
-    static double levelDb(float[] magnitudes, double floorDb) {
+    public static double levelDb(float[] magnitudes, double floorDb) {
         if (magnitudes == null) {
             return Double.NaN;
         }
