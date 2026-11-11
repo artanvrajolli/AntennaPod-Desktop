@@ -312,13 +312,16 @@ public final class Icons {
                 + capsule(128, 227, 128, 208, 30));
     }
 
-    /** A window with a smaller one inset, the way Spotify draws its mini player toggle. */
-    public static Node miniPlayer() {
-        return miniPlayer(SIZE);
+    /** A pushpin: wide head, tapered neck, wide collar and a slim needle - keep the mini player on screen. */
+    public static Node pin() {
+        return pin(SIZE);
     }
 
-    public static Node miniPlayer(double size) {
-        return icon(frame(36, 52, 184, 152, 22, 22) + rect(124, 130, 68, 48, 10), size);
+    public static Node pin(double size) {
+        return icon(rect(48, 52, 160, 28, 14)
+                + polygon(true, 106, 74, 150, 74, 139, 146, 117, 146)
+                + rect(80, 142, 96, 18, 9)
+                + polygon(true, 121, 156, 135, 156, 128, 216), size);
     }
 
     // GitHub mark, drawn on a 16 unit grid (from GitHub's own octicon, MIT licensed)

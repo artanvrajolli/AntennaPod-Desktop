@@ -470,27 +470,27 @@
 
 /* ---------------------------------------------------------------- tray mini player */
 
-/* The mini player keeps Spotify's dark surface in both themes, with its green as the accent. */
+/* The mini player keeps a dark surface in both themes and uses the app's accent. */
 .tray-panel {
-    -fx-background-color: #121212;
-    -fx-border-color: #2a2a2a;
+    -fx-background-color: #1e1e1e;
+    -fx-border-color: #333333;
     -fx-border-width: 1;
 }
 
 .tray-title {
     -fx-font-size: 13px;
     -fx-font-weight: bold;
-    -fx-text-fill: #ffffff;
+    -fx-text-fill: #ececec;
 }
 
 .tray-feed {
     -fx-font-size: 11px;
-    -fx-text-fill: #b3b3b3;
+    -fx-text-fill: #a6a6a6;
 }
 
 .tray-time {
     -fx-font-size: 10px;
-    -fx-text-fill: #b3b3b3;
+    -fx-text-fill: #a6a6a6;
 }
 
 .tray-panel .slider .track {
@@ -500,13 +500,13 @@
 }
 
 .tray-panel .slider .thumb {
-    -fx-background-color: #ffffff;
+    -fx-background-color: #ececec;
     -fx-background-insets: 0;
     -fx-background-radius: 1em;
     -fx-padding: 4;
 }
 
-/* Spotify's controls are glyphs on the surface, not buttons: only a round hover shows. */
+/* The controls are glyphs on the surface, not buttons: only a round hover shows. */
 .tray-panel .icon-button {
     -fx-background-color: transparent;
     -fx-border-color: transparent;
@@ -536,7 +536,7 @@
 }
 
 .button.tray-play {
-    -fx-background-color: #1db954;
+    -fx-background-color: -fx-accent;
     -fx-background-radius: 20;
     -fx-background-insets: 0;
     -fx-min-width: 40;
@@ -549,11 +549,11 @@
 }
 
 .button.tray-play:hover {
-    -fx-background-color: #1ed760;
+    -fx-background-color: derive(-fx-accent, -12%);
 }
 
 .button.tray-play:pressed {
-    -fx-background-color: #1aa34a;
+    -fx-background-color: derive(-fx-accent, -22%);
 }
 
 .button.tray-show {
@@ -563,13 +563,13 @@
     -fx-border-width: 1;
     -fx-border-radius: 16;
     -fx-background-radius: 16;
-    -fx-text-fill: #ffffff;
+    -fx-text-fill: #ececec;
     -fx-font-size: 12px;
     -fx-padding: 5 12 5 12;
 }
 
 .button.tray-show:hover {
-    -fx-border-color: #ffffff;
+    -fx-border-color: #ececec;
     -fx-background-color: rgba(255, 255, 255, 0.06);
 }
 
