@@ -144,6 +144,22 @@ public class SilenceSkipperTest {
     }
 
     @Test
+    public void aPauseTheCompressorTurnedUpStillReadsAsSilence() {
+        // the audio compressor raises quiet audio ahead of the spectrum: a pause at -60 dB
+        // arrives 10 dB louder, above the complete-silence line, and is judged at its own level
+        float[] raisedPause = {-50f, -50f, -50f};
+        double raisedBy = Math.pow(10.0, 10.0 / 20.0);
+        SilenceSkipper compensated = new SilenceSkipper();
+        SilenceSkipper uncompensated = new SilenceSkipper();
+        for (long time = 0; time <= 1000; time += 100) {
+            compensated.update(raisedPause, time, raisedBy);
+            uncompensated.update(raisedPause, time);
+        }
+        assertTrue(compensated.isCompletelySilent());
+        assertFalse(uncompensated.isCompletelySilent());
+    }
+
+    @Test
     public void thresholdAdaptsToANoisyRoom() {
         SilenceSkipper skipper = new SilenceSkipper();
         float[] roomNoise = {-38f, -38f, -38f};

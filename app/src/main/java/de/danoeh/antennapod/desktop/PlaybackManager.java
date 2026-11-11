@@ -68,6 +68,7 @@ public final class PlaybackManager {
     private final SilenceSkipper silenceSkipper = new SilenceSkipper();
     /** True while the audio spectrum is being watched for silence worth skipping over. */
     private volatile boolean silenceWatchActive;
+    private final AudioCompressor compressor = new AudioCompressor(SILENCE_SPECTRUM_THRESHOLD_DB);
     private Media currentFxMedia;
     private ScheduledFuture<?> loadWatchTask;
     private ScheduledFuture<?> stallWatchTask;
@@ -280,8 +281,7 @@ public final class PlaybackManager {
                 notifyState();
             }
         });
-        applyVolumeBoost();
-        configureSilenceSkipping();
+        watchSpectrum();
         int startPosition = Math.max(media.getPosition(), DesktopPreferences.getSkipIntroSec() * 1000);
         player.setOnReady(() -> {
             if (player != created) {
@@ -543,14 +543,17 @@ public final class PlaybackManager {
         return requestedMs < durationMs - START_END_MARGIN_MS ? requestedMs : 0;
     }
 
-    private void applyVolumeBoost() {
+    /**
+     * Sets every equalizer band to one gain: the volume boost and the audio compressor both
+     * work through it. With neither in play the equalizer is switched off instead.
+     */
+    private static void applyBandGain(MediaPlayer target, double gainDb, boolean enabled) {
         try {
-            int boostDb = DesktopPreferences.getVolumeBoostDb();
-            javafx.scene.media.AudioEqualizer equalizer = player.getAudioEqualizer();
-            equalizer.setEnabled(boostDb > 0);
-            if (boostDb > 0) {
+            javafx.scene.media.AudioEqualizer equalizer = target.getAudioEqualizer();
+            equalizer.setEnabled(enabled);
+            if (enabled) {
                 for (javafx.scene.media.EqualizerBand band : equalizer.getBands()) {
-                    band.setGain(Math.min(boostDb, 12));
+                    band.setGain(gainDb);
                 }
             }
         } catch (Exception e) {
@@ -558,40 +561,82 @@ public final class PlaybackManager {
         }
     }
 
+    /** What the bands carry for a compressor gain on top of the volume boost, within their range. */
+    static double bandGainDb(int boostDb, double compressorGainDb) {
+        return Math.max(javafx.scene.media.EqualizerBand.MIN_GAIN,
+                Math.min(javafx.scene.media.EqualizerBand.MAX_GAIN, boostDb + compressorGainDb));
+    }
+
     public synchronized void setSilenceSkipping(boolean enabled) {
         DesktopPreferences.setSkipSilence(enabled);
-        if (player == null) {
-            return;
+        if (player != null) {
+            watchSpectrum();
         }
-        if (!enabled) {
-            silenceWatchActive = false;
-            player.setAudioSpectrumListener(null);
-            return;
-        }
-        configureSilenceSkipping();
     }
 
     public synchronized boolean isSilenceSkipping() {
         return DesktopPreferences.getSkipSilence();
     }
 
-    private void configureSilenceSkipping() {
+    /** Evens out loud and quiet audio, from the next spectrum frame on; see {@link AudioCompressor}. */
+    public synchronized void setAudioCompressor(boolean enabled) {
+        DesktopPreferences.setAudioCompressor(enabled);
+        if (!enabled) {
+            compressor.reset();
+        }
+        if (player != null) {
+            watchSpectrum();
+        }
+    }
+
+    public synchronized boolean isAudioCompressor() {
+        return DesktopPreferences.getAudioCompressor();
+    }
+
+    /**
+     * Sets the player up for what listens to its audio spectrum: silence skipping and the audio
+     * compressor, either, both or neither. Called for every new player and whenever one of
+     * the two is switched.
+     *
+     * <p>The spectrum is tapped after the equalizer and before the volume, so the compressor
+     * reads its own gain back (and takes it out again), while the volume slider reaches neither.
+     */
+    private void watchSpectrum() {
         silenceSkipper.reset();
-        if (!DesktopPreferences.getSkipSilence()) {
-            silenceWatchActive = false;
+        final boolean skipSilence = DesktopPreferences.getSkipSilence();
+        final boolean compress = DesktopPreferences.getAudioCompressor();
+        final int boostDb = DesktopPreferences.getVolumeBoostDb();
+        final MediaPlayer watched = player;
+        silenceWatchActive = skipSilence;
+        // a new episode starts at the gain the last one ended on rather than jumping there
+        final double[] bandGainDb = {bandGainDb(boostDb, compress ? compressor.gainDb() : 0)};
+        applyBandGain(watched, bandGainDb[0], compress || bandGainDb[0] != 0);
+        if (!skipSilence && !compress) {
+            watched.setAudioSpectrumListener(null);
             return;
         }
-        silenceWatchActive = true;
         try {
-            player.setAudioSpectrumInterval(SILENCE_SPECTRUM_INTERVAL_S);
-            player.setAudioSpectrumThreshold(SILENCE_SPECTRUM_THRESHOLD_DB);
+            watched.setAudioSpectrumInterval(SILENCE_SPECTRUM_INTERVAL_S);
+            watched.setAudioSpectrumThreshold(SILENCE_SPECTRUM_THRESHOLD_DB);
         } catch (Exception e) {
             // spectrum tuning is best-effort; detection still works on the defaults
         }
-        final MediaPlayer watched = player;
-        player.setAudioSpectrumListener((timestamp, duration, magnitudes, phases) -> {
-            if (player == watched) {
-                silenceSkipper.update(magnitudes, System.currentTimeMillis());
+        watched.setAudioSpectrumListener((timestamp, duration, magnitudes, phases) -> {
+            if (player != watched) {
+                return;
+            }
+            long now = System.currentTimeMillis();
+            // the gain this frame went through; the boost is left in, as it always was
+            double compressedDb = bandGainDb[0] - boostDb;
+            if (skipSilence) {
+                silenceSkipper.update(magnitudes, now, Math.pow(10.0, compressedDb / 20.0));
+            }
+            if (compress) {
+                double wantedDb = bandGainDb(boostDb, compressor.update(magnitudes, bandGainDb[0], now));
+                if (wantedDb != bandGainDb[0]) {
+                    bandGainDb[0] = wantedDb;
+                    applyBandGain(watched, wantedDb, true);
+                }
             }
         });
     }

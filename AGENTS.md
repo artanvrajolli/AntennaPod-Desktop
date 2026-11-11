@@ -23,7 +23,7 @@ inside `core`.
     `storage/` (SQLite-backed desktop storage, import/export OPML, preferences)
   - `android/` + `androidx/` — hand-written compatibility shims the ported
     engine depends on (Log, XML, media, collections). Keep them minimal.
-  - 38 test classes (JUnit 4) in `core/src/test`.
+  - 39 test classes (JUnit 4) in `core/src/test`.
 - `app/` — JavaFX UI (23 classes under
   `app/src/main/java/de/danoeh/antennapod/desktop`): `DesktopApp` (scenes),
   `PlaybackManager` (JavaFX media playback), `TrayManager` (system tray),
@@ -40,7 +40,7 @@ inside `core`.
   the playing episode in view), `MiddleClickScroll` (middle-click panning),
   `UpdatePill` (the floating card a background update reports through),
   `InstalledCopy` (whether this exe is the installed copy, from its Uninstall entry).
-  26 test classes in `app/src/test`.
+  27 test classes in `app/src/test`.
 
 ## Build, test, run
 
@@ -113,6 +113,12 @@ app\build\install\app\bin\app.bat               :: run the installed distributio
   reads of legacy `sort_code` values fall back to newest, never null.
 - Buttons behind background work (subscribe, search, refresh, sync-now,
   test-login) show a spinner and disable until done.
+- JavaFX hands out no samples, so everything that reacts to the audio works on the
+  spectrum listener, set up in one place (`PlaybackManager.watchSpectrum`). The
+  spectrum is tapped after the equalizer and before the volume, some 300 ms ahead
+  of what is heard. The audio compressor (`AudioCompressor`, the toggle next to
+  skip silence) sets its gain on the equalizer bands, on top of the volume boost,
+  and takes that gain back out of what it and `SilenceSkipper` read.
 - Episode state is written through the narrow `DesktopDatabase` writers
   (`updatePlaybackState`, `setMediaDownloaded`, `clearMediaDownload`,
   `setMediaCacheFile`, `updateMediaFromFeed`). The player, downloader, cache

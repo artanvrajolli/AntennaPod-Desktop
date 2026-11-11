@@ -389,6 +389,15 @@ public final class DesktopPreferences {
         PREFS.putBoolean("skipSilence", enabled);
     }
 
+    /** Whether loud and quiet audio is evened out while playing; see {@link AudioCompressor}. */
+    public static boolean getAudioCompressor() {
+        return PREFS.getBoolean("audioCompressor", false);
+    }
+
+    public static void setAudioCompressor(boolean enabled) {
+        PREFS.putBoolean("audioCompressor", enabled);
+    }
+
     public static boolean getAutoRefreshStartup() {
         return PREFS.getBoolean("autoRefreshStartup", false);
     }

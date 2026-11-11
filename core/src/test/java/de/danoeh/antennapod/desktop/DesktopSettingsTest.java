@@ -14,6 +14,7 @@ public class DesktopSettingsTest {
     private int skipEndingSec;
     private int volumeBoostDb;
     private boolean skipSilence;
+    private boolean audioCompressor;
     private double defaultVolume;
     private double feedSplitPosition;
     private boolean autoDownloadDefault;
@@ -37,6 +38,7 @@ public class DesktopSettingsTest {
         skipEndingSec = DesktopPreferences.getSkipEndingSec();
         volumeBoostDb = DesktopPreferences.getVolumeBoostDb();
         skipSilence = DesktopPreferences.getSkipSilence();
+        audioCompressor = DesktopPreferences.getAudioCompressor();
         defaultVolume = DesktopPreferences.getDefaultVolume();
         feedSplitPosition = DesktopPreferences.getFeedSplitPosition();
         autoDownloadDefault = DesktopPreferences.getAutoDownloadDefault();
@@ -61,6 +63,7 @@ public class DesktopSettingsTest {
         DesktopPreferences.setSkipEndingSec(skipEndingSec);
         DesktopPreferences.setVolumeBoostDb(volumeBoostDb);
         DesktopPreferences.setSkipSilence(skipSilence);
+        DesktopPreferences.setAudioCompressor(audioCompressor);
         DesktopPreferences.setDefaultVolume(defaultVolume);
         DesktopPreferences.setFeedSplitPosition(feedSplitPosition);
         DesktopPreferences.setAutoDownloadDefault(autoDownloadDefault);
@@ -85,12 +88,14 @@ public class DesktopSettingsTest {
         DesktopPreferences.setSkipEndingSec(20);
         DesktopPreferences.setVolumeBoostDb(6);
         DesktopPreferences.setSkipSilence(true);
+        DesktopPreferences.setAudioCompressor(true);
         DesktopPreferences.setDefaultVolume(0.8);
         assertEquals(1.5f, DesktopPreferences.getPlaybackSpeed(), 0.001);
         assertEquals(30, DesktopPreferences.getSkipIntroSec());
         assertEquals(20, DesktopPreferences.getSkipEndingSec());
         assertEquals(6, DesktopPreferences.getVolumeBoostDb());
         assertTrue(DesktopPreferences.getSkipSilence());
+        assertTrue(DesktopPreferences.getAudioCompressor());
         assertEquals(0.8, DesktopPreferences.getDefaultVolume(), 0.001);
     }
 

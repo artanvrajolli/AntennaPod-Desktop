@@ -104,8 +104,9 @@ public final class SilenceSkipper {
      *
      * @param magnitudes per-band magnitudes in dB, as delivered by JavaFX
      * @param nowMs      current time, used for the enter/exit hold durations
-     * @param duckGain   current volume factor applied by the player (1.0 = full volume); the
-     *                   attenuation is added back so detection sees the pre-volume level
+     * @param duckGain   level factor the player applied ahead of the spectrum (1.0 = untouched,
+     *                   below it turned down, above it turned up); it is taken back out so
+     *                   detection sees the episode's own level
      * @return whether the audio is currently considered silence worth skipping
      */
     public synchronized boolean update(float[] magnitudes, long nowMs, double duckGain) {
@@ -226,9 +227,9 @@ public final class SilenceSkipper {
             return Double.NEGATIVE_INFINITY;
         }
         double levelDb = 10.0 * Math.log10(Math.max(sumPower / count, 1e-12));
-        if (!(duckGain <= 0.0) && duckGain < 1.0) {
-            // the player turned the volume down by duckGain; add the attenuation back so the
-            // detector judges the episode, not the ducking
+        if (duckGain > 0.0 && duckGain != 1.0) {
+            // the player changed the level by duckGain (ducking it, or the audio compressor
+            // raising or lowering it); take that back out so the detector judges the episode
             levelDb -= 20.0 * Math.log10(duckGain);
         }
         return levelDb;

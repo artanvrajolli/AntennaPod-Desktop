@@ -285,6 +285,15 @@ public final class Icons {
                 + rect(196, 96, 24, 64, 12), size);
     }
 
+    /** Two arrows squeezing a level line from above and below: the audio compressor. */
+    public static Node compressor() {
+        return icon(capsule(128, 29, 128, 48, 30)
+                + arrowHead(128, 44, 0, 1, 56, 60)
+                + capsule(27, 128, 229, 128, 26)
+                + arrowHead(128, 212, 0, -1, 56, 60)
+                + capsule(128, 227, 128, 208, 30));
+    }
+
     /** A window with its caption filled in: bring the main window back. */
     public static Node window() {
         return icon(frame(52, 68, 152, 132, 22, 22) + rect(52, 68, 152, 44, 22));

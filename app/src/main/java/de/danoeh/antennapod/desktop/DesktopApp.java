@@ -212,6 +212,7 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
     private boolean paintedVolumeDark;
     private ComboBox<String> speedBox;
     private Button silenceButton;
+    private Button compressorButton;
     private ProgressIndicator loadingSpinner;
     private Scene scene;
     private boolean sliderDragging;
@@ -2392,6 +2393,11 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
                 setSilenceSkipping(!DesktopPreferences.getSkipSilence()));
         updateSilenceButtonTooltip();
 
+        compressorButton = iconButton(Icons.compressor(), Messages.get("player.audio_compressor"));
+        compressorButton.setOnAction(event ->
+                setAudioCompressor(!DesktopPreferences.getAudioCompressor()));
+        updateCompressorButtonTooltip();
+
         volumeSlider = new Slider(0, 1, DesktopPreferences.getDefaultVolume());
         volumeSlider.setPrefWidth(100);
         lastVolume = DesktopPreferences.getDefaultVolume() > 0
@@ -2444,8 +2450,8 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
         transportRow.setAlignment(Pos.CENTER);
         castButton = iconButton(Icons.cast(), Messages.get("cast.button"));
         castButton.setOnAction(event -> showCastMenu());
-        HBox extrasRow = new HBox(8, speedBox, silenceButton, muteButton, volumeSlider, sleepButton,
-                castButton);
+        HBox extrasRow = new HBox(8, speedBox, silenceButton, compressorButton, muteButton, volumeSlider,
+                sleepButton, castButton);
         extrasRow.setAlignment(Pos.CENTER_RIGHT);
         // keep the overlay only as wide as its content, otherwise it swallows
         // the mouse clicks meant for the transport buttons underneath
@@ -4394,6 +4400,23 @@ public class DesktopApp extends Application implements PlaybackManager.Listener,
             silenceButton.setTooltip(new Tooltip(enabled
                     ? Messages.get("player.skip_silence.on") : Messages.get("player.skip_silence.off")));
             silenceButton.setOpacity(enabled ? 1.0 : 0.55);
+        }
+    }
+
+    /** Switches the audio compressor: loud and quiet audio evened out while playing. */
+    private void setAudioCompressor(boolean enabled) {
+        playback.setAudioCompressor(enabled);
+        updateCompressorButtonTooltip();
+        setStatus(enabled ? Messages.get("status.audio_compressor.enabled")
+                : Messages.get("status.audio_compressor.disabled"));
+    }
+
+    private void updateCompressorButtonTooltip() {
+        if (compressorButton != null) {
+            boolean enabled = DesktopPreferences.getAudioCompressor();
+            compressorButton.setTooltip(new Tooltip(enabled
+                    ? Messages.get("player.audio_compressor.on") : Messages.get("player.audio_compressor.off")));
+            compressorButton.setOpacity(enabled ? 1.0 : 0.55);
         }
     }
 
