@@ -431,31 +431,61 @@
 
 /* ---------------------------------------------------------------- tray mini player */
 
+/* The mini player keeps Spotify's dark surface in both themes, with its green as the accent. */
 .tray-panel {
-    -fx-background-color: -fx-background;
-    -fx-border-color: rgba(0, 0, 0, 0.16);
+    -fx-background-color: #121212;
+    -fx-border-color: #2a2a2a;
     -fx-border-width: 1;
 }
 
 .tray-title {
-    -fx-font-size: 12px;
+    -fx-font-size: 13px;
     -fx-font-weight: bold;
+    -fx-text-fill: #ffffff;
 }
 
 .tray-feed {
     -fx-font-size: 11px;
+    -fx-text-fill: #b3b3b3;
 }
 
 .tray-time {
     -fx-font-size: 10px;
+    -fx-text-fill: #b3b3b3;
 }
 
 .tray-panel .slider .track {
+    -fx-background-color: #4d4d4d;
+    -fx-background-radius: 2;
     -fx-pref-height: 4;
 }
 
 .tray-panel .slider .thumb {
+    -fx-background-color: #ffffff;
+    -fx-background-insets: 0;
+    -fx-background-radius: 1em;
     -fx-padding: 4;
+}
+
+/* Spotify's controls are glyphs on the surface, not buttons: only a round hover shows. */
+.tray-panel .icon-button {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-background-radius: 20;
+}
+
+.icon-button.tray-corner {
+    -fx-padding: 3;
+}
+
+.tray-panel .icon-button:hover,
+.tray-panel .icon-button.flat:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.08);
+}
+
+.tray-panel .icon-button:pressed,
+.tray-panel .icon-button.flat:pressed {
+    -fx-background-color: rgba(255, 255, 255, 0.14);
 }
 
 /* Corner and transport glyphs are drawn for the tray's roomier buttons, so they keep their
@@ -466,8 +496,8 @@
     -fx-scale-y: 1;
 }
 
-.tray-play {
-    -fx-background-color: -fx-accent;
+.button.tray-play {
+    -fx-background-color: #1db954;
     -fx-background-radius: 20;
     -fx-background-insets: 0;
     -fx-min-width: 40;
@@ -479,15 +509,31 @@
     -fx-padding: 0;
 }
 
-.tray-play:hover {
-    -fx-background-color: derive(-fx-accent, -12%);
+.button.tray-play:hover {
+    -fx-background-color: #1ed760;
 }
 
-.tray-play:pressed {
-    -fx-background-color: derive(-fx-accent, -22%);
+.button.tray-play:pressed {
+    -fx-background-color: #1aa34a;
 }
 
-.tray-show {
+.button.tray-show {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-color: #535353;
+    -fx-border-width: 1;
+    -fx-border-radius: 16;
+    -fx-background-radius: 16;
+    -fx-text-fill: #ffffff;
     -fx-font-size: 12px;
     -fx-padding: 5 12 5 12;
+}
+
+.button.tray-show:hover {
+    -fx-border-color: #ffffff;
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+}
+
+.button.tray-show:pressed {
+    -fx-background-color: rgba(255, 255, 255, 0.10);
 }

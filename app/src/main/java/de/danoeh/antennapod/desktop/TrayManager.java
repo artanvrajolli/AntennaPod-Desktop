@@ -12,19 +12,21 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.Point2D;
 import javafx.geometry.Rectangle2D;
+import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.layout.Priority;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.Separator;
 import javafx.scene.control.Slider;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
+import javafx.scene.text.FontWeight;
+import javafx.scene.text.Text;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
@@ -76,6 +78,9 @@ public final class TrayManager {
     private Label elapsedLabel;
     private Label totalLabel;
     private Slider progressSlider;
+    /** The slider's track node, repainted with the played run the way Spotify draws its bar. */
+    private Node progressTrack;
+    private double paintedTrackPercent = -1;
     private boolean traySeeking;
     private BufferedImage defaultIcon;
     private java.awt.Image currentIcon;
@@ -202,33 +207,36 @@ public final class TrayManager {
         HBox.setHgrow(titles, Priority.ALWAYS);
         // pin and close sit in the corner, as on any small window: close only puts the
         // controls away (the app keeps playing); quitting is on the tray icon's shortcut menu
-        pinButton = corner(Icons.pin(PIN_SIZE), Messages.get("tray.keep_open"), () -> setPinned(!pinned));
+        pinButton = corner(Icons.miniPlayer(MINI_PLAYER_SIZE), Messages.get("tray.keep_open"),
+                () -> setPinned(!pinned));
         showPinned(pinned);
-        Button close = corner(Icons.windowClose(), Messages.get("common.close"), this::hideControls);
+        Button close = corner(Icons.tint(Icons.windowClose(), SPOTIFY_MUTED),
+                Messages.get("common.close"), this::hideControls);
         HBox corner = new HBox(2, pinButton, close);
         corner.setAlignment(Pos.TOP_RIGHT);
         HBox header = new HBox(10, artworkView, titles, corner);
         header.setAlignment(Pos.CENTER_LEFT);
         playPauseButton = playPause();
         playPauseButton.setOnAction(event -> callbacks.onPlayPause());
-        Button skipBack = control(Icons.replay10(TRANSPORT_ICON_SIZE), Messages.get("tray.skip_back"),
-                callbacks::onSkipBack);
-        Button skipForward = control(Icons.forward30(TRANSPORT_ICON_SIZE), Messages.get("tray.skip_forward"),
-                callbacks::onSkipForward);
-        Button next = control(Icons.next(TRANSPORT_ICON_SIZE), Messages.get("player.next"),
-                callbacks::onNext);
-        silenceButton = control(Icons.wave(TRANSPORT_ICON_SIZE), Messages.get("player.skip_silence"), () -> {
-            boolean enabled = !callbacks.isSilenceSkipping();
-            updateSilenceSkipping(enabled);
-            callbacks.onSilenceSkipping(enabled);
-        });
+        Button skipBack = control(skipIcon(Icons.replay10(TRANSPORT_ICON_SIZE), "10"),
+                Messages.get("tray.skip_back"), callbacks::onSkipBack);
+        Button skipForward = control(skipIcon(Icons.forward30(TRANSPORT_ICON_SIZE), "30"),
+                Messages.get("tray.skip_forward"), callbacks::onSkipForward);
+        Button next = control(Icons.tint(Icons.next(TRANSPORT_ICON_SIZE), SPOTIFY_WHITE),
+                Messages.get("player.next"), callbacks::onNext);
+        silenceButton = control(Icons.tint(Icons.wave(TRANSPORT_ICON_SIZE), SPOTIFY_WHITE),
+                Messages.get("player.skip_silence"), () -> {
+                    boolean enabled = !callbacks.isSilenceSkipping();
+                    updateSilenceSkipping(enabled);
+                    callbacks.onSilenceSkipping(enabled);
+                });
         updateSilenceSkipping(callbacks.isSilenceSkipping());
         episodeControls = List.of(skipBack, skipForward, next);
-        transportRow = new HBox(8, skipBack, playPauseButton, skipForward, next, silenceButton);
+        transportRow = new HBox(6, skipBack, playPauseButton, skipForward, next, silenceButton);
         transportRow.setAlignment(Pos.CENTER);
         transportRow.getStyleClass().add("tray-transport");
         // skip silence is a mode rather than a transport step: a little air keeps the two apart
-        HBox.setMargin(silenceButton, new Insets(0, 0, 0, 4));
+        HBox.setMargin(silenceButton, new Insets(0, 0, 0, 6));
         setEpisodeControlsDisabled(true);
         progressSlider = new Slider(0, 1, 0);
         progressSlider.setMaxWidth(Double.MAX_VALUE);
@@ -240,15 +248,19 @@ public final class TrayManager {
                 callbacks.onSeek((int) progressSlider.getValue());
             }
         });
+        progressSlider.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (traySeeking) {
+                elapsedLabel.setText(formatTime(newValue.intValue()));
+                paintProgressTrack(newValue.intValue(), (int) progressSlider.getMax());
+            }
+        });
         elapsedLabel = timeLabel(Pos.CENTER_LEFT);
         totalLabel = timeLabel(Pos.CENTER_RIGHT);
-        Region timeGap = new Region();
-        HBox.setHgrow(timeGap, Priority.ALWAYS);
-        HBox times = new HBox(0, elapsedLabel, timeGap, totalLabel);
-        times.setAlignment(Pos.CENTER_LEFT);
-        VBox progress = new VBox(3, progressSlider, times);
+        HBox progressRow = new HBox(8, elapsedLabel, progressSlider, totalLabel);
+        progressRow.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(progressSlider, Priority.ALWAYS);
         // one plain, labelled way back to the app, full width so it reads as the panel's action
-        Button show = new Button(Messages.get("tray.show"), Icons.tint(Icons.window(), "white"));
+        Button show = new Button(Messages.get("tray.show"));
         show.getStyleClass().add("tray-show");
         show.setDefaultButton(true);
         show.setMaxWidth(Double.MAX_VALUE);
@@ -256,25 +268,39 @@ public final class TrayManager {
             hideControls();
             callbacks.onShow();
         });
-        VBox panel = new VBox(8, header, progress, transportRow, new Separator(), show);
+        VBox panel = new VBox(10, header, transportRow, progressRow, show);
         panel.getStyleClass().add("tray-panel");
-        panel.setPadding(new Insets(10));
+        panel.setPadding(new Insets(12));
         panel.setPrefWidth(PANEL_WIDTH);
         return panel;
     }
 
     private static Button playPause() {
-        Button button = new Button("", Icons.tint(Icons.play(PLAY_ICON_SIZE), "white"));
+        Button button = new Button("", Icons.tint(Icons.play(PLAY_ICON_SIZE), SPOTIFY_BLACK));
         button.getStyleClass().add("tray-play");
         button.setAccessibleText(Messages.get("common.play"));
         button.setTooltip(new Tooltip(Messages.get("common.play")));
         return button;
     }
 
+    /** The circular skip arrows with the seconds inside them, as Spotify's podcast controls do. */
+    private static Node skipIcon(Node arc, String seconds) {
+        Icons.tint(arc, SPOTIFY_WHITE);
+        Text text = new Text(seconds);
+        text.setFont(javafx.scene.text.Font.font("Segoe UI", FontWeight.BOLD, 6.5));
+        text.setFill(javafx.scene.paint.Color.web(SPOTIFY_WHITE));
+        StackPane stack = new StackPane(arc, text);
+        stack.setMinSize(TRANSPORT_ICON_SIZE, TRANSPORT_ICON_SIZE);
+        stack.setPrefSize(TRANSPORT_ICON_SIZE, TRANSPORT_ICON_SIZE);
+        stack.setMaxSize(TRANSPORT_ICON_SIZE, TRANSPORT_ICON_SIZE);
+        return stack;
+    }
+
     private static Label timeLabel(Pos alignment) {
         Label label = new Label("");
         label.getStyleClass().addAll("muted-label", "tray-time");
         label.setAlignment(alignment);
+        label.setMinWidth(TIME_WIDTH);
         return label;
     }
 
@@ -308,8 +334,8 @@ public final class TrayManager {
         String text = enabled ? Messages.get("player.skip_silence.on") : Messages.get("player.skip_silence.off");
         silenceButton.setTooltip(new Tooltip(text));
         silenceButton.setAccessibleText(text);
-        silenceButton.setGraphic(enabled ? Icons.accent(Icons.wave(TRANSPORT_ICON_SIZE))
-                : Icons.wave(TRANSPORT_ICON_SIZE));
+        silenceButton.setGraphic(Icons.tint(Icons.wave(TRANSPORT_ICON_SIZE),
+                enabled ? SPOTIFY_GREEN : SPOTIFY_WHITE));
         silenceButton.setOpacity(enabled ? 1.0 : 0.55);
     }
 
@@ -322,6 +348,7 @@ public final class TrayManager {
             progressSlider.setValue(0);
             elapsedLabel.setText("");
             totalLabel.setText("");
+            paintProgressTrack(0, 0);
             lastPositionMs = 0;
             lastDurationMs = 0;
             repaintTrayIcon();
@@ -334,9 +361,40 @@ public final class TrayManager {
         }
         elapsedLabel.setText(formatTime(positionMs));
         totalLabel.setText(formatTime(durationMs));
+        paintProgressTrack(positionMs, durationMs);
         lastPositionMs = Math.max(positionMs, 0);
         lastDurationMs = durationMs;
         repaintTrayIcon();
+    }
+
+    /**
+     * Fills the played run of the scrubber, the way Spotify's bar fills; the track's stylesheet
+     * colour is the unplayed remainder, and the inline gradient is cleared with no episode.
+     */
+    private void paintProgressTrack(int positionMs, int durationMs) {
+        if (progressSlider == null) {
+            return;
+        }
+        if (progressTrack == null) {
+            progressTrack = progressSlider.lookup(".track");
+        }
+        if (progressTrack == null) {
+            return;
+        }
+        if (durationMs <= 0) {
+            progressTrack.setStyle(null);
+            paintedTrackPercent = -1;
+            return;
+        }
+        double percent = Math.max(0, Math.min(100, positionMs * 100.0 / durationMs));
+        if (Math.abs(percent - paintedTrackPercent) < 0.5) {
+            return;
+        }
+        paintedTrackPercent = percent;
+        progressTrack.setStyle(String.format(java.util.Locale.US,
+                "-fx-background-color: linear-gradient(to right, %s 0%%, %s %.2f%%,"
+                        + " #4d4d4d %.2f%%, #4d4d4d 100%%);",
+                SPOTIFY_WHITE, SPOTIFY_WHITE, percent, percent));
     }
 
     private static String formatTime(int millis) {
@@ -356,12 +414,17 @@ public final class TrayManager {
     }
 
     private static final double PANEL_WIDTH = 320;
-    private static final double ARTWORK_SIZE = 44;
-    private static final double PIN_SIZE = 22;
-    private static final double TRANSPORT_ICON_SIZE = 17;
+    private static final double ARTWORK_SIZE = 48;
+    private static final double MINI_PLAYER_SIZE = 22;
+    private static final double TRANSPORT_ICON_SIZE = 18;
     private static final double PLAY_ICON_SIZE = 24;
+    private static final double TIME_WIDTH = 32;
     /** What the titles get beside the artwork and the corner buttons. */
     private static final double TITLE_WIDTH = 176;
+    private static final String SPOTIFY_GREEN = "#1db954";
+    private static final String SPOTIFY_WHITE = "#ffffff";
+    private static final String SPOTIFY_MUTED = "#b3b3b3";
+    private static final String SPOTIFY_BLACK = "#000000";
     /** A tray click within this long of the controls closing on lost focus was what closed them. */
     private static final long REOPEN_GUARD_MS = 400;
     private volatile long autoHiddenAt;
@@ -441,8 +504,10 @@ public final class TrayManager {
         }
         pinButton.setTooltip(new Tooltip(pin
                 ? Messages.get("tray.unpin") : Messages.get("tray.keep_open.tooltip")));
-        // lit while pinned, like any toggle, so the state shows without hovering
-        pinButton.setGraphic(pin ? Icons.accent(Icons.pin(PIN_SIZE)) : Icons.pin(PIN_SIZE));
+        // green while pinned, like Spotify's active controls, so the state shows without hovering
+        pinButton.setGraphic(pin
+                ? Icons.tint(Icons.miniPlayer(MINI_PLAYER_SIZE), SPOTIFY_GREEN)
+                : Icons.tint(Icons.miniPlayer(MINI_PLAYER_SIZE), SPOTIFY_MUTED));
         pinButton.setAccessibleText(pin ? Messages.get("tray.unpin") : Messages.get("tray.keep_open"));
     }
 
@@ -518,7 +583,7 @@ public final class TrayManager {
         }
         boolean hasEpisode = nowPlaying != null && !nowPlaying.isEmpty();
         playPauseButton.setGraphic(Icons.tint(playing ? Icons.pause(PLAY_ICON_SIZE)
-                : Icons.play(PLAY_ICON_SIZE), "white"));
+                : Icons.play(PLAY_ICON_SIZE), SPOTIFY_BLACK));
         playPauseButton.setAccessibleText(playing ? Messages.get("player.pause") : Messages.get("common.play"));
         playPauseButton.getTooltip().setText(playing ? Messages.get("player.pause") : Messages.get("common.play"));
         setEpisodeControlsDisabled(!hasEpisode);

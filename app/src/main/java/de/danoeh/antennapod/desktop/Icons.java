@@ -312,22 +312,13 @@ public final class Icons {
                 + capsule(128, 227, 128, 208, 30));
     }
 
-    /** A window with its caption filled in: bring the main window back. */
-    public static Node window() {
-        return icon(frame(52, 68, 152, 132, 22, 22) + rect(52, 68, 152, 44, 22));
+    /** A window with a smaller one inset, the way Spotify draws its mini player toggle. */
+    public static Node miniPlayer() {
+        return miniPlayer(SIZE);
     }
 
-    // Material Design "push_pin" (Apache 2.0), drawn on a 24 unit grid
-    private static final String PUSH_PIN =
-            "M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z";
-
-    /** A standard pushpin: flat head, tapered neck, wide collar and a slim needle. */
-    public static Node pin() {
-        return pin(SIZE);
-    }
-
-    public static Node pin(double size) {
-        return icon(PUSH_PIN, size, 24);
+    public static Node miniPlayer(double size) {
+        return icon(frame(36, 52, 184, 152, 22, 22) + rect(124, 130, 68, 48, 10), size);
     }
 
     // GitHub mark, drawn on a 16 unit grid (from GitHub's own octicon, MIT licensed)

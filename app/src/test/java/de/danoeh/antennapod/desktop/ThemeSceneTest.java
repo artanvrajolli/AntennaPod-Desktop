@@ -60,7 +60,7 @@ public class ThemeSceneTest {
                 actions.add("silence:" + enabled);
             }
         });
-        // header (artwork + titles + corner buttons), progress, transport, footer
+        // header (artwork + titles + corner buttons), transport, progress, footer
         javafx.scene.layout.HBox header = (javafx.scene.layout.HBox) panel.getChildren().get(0);
         org.junit.Assert.assertEquals(3, header.getChildren().size());
         // pin and close in the corner; close only puts the controls away, it never quits
@@ -76,27 +76,26 @@ public class ThemeSceneTest {
         org.junit.Assert.assertEquals("Nothing playing",
                 ((javafx.scene.control.Label) titles.getChildren().get(0)).getText());
 
-        // the scrubber keeps the full width, with the two times underneath it
-        javafx.scene.layout.VBox progress =
-                (javafx.scene.layout.VBox) panel.getChildren().get(1);
+        // the scrubber sits between its two times, the way Spotify's player bar does
+        javafx.scene.layout.HBox progress =
+                (javafx.scene.layout.HBox) panel.getChildren().get(2);
         javafx.scene.control.Slider progressSlider =
-                (javafx.scene.control.Slider) progress.getChildren().get(0);
+                (javafx.scene.control.Slider) progress.getChildren().get(1);
         org.junit.Assert.assertTrue(progressSlider.isDisable());
-        javafx.scene.layout.HBox times = (javafx.scene.layout.HBox) progress.getChildren().get(1);
         org.junit.Assert.assertEquals("",
-                ((javafx.scene.control.Label) times.getChildren().get(0)).getText());
+                ((javafx.scene.control.Label) progress.getChildren().get(0)).getText());
         manager.updateProgress(65000, 3600000);
         org.junit.Assert.assertFalse(progressSlider.isDisable());
         org.junit.Assert.assertEquals(65000.0, progressSlider.getValue(), 0.01);
         org.junit.Assert.assertEquals("1:05",
-                ((javafx.scene.control.Label) times.getChildren().get(0)).getText());
+                ((javafx.scene.control.Label) progress.getChildren().get(0)).getText());
         org.junit.Assert.assertEquals("60:00",
-                ((javafx.scene.control.Label) times.getChildren().get(2)).getText());
+                ((javafx.scene.control.Label) progress.getChildren().get(2)).getText());
         progressSlider.setValue(120000);
         progressSlider.getOnMousePressed().handle(null);
         progressSlider.getOnMouseReleased().handle(null);
 
-        javafx.scene.layout.HBox transport = (javafx.scene.layout.HBox) panel.getChildren().get(2);
+        javafx.scene.layout.HBox transport = (javafx.scene.layout.HBox) panel.getChildren().get(1);
         // back, play, forward, next, then the skip-silence toggle
         org.junit.Assert.assertEquals(5, transport.getChildren().size());
         // nothing loaded yet: play/pause stays usable (it resumes the last episode) and so
@@ -119,11 +118,9 @@ public class ThemeSceneTest {
             org.junit.Assert.assertNotNull(button.getTooltip());
             button.fire();
         }
-        org.junit.Assert.assertTrue(panel.getChildren().get(3)
-                instanceof javafx.scene.control.Separator);
         // the footer is one labelled, full-width way back to the app; Exit is on the tray
         // icon's right-click menu, where Windows users look for it
-        javafx.scene.control.Button show = (javafx.scene.control.Button) panel.getChildren().get(4);
+        javafx.scene.control.Button show = (javafx.scene.control.Button) panel.getChildren().get(3);
         org.junit.Assert.assertEquals("Show AntennaPod", show.getText());
         assertTrue(show.isDefaultButton());
         org.junit.Assert.assertEquals(Double.MAX_VALUE, show.getMaxWidth(), 0.0);
