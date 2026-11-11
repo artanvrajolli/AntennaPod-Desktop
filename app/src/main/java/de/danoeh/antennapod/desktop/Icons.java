@@ -317,19 +317,17 @@ public final class Icons {
         return icon(frame(52, 68, 152, 132, 22, 22) + rect(52, 68, 152, 44, 22));
     }
 
-    /**
-     * A pushpin: a wide head, a tapered neck, a collar and a slim needle. The collar is what
-     * separates it from a letter T at tray size, and the head carries the weight.
-     */
+    // Material Design "push_pin" (Apache 2.0), drawn on a 24 unit grid
+    private static final String PUSH_PIN =
+            "M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z";
+
+    /** A standard pushpin: flat head, tapered neck, wide collar and a slim needle. */
     public static Node pin() {
         return pin(SIZE);
     }
 
     public static Node pin(double size) {
-        return icon(rect(48, 52, 160, 28, 14)
-                + polygon(true, 106, 74, 150, 74, 139, 146, 117, 146)
-                + rect(80, 142, 96, 18, 9)
-                + polygon(true, 121, 156, 135, 156, 128, 216), size);
+        return icon(PUSH_PIN, size, 24);
     }
 
     // GitHub mark, drawn on a 16 unit grid (from GitHub's own octicon, MIT licensed)

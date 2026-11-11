@@ -438,7 +438,7 @@
 }
 
 .tray-title {
-    -fx-font-size: 13px;
+    -fx-font-size: 12px;
     -fx-font-weight: bold;
 }
 
@@ -450,6 +450,14 @@
     -fx-font-size: 10px;
 }
 
+.tray-panel .slider .track {
+    -fx-pref-height: 4;
+}
+
+.tray-panel .slider .thumb {
+    -fx-padding: 4;
+}
+
 /* Corner and transport glyphs are drawn for the tray's roomier buttons, so they keep their
    size instead of taking the toolbar's 0.85 shrink. */
 .icon-button.tray-corner > .region,
@@ -458,20 +466,16 @@
     -fx-scale-y: 1;
 }
 
-.icon-button.flat.tray-pin.on {
-    -fx-background-color: -fx-selection-bar;
-}
-
 .tray-play {
     -fx-background-color: -fx-accent;
-    -fx-background-radius: 23;
+    -fx-background-radius: 20;
     -fx-background-insets: 0;
-    -fx-min-width: 46;
-    -fx-min-height: 46;
-    -fx-pref-width: 46;
-    -fx-pref-height: 46;
-    -fx-max-width: 46;
-    -fx-max-height: 46;
+    -fx-min-width: 40;
+    -fx-min-height: 40;
+    -fx-pref-width: 40;
+    -fx-pref-height: 40;
+    -fx-max-width: 40;
+    -fx-max-height: 40;
     -fx-padding: 0;
 }
 
@@ -485,5 +489,5 @@
 
 .tray-show {
     -fx-font-size: 12px;
-    -fx-padding: 7 12 7 12;
+    -fx-padding: 5 12 5 12;
 }

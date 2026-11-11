@@ -185,12 +185,14 @@ public final class TrayManager {
         artworkView.setFitHeight(ARTWORK_SIZE);
         artworkView.setPreserveRatio(true);
         artworkView.setSmooth(true);
-        artworkView.setClip(roundedClip(ARTWORK_SIZE, 9));
+        artworkView.setClip(roundedClip(ARTWORK_SIZE, 8));
         nowPlayingLabel = new Label(Messages.get("player.nothing_playing"));
-        nowPlayingLabel.setWrapText(true);
+        nowPlayingLabel.setWrapText(false);
+        nowPlayingLabel.setMinWidth(0);
         nowPlayingLabel.setMaxWidth(TITLE_WIDTH);
         nowPlayingLabel.getStyleClass().add("tray-title");
         feedLabel = new Label("");
+        feedLabel.setMinWidth(0);
         feedLabel.setMaxWidth(TITLE_WIDTH);
         feedLabel.getStyleClass().addAll("muted-label", "tray-feed");
         feedLabel.setVisible(false);
@@ -201,12 +203,11 @@ public final class TrayManager {
         // pin and close sit in the corner, as on any small window: close only puts the
         // controls away (the app keeps playing); quitting is on the tray icon's shortcut menu
         pinButton = corner(Icons.pin(PIN_SIZE), Messages.get("tray.keep_open"), () -> setPinned(!pinned));
-        pinButton.getStyleClass().add("tray-pin");
         showPinned(pinned);
         Button close = corner(Icons.windowClose(), Messages.get("common.close"), this::hideControls);
         HBox corner = new HBox(2, pinButton, close);
         corner.setAlignment(Pos.TOP_RIGHT);
-        HBox header = new HBox(12, artworkView, titles, corner);
+        HBox header = new HBox(10, artworkView, titles, corner);
         header.setAlignment(Pos.CENTER_LEFT);
         playPauseButton = playPause();
         playPauseButton.setOnAction(event -> callbacks.onPlayPause());
@@ -245,7 +246,7 @@ public final class TrayManager {
         HBox.setHgrow(timeGap, Priority.ALWAYS);
         HBox times = new HBox(0, elapsedLabel, timeGap, totalLabel);
         times.setAlignment(Pos.CENTER_LEFT);
-        VBox progress = new VBox(4, progressSlider, times);
+        VBox progress = new VBox(3, progressSlider, times);
         // one plain, labelled way back to the app, full width so it reads as the panel's action
         Button show = new Button(Messages.get("tray.show"), Icons.tint(Icons.window(), "white"));
         show.getStyleClass().add("tray-show");
@@ -255,9 +256,9 @@ public final class TrayManager {
             hideControls();
             callbacks.onShow();
         });
-        VBox panel = new VBox(12, header, progress, transportRow, new Separator(), show);
+        VBox panel = new VBox(8, header, progress, transportRow, new Separator(), show);
         panel.getStyleClass().add("tray-panel");
-        panel.setPadding(new Insets(14));
+        panel.setPadding(new Insets(10));
         panel.setPrefWidth(PANEL_WIDTH);
         return panel;
     }
@@ -349,16 +350,16 @@ public final class TrayManager {
         button.getStyleClass().add("icon-button");
         button.setAccessibleText(label);
         button.setTooltip(new Tooltip(label));
-        button.setMinSize(38, 36);
+        button.setMinSize(34, 32);
         button.setOnAction(event -> action.run());
         return button;
     }
 
     private static final double PANEL_WIDTH = 320;
-    private static final double ARTWORK_SIZE = 52;
-    private static final double PIN_SIZE = 24;
-    private static final double TRANSPORT_ICON_SIZE = 18;
-    private static final double PLAY_ICON_SIZE = 28;
+    private static final double ARTWORK_SIZE = 44;
+    private static final double PIN_SIZE = 22;
+    private static final double TRANSPORT_ICON_SIZE = 17;
+    private static final double PLAY_ICON_SIZE = 24;
     /** What the titles get beside the artwork and the corner buttons. */
     private static final double TITLE_WIDTH = 176;
     /** A tray click within this long of the controls closing on lost focus was what closed them. */
@@ -369,8 +370,8 @@ public final class TrayManager {
     private static Button corner(javafx.scene.Node icon, String label, Runnable action) {
         Button button = control(icon, label, action);
         button.getStyleClass().addAll("flat", "tray-corner");
-        button.setMinSize(30, 30);
-        button.setPrefSize(30, 30);
+        button.setMinSize(28, 28);
+        button.setPrefSize(28, 28);
         return button;
     }
 
@@ -442,10 +443,6 @@ public final class TrayManager {
                 ? Messages.get("tray.unpin") : Messages.get("tray.keep_open.tooltip")));
         // lit while pinned, like any toggle, so the state shows without hovering
         pinButton.setGraphic(pin ? Icons.accent(Icons.pin(PIN_SIZE)) : Icons.pin(PIN_SIZE));
-        pinButton.getStyleClass().remove("on");
-        if (pin) {
-            pinButton.getStyleClass().add("on");
-        }
         pinButton.setAccessibleText(pin ? Messages.get("tray.unpin") : Messages.get("tray.keep_open"));
     }
 
