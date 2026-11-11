@@ -60,7 +60,7 @@ public class ThemeSceneTest {
                 actions.add("silence:" + enabled);
             }
         });
-        // header (artwork + titles + corner buttons), transport, progress — each behind a separator
+        // header (artwork + titles + corner buttons), progress, transport, footer
         javafx.scene.layout.HBox header = (javafx.scene.layout.HBox) panel.getChildren().get(0);
         org.junit.Assert.assertEquals(3, header.getChildren().size());
         // pin and close in the corner; close only puts the controls away, it never quits
@@ -75,24 +75,37 @@ public class ThemeSceneTest {
                 (javafx.scene.layout.VBox) header.getChildren().get(1);
         org.junit.Assert.assertEquals("Nothing playing",
                 ((javafx.scene.control.Label) titles.getChildren().get(0)).getText());
-        org.junit.Assert.assertTrue(panel.getChildren().get(1)
-                instanceof javafx.scene.control.Separator);
+
+        // the scrubber keeps the full width, with the two times underneath it
+        javafx.scene.layout.VBox progress =
+                (javafx.scene.layout.VBox) panel.getChildren().get(1);
+        javafx.scene.control.Slider progressSlider =
+                (javafx.scene.control.Slider) progress.getChildren().get(0);
+        org.junit.Assert.assertTrue(progressSlider.isDisable());
+        javafx.scene.layout.HBox times = (javafx.scene.layout.HBox) progress.getChildren().get(1);
+        org.junit.Assert.assertEquals("",
+                ((javafx.scene.control.Label) times.getChildren().get(0)).getText());
+        manager.updateProgress(65000, 3600000);
+        org.junit.Assert.assertFalse(progressSlider.isDisable());
+        org.junit.Assert.assertEquals(65000.0, progressSlider.getValue(), 0.01);
+        org.junit.Assert.assertEquals("1:05",
+                ((javafx.scene.control.Label) times.getChildren().get(0)).getText());
+        org.junit.Assert.assertEquals("60:00",
+                ((javafx.scene.control.Label) times.getChildren().get(2)).getText());
+        progressSlider.setValue(120000);
+        progressSlider.getOnMousePressed().handle(null);
+        progressSlider.getOnMouseReleased().handle(null);
+
         javafx.scene.layout.HBox transport = (javafx.scene.layout.HBox) panel.getChildren().get(2);
-        // five transport buttons, then the skip-silence toggle
-        org.junit.Assert.assertEquals(6, transport.getChildren().size());
-        // a Next button closes the row on both sides
-        org.junit.Assert.assertEquals("Next episode",
-                ((javafx.scene.control.Button) transport.getChildren().get(0)).getTooltip().getText());
-        org.junit.Assert.assertEquals("Next episode",
-                ((javafx.scene.control.Button) transport.getChildren().get(4)).getTooltip().getText());
-        // nothing loaded yet: play/pause stays usable (it resumes the last episode), the
-        // buttons that act on a loaded episode are disabled
+        // back, play, forward, next, then the skip-silence toggle
+        org.junit.Assert.assertEquals(5, transport.getChildren().size());
+        // nothing loaded yet: play/pause stays usable (it resumes the last episode) and so
+        // does skip silence, a preference; the buttons that act on an episode are disabled
         assertFalse(transport.isDisable());
-        // skip silence is a preference, so it stays usable with nothing loaded too
         for (int i = 0; i < transport.getChildren().size(); i++) {
-            assertEquals(i != 2 && i != 5, transport.getChildren().get(i).isDisable());
+            assertEquals(i != 1 && i != 4, transport.getChildren().get(i).isDisable());
         }
-        javafx.scene.control.Button silence = (javafx.scene.control.Button) transport.getChildren().get(5);
+        javafx.scene.control.Button silence = (javafx.scene.control.Button) transport.getChildren().get(4);
         org.junit.Assert.assertEquals("Skip silence: off", silence.getTooltip().getText());
         assertFalse("the tray has to open showing the state it really is in", silence.getOpacity() == 1.0);
         // update() needs a real tray icon, so enable the rest by hand to fire every button
@@ -106,23 +119,14 @@ public class ThemeSceneTest {
             org.junit.Assert.assertNotNull(button.getTooltip());
             button.fire();
         }
-        javafx.scene.layout.HBox progressRow = (javafx.scene.layout.HBox) panel.getChildren().get(3);
-        javafx.scene.control.Slider progressSlider =
-                (javafx.scene.control.Slider) progressRow.getChildren().get(1);
-        org.junit.Assert.assertTrue(progressSlider.isDisable());
-        manager.updateProgress(65000, 3600000);
-        org.junit.Assert.assertFalse(progressSlider.isDisable());
-        org.junit.Assert.assertEquals(65000.0, progressSlider.getValue(), 0.01);
-        progressSlider.setValue(120000);
-        progressSlider.getOnMousePressed().handle(null);
-        progressSlider.getOnMouseReleased().handle(null);
-        org.junit.Assert.assertTrue(panel.getChildren().get(4)
+        org.junit.Assert.assertTrue(panel.getChildren().get(3)
                 instanceof javafx.scene.control.Separator);
         // the footer is one labelled, full-width way back to the app; Exit is on the tray
         // icon's right-click menu, where Windows users look for it
-        javafx.scene.control.Button show = (javafx.scene.control.Button) panel.getChildren().get(5);
+        javafx.scene.control.Button show = (javafx.scene.control.Button) panel.getChildren().get(4);
         org.junit.Assert.assertEquals("Show AntennaPod", show.getText());
         assertTrue(show.isDefaultButton());
+        org.junit.Assert.assertEquals(Double.MAX_VALUE, show.getMaxWidth(), 0.0);
         show.fire();
         org.junit.Assert.assertEquals("Skip silence: on", silence.getTooltip().getText());
         assertEquals(1.0, silence.getOpacity(), 0.001);
@@ -130,8 +134,8 @@ public class ThemeSceneTest {
         // switched in the window instead: the tray toggle has to follow
         manager.updateSilenceSkipping(false);
         org.junit.Assert.assertEquals("Skip silence: off", silence.getTooltip().getText());
-        org.junit.Assert.assertEquals(java.util.List.of("next", "back", "play", "forward", "next",
-                "silence:true", "seek:120000", "show"), actions);
+        org.junit.Assert.assertEquals(java.util.List.of("seek:120000", "back", "play", "forward",
+                "next", "silence:true", "show"), actions);
         manager.remove();
         manager.remove();
     }

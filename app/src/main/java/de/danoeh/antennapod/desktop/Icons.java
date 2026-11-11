@@ -59,6 +59,12 @@ public final class Icons {
         return icon;
     }
 
+    /** Paints an icon with a literal colour, for glyphs that sit on a filled surface. */
+    public static Node tint(Node icon, String paint) {
+        icon.setStyle("-fx-background-color: " + paint + ";");
+        return icon;
+    }
+
     // ---------------------------------------------------------------- transport
 
     public static Node play() {
@@ -86,17 +92,29 @@ public final class Icons {
     }
 
     public static Node next() {
-        return icon(polygon(true, 56, 50, 160, 128, 56, 206) + rect(172, 56, 28, 144, 12));
+        return next(SIZE);
+    }
+
+    public static Node next(double size) {
+        return icon(polygon(true, 56, 50, 160, 128, 56, 206) + rect(172, 56, 28, 144, 12), size);
     }
 
     /** Circular arrow running anti-clockwise, head at the top. */
     public static Node replay10() {
-        return icon(arcArrow(128, 128, 80, BAR, 250, 530, true));
+        return replay10(SIZE);
+    }
+
+    public static Node replay10(double size) {
+        return icon(arcArrow(128, 128, 80, BAR, 250, 530, true), size);
     }
 
     /** Circular arrow running clockwise, head at the top. */
     public static Node forward30() {
-        return icon(arcArrow(128, 128, 80, BAR, 10, 290, false));
+        return forward30(SIZE);
+    }
+
+    public static Node forward30(double size) {
+        return icon(arcArrow(128, 128, 80, BAR, 10, 290, false), size);
     }
 
     public static Node replay() {
@@ -299,11 +317,19 @@ public final class Icons {
         return icon(frame(52, 68, 152, 132, 22, 22) + rect(52, 68, 152, 44, 22));
     }
 
-    /** A pushpin head-on: flat head, wide body, sharp needle - keep the mini player on screen. */
+    /**
+     * A pushpin: a wide head, a tapered neck, a collar and a slim needle. The collar is what
+     * separates it from a letter T at tray size, and the head carries the weight.
+     */
     public static Node pin() {
-        return icon(capsule(76, 80, 180, 80, 26)
-                + capsule(128, 92, 128, 156, 40)
-                + capsule(128, 156, 128, 208, 16));
+        return pin(SIZE);
+    }
+
+    public static Node pin(double size) {
+        return icon(rect(48, 52, 160, 28, 14)
+                + polygon(true, 106, 74, 150, 74, 139, 146, 117, 146)
+                + rect(80, 142, 96, 18, 9)
+                + polygon(true, 121, 156, 135, 156, 128, 216), size);
     }
 
     // GitHub mark, drawn on a 16 unit grid (from GitHub's own octicon, MIT licensed)

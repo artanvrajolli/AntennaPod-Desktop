@@ -22,7 +22,9 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.Rectangle;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
@@ -71,7 +73,8 @@ public final class TrayManager {
     private Label feedLabel;
     private ImageView artworkView;
     private Image defaultArtwork;
-    private Label positionLabel;
+    private Label elapsedLabel;
+    private Label totalLabel;
     private Slider progressSlider;
     private boolean traySeeking;
     private BufferedImage defaultIcon;
@@ -178,17 +181,18 @@ public final class TrayManager {
         this.callbacks = callbacks;
         defaultArtwork = loadDefaultArtwork();
         artworkView = new ImageView(defaultArtwork);
-        artworkView.setFitWidth(48);
-        artworkView.setFitHeight(48);
+        artworkView.setFitWidth(ARTWORK_SIZE);
+        artworkView.setFitHeight(ARTWORK_SIZE);
         artworkView.setPreserveRatio(true);
         artworkView.setSmooth(true);
+        artworkView.setClip(roundedClip(ARTWORK_SIZE, 9));
         nowPlayingLabel = new Label(Messages.get("player.nothing_playing"));
         nowPlayingLabel.setWrapText(true);
         nowPlayingLabel.setMaxWidth(TITLE_WIDTH);
-        nowPlayingLabel.setStyle("-fx-font-weight: bold;");
+        nowPlayingLabel.getStyleClass().add("tray-title");
         feedLabel = new Label("");
         feedLabel.setMaxWidth(TITLE_WIDTH);
-        feedLabel.getStyleClass().add("muted-label");
+        feedLabel.getStyleClass().addAll("muted-label", "tray-feed");
         feedLabel.setVisible(false);
         feedLabel.setManaged(false);
         VBox titles = new VBox(2, nowPlayingLabel, feedLabel);
@@ -196,33 +200,35 @@ public final class TrayManager {
         HBox.setHgrow(titles, Priority.ALWAYS);
         // pin and close sit in the corner, as on any small window: close only puts the
         // controls away (the app keeps playing); quitting is on the tray icon's shortcut menu
-        pinButton = corner(Icons.pin(), Messages.get("tray.keep_open"), () -> setPinned(!pinned));
+        pinButton = corner(Icons.pin(PIN_SIZE), Messages.get("tray.keep_open"), () -> setPinned(!pinned));
+        pinButton.getStyleClass().add("tray-pin");
         showPinned(pinned);
         Button close = corner(Icons.windowClose(), Messages.get("common.close"), this::hideControls);
         HBox corner = new HBox(2, pinButton, close);
         corner.setAlignment(Pos.TOP_RIGHT);
-        HBox header = new HBox(10, artworkView, titles, corner);
+        HBox header = new HBox(12, artworkView, titles, corner);
         header.setAlignment(Pos.CENTER_LEFT);
-        playPauseButton = control(Icons.accent(Icons.play()), Messages.get("common.play"), callbacks::onPlayPause);
-        playPauseButton.setMinSize(44, 36);
-        Button skipBack = control(Icons.replay10(), Messages.get("tray.skip_back"), callbacks::onSkipBack);
-        Button skipForward = control(Icons.forward30(), Messages.get("tray.skip_forward"), callbacks::onSkipForward);
-        // the row is about moving on: a Next button closes it on both sides
-        Button nextLeft = control(Icons.next(), Messages.get("player.next"), callbacks::onNext);
-        Button nextRight = control(Icons.next(), Messages.get("player.next"), callbacks::onNext);
-        silenceButton = control(Icons.wave(), Messages.get("player.skip_silence"), () -> {
+        playPauseButton = playPause();
+        playPauseButton.setOnAction(event -> callbacks.onPlayPause());
+        Button skipBack = control(Icons.replay10(TRANSPORT_ICON_SIZE), Messages.get("tray.skip_back"),
+                callbacks::onSkipBack);
+        Button skipForward = control(Icons.forward30(TRANSPORT_ICON_SIZE), Messages.get("tray.skip_forward"),
+                callbacks::onSkipForward);
+        Button next = control(Icons.next(TRANSPORT_ICON_SIZE), Messages.get("player.next"),
+                callbacks::onNext);
+        silenceButton = control(Icons.wave(TRANSPORT_ICON_SIZE), Messages.get("player.skip_silence"), () -> {
             boolean enabled = !callbacks.isSilenceSkipping();
             updateSilenceSkipping(enabled);
             callbacks.onSilenceSkipping(enabled);
         });
         updateSilenceSkipping(callbacks.isSilenceSkipping());
-        episodeControls = List.of(nextLeft, skipBack, skipForward, nextRight);
-        transportRow = new HBox(8, nextLeft, skipBack, playPauseButton, skipForward, nextRight,
-                silenceButton);
+        episodeControls = List.of(skipBack, skipForward, next);
+        transportRow = new HBox(8, skipBack, playPauseButton, skipForward, next, silenceButton);
         transportRow.setAlignment(Pos.CENTER);
+        transportRow.getStyleClass().add("tray-transport");
+        // skip silence is a mode rather than a transport step: a little air keeps the two apart
+        HBox.setMargin(silenceButton, new Insets(0, 0, 0, 4));
         setEpisodeControlsDisabled(true);
-        positionLabel = new Label("");
-        positionLabel.getStyleClass().add("muted-label");
         progressSlider = new Slider(0, 1, 0);
         progressSlider.setMaxWidth(Double.MAX_VALUE);
         progressSlider.setDisable(true);
@@ -233,27 +239,54 @@ public final class TrayManager {
                 callbacks.onSeek((int) progressSlider.getValue());
             }
         });
-        HBox progressRow = new HBox(6, positionLabel, progressSlider);
-        progressRow.setAlignment(Pos.CENTER_LEFT);
-        HBox.setHgrow(progressSlider, Priority.ALWAYS);
+        elapsedLabel = timeLabel(Pos.CENTER_LEFT);
+        totalLabel = timeLabel(Pos.CENTER_RIGHT);
+        Region timeGap = new Region();
+        HBox.setHgrow(timeGap, Priority.ALWAYS);
+        HBox times = new HBox(0, elapsedLabel, timeGap, totalLabel);
+        times.setAlignment(Pos.CENTER_LEFT);
+        VBox progress = new VBox(4, progressSlider, times);
         // one plain, labelled way back to the app, full width so it reads as the panel's action
-        Button show = new Button(Messages.get("tray.show"));
+        Button show = new Button(Messages.get("tray.show"), Icons.tint(Icons.window(), "white"));
+        show.getStyleClass().add("tray-show");
         show.setDefaultButton(true);
         show.setMaxWidth(Double.MAX_VALUE);
         show.setOnAction(event -> {
             hideControls();
             callbacks.onShow();
         });
-        VBox panel = new VBox(10, header, new Separator(), transportRow, progressRow,
-                new Separator(), show);
+        VBox panel = new VBox(12, header, progress, transportRow, new Separator(), show);
+        panel.getStyleClass().add("tray-panel");
         panel.setPadding(new Insets(14));
         panel.setPrefWidth(PANEL_WIDTH);
         return panel;
     }
 
+    private static Button playPause() {
+        Button button = new Button("", Icons.tint(Icons.play(PLAY_ICON_SIZE), "white"));
+        button.getStyleClass().add("tray-play");
+        button.setAccessibleText(Messages.get("common.play"));
+        button.setTooltip(new Tooltip(Messages.get("common.play")));
+        return button;
+    }
+
+    private static Label timeLabel(Pos alignment) {
+        Label label = new Label("");
+        label.getStyleClass().addAll("muted-label", "tray-time");
+        label.setAlignment(alignment);
+        return label;
+    }
+
+    private static Rectangle roundedClip(double size, double radius) {
+        Rectangle clip = new Rectangle(size, size);
+        clip.setArcWidth(radius * 2);
+        clip.setArcHeight(radius * 2);
+        return clip;
+    }
+
     private static Image loadDefaultArtwork() {
         try (java.io.InputStream stream =
-                     TrayManager.class.getResourceAsStream("/icons/app-icon-32.png")) {
+                     TrayManager.class.getResourceAsStream("/icons/app-icon-64.png")) {
             if (stream != null) {
                 return new Image(stream);
             }
@@ -274,6 +307,8 @@ public final class TrayManager {
         String text = enabled ? Messages.get("player.skip_silence.on") : Messages.get("player.skip_silence.off");
         silenceButton.setTooltip(new Tooltip(text));
         silenceButton.setAccessibleText(text);
+        silenceButton.setGraphic(enabled ? Icons.accent(Icons.wave(TRANSPORT_ICON_SIZE))
+                : Icons.wave(TRANSPORT_ICON_SIZE));
         silenceButton.setOpacity(enabled ? 1.0 : 0.55);
     }
 
@@ -284,7 +319,8 @@ public final class TrayManager {
         if (durationMs <= 0) {
             progressSlider.setDisable(true);
             progressSlider.setValue(0);
-            positionLabel.setText("");
+            elapsedLabel.setText("");
+            totalLabel.setText("");
             lastPositionMs = 0;
             lastDurationMs = 0;
             repaintTrayIcon();
@@ -295,7 +331,8 @@ public final class TrayManager {
         if (!traySeeking) {
             progressSlider.setValue(Math.min(positionMs, durationMs));
         }
-        positionLabel.setText(formatTime(positionMs) + " / " + formatTime(durationMs));
+        elapsedLabel.setText(formatTime(positionMs));
+        totalLabel.setText(formatTime(durationMs));
         lastPositionMs = Math.max(positionMs, 0);
         lastDurationMs = durationMs;
         repaintTrayIcon();
@@ -312,12 +349,16 @@ public final class TrayManager {
         button.getStyleClass().add("icon-button");
         button.setAccessibleText(label);
         button.setTooltip(new Tooltip(label));
-        button.setMinSize(36, 32);
+        button.setMinSize(38, 36);
         button.setOnAction(event -> action.run());
         return button;
     }
 
     private static final double PANEL_WIDTH = 320;
+    private static final double ARTWORK_SIZE = 52;
+    private static final double PIN_SIZE = 24;
+    private static final double TRANSPORT_ICON_SIZE = 18;
+    private static final double PLAY_ICON_SIZE = 28;
     /** What the titles get beside the artwork and the corner buttons. */
     private static final double TITLE_WIDTH = 176;
     /** A tray click within this long of the controls closing on lost focus was what closed them. */
@@ -327,8 +368,9 @@ public final class TrayManager {
     /** A small corner button, quieter than the transport controls. */
     private static Button corner(javafx.scene.Node icon, String label, Runnable action) {
         Button button = control(icon, label, action);
-        button.setMinSize(28, 26);
-        button.setPrefSize(28, 26);
+        button.getStyleClass().addAll("flat", "tray-corner");
+        button.setMinSize(30, 30);
+        button.setPrefSize(30, 30);
         return button;
     }
 
@@ -399,8 +441,11 @@ public final class TrayManager {
         pinButton.setTooltip(new Tooltip(pin
                 ? Messages.get("tray.unpin") : Messages.get("tray.keep_open.tooltip")));
         // lit while pinned, like any toggle, so the state shows without hovering
-        pinButton.setGraphic(pin ? Icons.accent(Icons.pin()) : Icons.pin());
-        pinButton.setOpacity(pin ? 1.0 : 0.7);
+        pinButton.setGraphic(pin ? Icons.accent(Icons.pin(PIN_SIZE)) : Icons.pin(PIN_SIZE));
+        pinButton.getStyleClass().remove("on");
+        if (pin) {
+            pinButton.getStyleClass().add("on");
+        }
         pinButton.setAccessibleText(pin ? Messages.get("tray.unpin") : Messages.get("tray.keep_open"));
     }
 
@@ -475,7 +520,8 @@ public final class TrayManager {
             return;
         }
         boolean hasEpisode = nowPlaying != null && !nowPlaying.isEmpty();
-        playPauseButton.setGraphic(Icons.accent(playing ? Icons.pause() : Icons.play()));
+        playPauseButton.setGraphic(Icons.tint(playing ? Icons.pause(PLAY_ICON_SIZE)
+                : Icons.play(PLAY_ICON_SIZE), "white"));
         playPauseButton.setAccessibleText(playing ? Messages.get("player.pause") : Messages.get("common.play"));
         playPauseButton.getTooltip().setText(playing ? Messages.get("player.pause") : Messages.get("common.play"));
         setEpisodeControlsDisabled(!hasEpisode);
