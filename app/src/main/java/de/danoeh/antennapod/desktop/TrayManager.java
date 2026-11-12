@@ -202,10 +202,14 @@ public final class TrayManager {
         VBox titles = new VBox(2, nowPlayingLabel, feedLabel);
         titles.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(titles, Priority.ALWAYS);
-        // pin and close sit in the corner, as on any small window: close only puts the
-        // controls away (the app keeps playing); quitting is on the tray icon's shortcut menu
-        pinButton = corner(Icons.pin(PIN_SIZE), Messages.get("tray.keep_open"),
-                () -> setPinned(!pinned));
+        // pin and close sit in the corner, as on any small window: the pin is its own toggle,
+        // so it gets a button surface, while close stays a bare glyph; close only puts the
+        // controls away (the app keeps playing), and quitting is on the tray icon's menu
+        pinButton = new Button("", Icons.pin(PIN_SIZE));
+        pinButton.getStyleClass().add("tray-pin");
+        pinButton.setMinSize(PIN_BUTTON_SIZE, PIN_BUTTON_SIZE);
+        pinButton.setPrefSize(PIN_BUTTON_SIZE, PIN_BUTTON_SIZE);
+        pinButton.setOnAction(event -> setPinned(!pinned));
         showPinned(pinned);
         Button close = corner(Icons.tint(Icons.windowClose(), TRAY_MUTED),
                 Messages.get("common.close"), this::hideControls);
@@ -400,6 +404,7 @@ public final class TrayManager {
     private static final double PANEL_WIDTH = 320;
     private static final double ARTWORK_SIZE = 48;
     private static final double PIN_SIZE = 22;
+    private static final double PIN_BUTTON_SIZE = 30;
     private static final double TRANSPORT_ICON_SIZE = 18;
     private static final double PLAY_ICON_SIZE = 24;
     private static final double TIME_WIDTH = 32;
@@ -487,9 +492,13 @@ public final class TrayManager {
         }
         pinButton.setTooltip(new Tooltip(pin
                 ? Messages.get("tray.unpin") : Messages.get("tray.keep_open.tooltip")));
-        // lit with the app accent while pinned, like any toggle, so the state shows without hovering
-        pinButton.setGraphic(pin ? Icons.accent(Icons.pin(PIN_SIZE))
+        // filled with the app accent while pinned, with a white glyph so it stays legible
+        pinButton.setGraphic(pin ? Icons.tint(Icons.pin(PIN_SIZE), ON_ACCENT)
                 : Icons.tint(Icons.pin(PIN_SIZE), TRAY_MUTED));
+        pinButton.getStyleClass().remove("on");
+        if (pin) {
+            pinButton.getStyleClass().add("on");
+        }
         pinButton.setAccessibleText(pin ? Messages.get("tray.unpin") : Messages.get("tray.keep_open"));
     }
 
