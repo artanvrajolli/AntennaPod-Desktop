@@ -68,6 +68,7 @@ public class ThemeSceneTest {
         org.junit.Assert.assertEquals(2, corner.getChildren().size());
         javafx.scene.control.Button pin = (javafx.scene.control.Button) corner.getChildren().get(0);
         javafx.scene.control.Button close = (javafx.scene.control.Button) corner.getChildren().get(1);
+        org.junit.Assert.assertEquals("Keep open", pin.getText());
         org.junit.Assert.assertEquals("Keep open", pin.getAccessibleText());
         org.junit.Assert.assertEquals("Close", close.getTooltip().getText());
         close.fire();

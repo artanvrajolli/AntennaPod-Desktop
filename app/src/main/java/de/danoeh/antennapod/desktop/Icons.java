@@ -312,18 +312,6 @@ public final class Icons {
                 + capsule(128, 227, 128, 208, 30));
     }
 
-    /** A pushpin: wide head, tapered neck, wide collar and a slim needle - keep the mini player on screen. */
-    public static Node pin() {
-        return pin(SIZE);
-    }
-
-    public static Node pin(double size) {
-        return icon(rect(48, 52, 160, 28, 14)
-                + polygon(true, 106, 74, 150, 74, 139, 146, 117, 146)
-                + rect(80, 142, 96, 18, 9)
-                + polygon(true, 121, 156, 135, 156, 128, 216), size);
-    }
-
     // GitHub mark, drawn on a 16 unit grid (from GitHub's own octicon, MIT licensed)
     private static final String GITHUB =
             "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49"
